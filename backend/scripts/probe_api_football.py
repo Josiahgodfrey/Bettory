@@ -14,8 +14,7 @@ from __future__ import annotations
 import argparse
 import json
 import sys
-from datetime import date, datetime, timezone
-from pathlib import Path
+from datetime import UTC, date, datetime
 from typing import Any
 
 import httpx
@@ -156,7 +155,7 @@ def finish(p: Probe) -> int:
     critical_failed = [r["test"] for r in p.results if r["critical"] and r["passed"] is False]
     verdict = "CONFIRMED (free plan)" if not critical_failed else "NOT CONFIRMED - see failed critical tests"
     summary = {
-        "run_at": datetime.now(timezone.utc).isoformat(),
+        "run_at": datetime.now(UTC).isoformat(),
         "requests_used": p.requests_used,
         "verdict": verdict,
         "critical_failed": critical_failed,

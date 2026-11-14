@@ -24,3 +24,6 @@ htmlcov/
 
 # Phase 0 probe samples (raw provider responses)
 phase0/
+
+# Local raw payload store
+data/

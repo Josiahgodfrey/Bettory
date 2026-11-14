@@ -13,7 +13,7 @@ from __future__ import annotations
 import argparse
 import json
 import sys
-from datetime import date, datetime, timedelta, timezone
+from datetime import UTC, date, datetime, timedelta
 from typing import Any
 
 import httpx
@@ -126,7 +126,7 @@ def finish(p: Probe) -> int:
     verdict = "USABLE as backup" if not critical_failed else "LIMITED - see failed critical tests"
     OUT_DIR.mkdir(parents=True, exist_ok=True)
     (OUT_DIR / "summary.json").write_text(json.dumps({
-        "run_at": datetime.now(timezone.utc).isoformat(),
+        "run_at": datetime.now(UTC).isoformat(),
         "requests_used": p.requests_used, "verdict": verdict,
         "critical_failed": critical_failed, "results": p.results,
     }, indent=2), encoding="utf-8")
