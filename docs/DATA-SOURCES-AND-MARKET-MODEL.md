@@ -241,6 +241,11 @@ HT Over 0.5 @ **1.40**, HT Under 0.5 @ **2.80**
 
 If the bookmaker offers **1.38**, it is above the market-implied fair price → value signal.
 
+> **De-vig method note (2026-11-15).** This example removes the margin **multiplicatively** (Step 1). The system's
+> configured method is **power** (`model_c.devig_method`), which gives P(0-0 at HT) 31.5% → P_C(0-0 at 15') **72.3%** →
+> fair odds **1.38** for the same prices. Both values are reproduced by the tests; the backtest decides which method is
+> better calibrated.
+
 ### 6.4 Other lines
 
 | Line | How it is used |
