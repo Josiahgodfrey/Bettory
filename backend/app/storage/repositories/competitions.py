@@ -1,0 +1,1 @@
+"""Competitions and competition baselines."""
