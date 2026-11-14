@@ -1,18 +1,23 @@
-"""Application settings, loaded from environment variables (and a local .env file).
+"""Application settings, loaded from environment variables and .env files.
 
-Secrets are never hard-coded and never committed. See .env.example for the variable names.
+Load order (later overrides earlier): repository-root .env, then backend/.env, then real
+environment variables. Secrets are never hard-coded and never committed. See .env.example.
 """
 
 from functools import lru_cache
+from pathlib import Path
 from typing import Literal
 
-from pydantic import Field
+from pydantic import Field, SecretStr
 from pydantic_settings import BaseSettings, SettingsConfigDict
+
+BACKEND_DIR = Path(__file__).resolve().parents[2]
+REPO_ROOT = BACKEND_DIR.parent
 
 
 class Settings(BaseSettings):
     model_config = SettingsConfigDict(
-        env_file=".env",
+        env_file=(REPO_ROOT / ".env", BACKEND_DIR / ".env"),
         env_file_encoding="utf-8",
         extra="ignore",
         frozen=True,
@@ -20,10 +25,19 @@ class Settings(BaseSettings):
 
     environment: Literal["local", "production"] = "local"
 
-    # Supabase
+    # Supabase project
+    supabase_project_ref: str = "vhdhqpaxandnuqykjweq"
     supabase_url: str = ""
-    supabase_service_role_key: str = ""
-    database_url: str = ""
+    supabase_service_role_key: SecretStr = SecretStr("")
+
+    # Database (Supabase connection pooler). Values from Supabase dashboard -> Connect.
+    database_host: str = ""  # e.g. aws-0-<region>.pooler.supabase.com
+    database_port: int = 5432  # 5432 = session mode (worker), 6543 = transaction mode (API)
+    database_name: str = "postgres"
+    database_user: str = ""  # empty -> "postgres.<project_ref>"
+    database_password: SecretStr = SecretStr("")
+    database_sslmode: Literal["require", "verify-full"] = "require"
+    database_statement_timeout_ms: int = 30_000
 
     # Auth: the single owner (Architecture 7)
     owner_user_id: str = ""
@@ -32,15 +46,19 @@ class Settings(BaseSettings):
     cors_origins: list[str] = Field(default_factory=lambda: ["http://localhost:5173"])
 
     # Data providers
-    api_football_key: str = ""
-    football_data_org_key: str = ""
+    api_football_key: SecretStr = SecretStr("")
+    football_data_org_key: SecretStr = SecretStr("")
 
     # Telegram
-    telegram_bot_token: str = ""
+    telegram_bot_token: SecretStr = SecretStr("")
     telegram_chat_id: str = ""
 
     # Calculation parameters (versioned file in config/)
     params_file: str = "config/params_v1.4.yaml"
+
+    @property
+    def resolved_database_user(self) -> str:
+        return self.database_user or f"postgres.{self.supabase_project_ref}"
 
 
 @lru_cache
