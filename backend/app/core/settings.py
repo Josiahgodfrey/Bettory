@@ -8,7 +8,7 @@ from functools import lru_cache
 from pathlib import Path
 from typing import Literal
 
-from pydantic import Field, SecretStr
+from pydantic import Field, SecretStr, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 BACKEND_DIR = Path(__file__).resolve().parents[2]
@@ -48,6 +48,12 @@ class Settings(BaseSettings):
 
     # Auth: the single owner (Architecture 7)
     owner_user_id: str = ""
+    # Only for projects still on the legacy shared JWT secret (HS256). New Supabase projects sign
+    # with asymmetric keys, verified against the project's public JWKS - no secret needed.
+    supabase_jwt_secret: SecretStr = SecretStr("")
+    # LOCAL DEVELOPMENT ONLY: accept requests without a token, from this machine only, so the
+    # endpoints can be tried in /docs before the frontend login exists. Refused outside "local".
+    auth_local_bypass: bool = False
 
     # CORS: only the frontend origin(s)
     cors_origins: list[str] = Field(default_factory=lambda: ["http://localhost:5173"])
@@ -62,6 +68,12 @@ class Settings(BaseSettings):
 
     # Calculation parameters (versioned file in config/)
     params_file: str = "config/params_v1.4.yaml"
+
+    @model_validator(mode="after")
+    def _bypass_only_local(self) -> "Settings":
+        if self.auth_local_bypass and self.environment != "local":
+            raise ValueError("AUTH_LOCAL_BYPASS is allowed only when ENVIRONMENT=local")
+        return self
 
     @property
     def resolved_database_user(self) -> str:
