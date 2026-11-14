@@ -1,0 +1,132 @@
+# BETTORY competition registry — the ONLY competitions the pipeline stores.
+# Each entry maps BETTORY's code to every source's own key for that competition.
+#
+# season_format: SPLIT (Aug–May, label "2025-26") or CALENDAR (label "2025")
+# team_sources:  sources allowed to CREATE new teams for this competition. Every other source
+#                must match existing teams (provider id / alias) or goes to the review queue.
+# API-Football league ids: verify with /leagues before relying on them (Phase 0 checked 39 only).
+
+competitions:
+  - code: ENG1
+    name: Premier League
+    country: England
+    type: LEAGUE
+    level: 1
+    timezone: Europe/London
+    season_format: SPLIT
+    team_sources: [FOOTBALL_DATA_ORG, OPENFOOTBALL, API_FOOTBALL]
+    providers:
+      API_FOOTBALL: "39"
+      FOOTBALL_DATA_ORG: PL
+      OPENFOOTBALL: en.1
+      FOOTBALL_DATA_CO_UK: E0
+
+  - code: ENG2
+    name: Championship
+    country: England
+    type: LEAGUE
+    level: 2
+    timezone: Europe/London
+    season_format: SPLIT
+    team_sources: [FOOTBALL_DATA_ORG, OPENFOOTBALL, API_FOOTBALL]
+    providers:
+      API_FOOTBALL: "40"
+      FOOTBALL_DATA_ORG: ELC
+      OPENFOOTBALL: en.2
+      FOOTBALL_DATA_CO_UK: E1
+
+  - code: GER1
+    name: Bundesliga
+    country: Germany
+    type: LEAGUE
+    level: 1
+    timezone: Europe/Berlin
+    season_format: SPLIT
+    team_sources: [FOOTBALL_DATA_ORG, OPENFOOTBALL, API_FOOTBALL]
+    providers:
+      API_FOOTBALL: "78"
+      FOOTBALL_DATA_ORG: BL1
+      OPENFOOTBALL: de.1
+      FOOTBALL_DATA_CO_UK: D1
+
+  - code: AUT1
+    name: Bundesliga
+    country: Austria
+    type: LEAGUE
+    level: 1
+    timezone: Europe/Vienna
+    season_format: SPLIT
+    team_sources: [OPENFOOTBALL, API_FOOTBALL]
+    providers:
+      API_FOOTBALL: "218"
+      OPENFOOTBALL: at.1
+
+  - code: ESP1
+    name: La Liga
+    country: Spain
+    type: LEAGUE
+    level: 1
+    timezone: Europe/Madrid
+    season_format: SPLIT
+    team_sources: [FOOTBALL_DATA_ORG, OPENFOOTBALL, API_FOOTBALL]
+    providers:
+      API_FOOTBALL: "140"
+      FOOTBALL_DATA_ORG: PD
+      OPENFOOTBALL: es.1
+      FOOTBALL_DATA_CO_UK: SP1
+
+  - code: ITA1
+    name: Serie A
+    country: Italy
+    type: LEAGUE
+    level: 1
+    timezone: Europe/Rome
+    season_format: SPLIT
+    team_sources: [FOOTBALL_DATA_ORG, OPENFOOTBALL, API_FOOTBALL]
+    providers:
+      API_FOOTBALL: "135"
+      FOOTBALL_DATA_ORG: SA
+      OPENFOOTBALL: it.1
+      FOOTBALL_DATA_CO_UK: I1
+
+  - code: FRA1
+    name: Ligue 1
+    country: France
+    type: LEAGUE
+    level: 1
+    timezone: Europe/Paris
+    season_format: SPLIT
+    team_sources: [FOOTBALL_DATA_ORG, OPENFOOTBALL, API_FOOTBALL]
+    providers:
+      API_FOOTBALL: "61"
+      FOOTBALL_DATA_ORG: FL1
+      OPENFOOTBALL: fr.1
+      FOOTBALL_DATA_CO_UK: F1
+
+  - code: NED1
+    name: Eredivisie
+    country: Netherlands
+    type: LEAGUE
+    level: 1
+    timezone: Europe/Amsterdam
+    season_format: SPLIT
+    team_sources: [FOOTBALL_DATA_ORG, OPENFOOTBALL, API_FOOTBALL]
+    providers:
+      API_FOOTBALL: "88"
+      FOOTBALL_DATA_ORG: DED
+      OPENFOOTBALL: nl.1
+      FOOTBALL_DATA_CO_UK: N1
+
+  - code: POR1
+    name: Primeira Liga
+    country: Portugal
+    type: LEAGUE
+    level: 1
+    timezone: Europe/Lisbon
+    season_format: SPLIT
+    team_sources: [FOOTBALL_DATA_ORG, OPENFOOTBALL, API_FOOTBALL]
+    providers:
+      API_FOOTBALL: "94"
+      FOOTBALL_DATA_ORG: PPL
+      OPENFOOTBALL: pt.1
+      FOOTBALL_DATA_CO_UK: P1

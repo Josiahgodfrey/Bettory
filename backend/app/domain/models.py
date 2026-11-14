@@ -7,7 +7,7 @@ provider's format. All models are immutable and validated on creation - invalid 
 from __future__ import annotations
 
 import re
-from datetime import datetime
+from datetime import UTC, date, datetime
 from typing import Self
 
 from pydantic import BaseModel, ConfigDict, Field, model_validator
@@ -64,10 +64,14 @@ class SourceMatch(Strict):
 
     source: SourceCode
     provider_match_key: str = Field(min_length=1)
-    provider_competition_key: str | None = None
+    competition_code: str = Field(min_length=1)  # BETTORY registry code, e.g. "ENG1"
+    season_label: str = Field(pattern=r"^\d{4}(-\d{2})?$")  # "2025-26" or "2025"
+    kickoff_date: date  # UTC date when kickoff_utc is known, otherwise the source's local date
     kickoff_utc: datetime | None
     home_name: str = Field(min_length=1)
     away_name: str = Field(min_length=1)
+    home_key: str | None = None  # the source's own team id, when it has one
+    away_key: str | None = None
     status: FixtureStatus
     ft: Score | None = None
     ht: Score | None = None
@@ -77,8 +81,11 @@ class SourceMatch(Strict):
 
     @model_validator(mode="after")
     def _check(self) -> Self:
-        if self.kickoff_utc is not None and self.kickoff_utc.utcoffset() is None:
-            raise ValueError("kickoff_utc must be timezone-aware")
+        if self.kickoff_utc is not None:
+            if self.kickoff_utc.utcoffset() is None:
+                raise ValueError("kickoff_utc must be timezone-aware")
+            if self.kickoff_utc.astimezone(UTC).date() != self.kickoff_date:
+                raise ValueError("kickoff_date must equal the UTC date of kickoff_utc")
         if self.home_name == self.away_name:
             raise ValueError("home and away team names are identical")
         if self.status is FixtureStatus.FINISHED and self.ft is None:
@@ -115,6 +122,7 @@ class SourceOdds(Strict):
 
     source: SourceCode
     provider_match_key: str = Field(min_length=1)
+    competition_code: str | None = None  # set when the odds row is self-contained (CSV)
     bookmaker: str = Field(min_length=1)
     market: MarketCode
     provider_market_name: str = Field(min_length=1)

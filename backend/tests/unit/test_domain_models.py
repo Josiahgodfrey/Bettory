@@ -13,6 +13,9 @@ def match(**overrides: object) -> SourceMatch:
     base: dict[str, object] = {
         "source": SourceCode.OPENFOOTBALL,
         "provider_match_key": "2025-08-15|Liverpool|Bournemouth",
+        "competition_code": "ENG1",
+        "season_label": "2025-26",
+        "kickoff_date": KICKOFF.date(),
         "kickoff_utc": KICKOFF,
         "home_name": "Liverpool",
         "away_name": "Bournemouth",
@@ -62,6 +65,11 @@ def test_goal_list_inconsistent_with_ft() -> None:
 
 def test_goal_list_inconsistent_with_ht() -> None:
     assert not match(ht=Score(home=0, away=0)).goals_consistent()
+
+
+def test_kickoff_date_must_match_utc_date() -> None:
+    with pytest.raises(ValidationError):
+        match(kickoff_date=KICKOFF.date().replace(day=16))
 
 
 def test_naive_kickoff_rejected() -> None:
