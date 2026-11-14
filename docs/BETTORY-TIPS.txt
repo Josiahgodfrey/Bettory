@@ -1,0 +1,21 @@
+WIN DETAILS FOR EVERY MATCH
+	HOME: win, conceded, h2h
+	AWAY: win, conceded, h2h
+
+
+DATA TO DOWNLOAD
+-- League-wise data, 
+-- Download data for all leagues
+-- Parse the data and arrange matches daily
+
+
+15-MIN HISTORICAL DATA GAP:
+-- Use the time when the first goal was scored
+-- compare it with our 15-MIN comparison logic to get 15-min score data.
+
+0-15 MIN ODDS COMPARISON USNG LEAGUES AVERAGE SCORES
+-- Calculate the leagues average of goals scored up to HT
+-- Use the average to calculate each match of the give the percentage
+   of goals scored in the given timeline
+
+
