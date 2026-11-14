@@ -172,6 +172,12 @@ Derived from goals using the bookmaker cutoff (provider minute label ≤ 15 = in
 | No minute information | INCOMPLETE | null | null |
 | Not played yet | PENDING | null | null |
 
+### 7.1 Selection-bias rule (found in real data, 2026-11-15)
+
+Without goal minutes, only matches with **HT 0-0 (or FT 0-0)** can be DERIVED — and those always mean "no goal before 15'". The INCOMPLETE matches are therefore **not random**: they are exactly the ones with first-half goals. Example: Premier League 2024-25 loaded from HT/FT-only sources gave 90 DERIVED (100% "no early goal") and 290 INCOMPLETE.
+
+**Rule:** INCOMPLETE matches must **never be dropped** from a team's last-10 window or a competition baseline. A window or baseline that contains INCOMPLETE matches is `INSUFFICIENT_DATA` until goal minutes are filled in (API-Football events / openfootball `-full`). This replaces the earlier "≥ 8/10 COMPLETE or DERIVED" data-gate wording.
+
 ---
 
 ## 8. Team and competition matching
