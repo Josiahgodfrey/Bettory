@@ -20,10 +20,11 @@ class StoredPayload:
 
 
 def start_run(conn: Connection, source: SourceCode, job_name: str) -> UUID:
-    return conn.execute(
+    row_id: UUID = conn.execute(
         text("insert into raw.ingestion_runs (source_id, job_name) values (:s, :j) returning id"),
         {"s": SOURCE_IDS[source], "j": job_name},
     ).scalar_one()
+    return row_id
 
 
 def finish_run(conn: Connection, run_id: UUID, status: RunStatus, requests_used: int,
