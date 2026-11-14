@@ -54,6 +54,7 @@ plugins = ["pydantic.mypy"]
 # Architecture R3: the calculation and decision packages are pure.
 [tool.importlinter]
 root_package = "app"
+include_external_packages = true
 
 [[tool.importlinter.contracts]]
 name = "Calculation is pure: imports only domain"
