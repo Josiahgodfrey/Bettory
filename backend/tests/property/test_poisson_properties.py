@@ -1,6 +1,6 @@
 """Properties that must hold for every input (DEVELOPMENT-PLAN.md Phase 2 tests)."""
 
-from hypothesis import given
+from hypothesis import assume, given
 from hypothesis import strategies as st
 
 from app.calculation.poisson import (
@@ -63,3 +63,22 @@ def test_asian_solver_inverts_share(lam: float, n: int) -> None:
 @given(st.integers(min_value=1, max_value=3), st.floats(min_value=0.01, max_value=5.9), st.floats(0.001, 0.1))
 def test_asian_share_decreases_in_lambda(n: int, lam: float, step: float) -> None:
     assert asian_whole_under_share(n, lam + step) < asian_whole_under_share(n, lam)
+
+
+# --- margin removal ------------------------------------------------------------------------------
+
+from app.calculation.devig import devig  # noqa: E402
+from app.domain.enums import DevigMethod  # noqa: E402
+
+
+@given(st.floats(min_value=0.05, max_value=0.95), st.floats(min_value=0.0, max_value=0.15),
+       st.sampled_from(list(DevigMethod)))
+def test_devig_recovers_a_proportional_market(p: float, margin: float, method: DevigMethod) -> None:
+    assume(max(p, 1 - p) * (1 + margin) < 0.999)                # every price must stay above 1
+    odds = (1 / (p * (1 + margin)), 1 / ((1 - p) * (1 + margin)))
+    if margin < 1e-6 and method is DevigMethod.SHIN:     # Shin needs a positive margin
+        return
+    probs = devig(odds, method, min_overround=-1e-9, max_overround=0.150001).probabilities
+    assert abs(sum(probs) - 1.0) < 1e-9 and all(0 < q < 1 for q in probs)
+    if method is DevigMethod.MULTIPLICATIVE:
+        assert abs(probs[0] - p) < 1e-9                         # exact inverse of a proportional margin

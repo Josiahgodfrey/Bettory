@@ -4,7 +4,9 @@ import math
 
 import pytest
 
+from app.calculation.devig import devig, overround
 from app.calculation.poisson import score_grid, solve_lambda_from_under
+from app.domain.enums import DevigMethod
 
 # Section 10 inputs: mu 1.40 / 1.10, share s = 0.125, indexes 1.00
 LAM_HOME = 0.125 * 1.40  # 0.175
@@ -28,3 +30,15 @@ def test_section_10_worked_example() -> None:
 
 def test_under_05_closed_form_recovers_lambda() -> None:
     assert solve_lambda_from_under(0.5, math.exp(-0.3125)) == pytest.approx(0.3125, abs=1e-12)
+
+
+def test_section_10_bookmaker_a_margin_and_devig() -> None:
+    odds = (1.30, 3.20)                                        # 15' Under 0.5 / Over 0.5
+    assert round(overround(odds), 3) == 0.082                  # doc: 8.2%
+    mult = devig(odds, DevigMethod.MULTIPLICATIVE)
+    power = devig(odds, DevigMethod.POWER)
+    assert round(mult.probabilities[0], 3) == 0.711            # doc: 71.1%
+    assert round(power.probabilities[0], 3) == 0.739           # doc: 73.9%
+    assert power.parameter is not None and round(power.parameter, 3) == 1.154   # doc: k = 1.154
+    p_model = math.exp(-0.3125)
+    assert round(abs(p_model - power.probabilities[0]) * 100, 1) == 0.7         # doc: gap 0.7 pts
