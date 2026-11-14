@@ -8,35 +8,17 @@ A fresh database is created for the test session and dropped afterwards.
 
 from __future__ import annotations
 
-import os
-import uuid
 from collections.abc import Iterator
 from datetime import UTC, datetime, timedelta
-from pathlib import Path
 
 import psycopg
 import pytest
 from psycopg import errors
 from psycopg.rows import dict_row
 
-ADMIN_URL = os.environ.get("TEST_DATABASE_URL")
-MIGRATIONS = Path(__file__).resolve().parents[3] / "supabase" / "migrations"
+from tests.integration.conftest import ADMIN_URL
+
 pytestmark = pytest.mark.skipif(not ADMIN_URL, reason="TEST_DATABASE_URL not set")
-
-
-@pytest.fixture(scope="session")
-def db_url() -> Iterator[str]:
-    assert ADMIN_URL
-    name = f"bettory_test_{uuid.uuid4().hex[:8]}"
-    with psycopg.connect(ADMIN_URL, autocommit=True) as admin:
-        admin.execute(f'create database "{name}"')
-    url = ADMIN_URL.rsplit("/", 1)[0] + f"/{name}"
-    with psycopg.connect(url, autocommit=True) as conn:
-        for sql_file in sorted(MIGRATIONS.glob("*.sql")):
-            conn.execute(sql_file.read_text(encoding="utf-8"))
-    yield url
-    with psycopg.connect(ADMIN_URL, autocommit=True) as admin:
-        admin.execute(f'drop database "{name}" with (force)')
 
 
 @pytest.fixture
@@ -172,9 +154,9 @@ def test_source_record_link_once_then_frozen(conn: psycopg.Connection) -> None:
     w = setup_world(conn)
     mid = add_match(conn, w["season"], w["Alpha"], w["Beta"], T0)
     pid = _payload(conn)
-    rid = one(conn, "insert into core.match_source_records (source_id, provider_match_key, payload_id, home_name, "
+    rid = one(conn, "insert into core.match_source_records (source_id, provider_match_key, payload_id, kickoff_date, home_name, "
                     "away_name, status, ft_home, ft_away, has_goal_minutes, parser_version) "
-                    "values (3, 'k', %s, 'Alpha', 'Beta', 'FINISHED', 1, 0, false, 'p1') returning id", pid)["id"]
+                    "values (3, 'k', %s, '2025-09-01', 'Alpha', 'Beta', 'FINISHED', 1, 0, false, 'p1') returning id", pid)["id"]
     conn.execute("update core.match_source_records set match_id = %s where id = %s", (mid, rid))   # link: allowed
     with pytest.raises(errors.RaiseException), conn.transaction():
         conn.execute("update core.match_source_records set ft_home = 2 where id = %s", (rid,))  # data change
