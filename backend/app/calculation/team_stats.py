@@ -139,7 +139,7 @@ class WindowStats:
         return self.avg(self.goals_conceded)
 
 
-def _check_history(matches: Sequence[TeamMatch], as_of: datetime) -> None:
+def check_history(matches: Sequence[TeamMatch], as_of: datetime) -> None:
     if as_of.tzinfo is None:
         raise InvariantError("as_of must be timezone-aware")
     for i, m in enumerate(matches):
@@ -152,7 +152,7 @@ def _check_history(matches: Sequence[TeamMatch], as_of: datetime) -> None:
 def window_stats(matches: Sequence[TeamMatch], view: View, as_of: datetime, window: int = DEFAULT_WINDOW,
                  recent: int = DEFAULT_RECENT) -> WindowStats:
     """Statistics of the newest `window` matches of one view (HOME: home matches only, AWAY: away only)."""
-    _check_history(matches, as_of)
+    check_history(matches, as_of)
     if view is View.HOME and not all(m.is_home for m in matches):
         raise InvariantError("HOME view received an away match")
     if view is View.AWAY and any(m.is_home for m in matches):
@@ -226,7 +226,7 @@ def h2h_stats(meetings: Sequence[TeamMatch], scope: H2HScope, as_of: datetime,
               limit: int = DEFAULT_H2H_LIMIT) -> H2HStats:
     """`meetings` seen from the fixture's home team (is_home = it played at home), newest first.
     H2H is context only (no weight in the formula); its 15' values follow the same selection-bias rule."""
-    _check_history(meetings, as_of)
+    check_history(meetings, as_of)
     ms = [m for m in meetings if scope is H2HScope.ALL_VENUES or m.is_home][:limit]
     n = len(ms)
     incomplete = sum(m.data_status is DataStatus.INCOMPLETE for m in ms)
