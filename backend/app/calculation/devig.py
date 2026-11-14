@@ -6,8 +6,8 @@ FIFTEEN-MINUTE-ODDS-CALCULATION.md section 9:
 - 9.3 multiplicative: p_i = (1/o_i) / sum(1/o_j)
       power (default): k such that sum((1/o_i)^k) = 1, p_i = (1/o_i)^k  -> more margin on the longshot
       Shin (optional): insider-trading model, z such that the Shin probabilities sum to 1
-Odds are validated (section 12 risks): every price > 1, margin within [min, max] (default 0 .. 0.15,
-params value.overround_max), else the market is rejected - entry errors must not reach a price.
+Odds are validated (section 12 risks): every price > 1, margin within [min, max] (params value.overround_min /
+overround_max), else the market is rejected - entry errors must not reach a price.
 """
 
 from __future__ import annotations
@@ -19,8 +19,6 @@ from dataclasses import dataclass
 from app.calculation.invariants import InvariantError, check_probability
 from app.domain.enums import DevigMethod
 
-DEFAULT_MIN_OVERROUND = 0.0
-DEFAULT_MAX_OVERROUND = 0.15  # params_v1.4 value.overround_max
 _TOL = 1e-13
 _MAX_ITERATIONS = 300
 
@@ -54,8 +52,7 @@ def overround(odds: Sequence[float]) -> float:
     return math.fsum(implied_probabilities(odds)) - 1.0
 
 
-def check_overround(m: float, min_overround: float = DEFAULT_MIN_OVERROUND,
-                    max_overround: float = DEFAULT_MAX_OVERROUND) -> float:
+def check_overround(m: float, min_overround: float, max_overround: float) -> float:
     if not min_overround <= m <= max_overround:
         raise MarketError(f"overround {m:.4f} outside [{min_overround}, {max_overround}]: "
                           "wrong prices, missing side or mixed bookmakers")
@@ -108,8 +105,7 @@ def _shin(pi: tuple[float, ...]) -> tuple[tuple[float, ...], float]:
 _METHODS = {DevigMethod.MULTIPLICATIVE: _multiplicative, DevigMethod.POWER: _power, DevigMethod.SHIN: _shin}
 
 
-def devig(odds: Sequence[float], method: DevigMethod = DevigMethod.POWER,
-          min_overround: float = DEFAULT_MIN_OVERROUND, max_overround: float = DEFAULT_MAX_OVERROUND) -> Devigged:
+def devig(odds: Sequence[float], method: DevigMethod, *, min_overround: float, max_overround: float) -> Devigged:
     """Margin-free probabilities for ALL sides of ONE bookmaker's market (e.g. 15' Under 0.5 / Over 0.5)."""
     pi = implied_probabilities(odds)
     m = check_overround(math.fsum(pi) - 1.0, min_overround, max_overround)

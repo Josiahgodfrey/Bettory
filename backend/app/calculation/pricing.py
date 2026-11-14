@@ -19,18 +19,14 @@ from __future__ import annotations
 from dataclasses import dataclass
 from enum import StrEnum
 
-from app.calculation.ev import DEFAULT_EV_MIN, fair_odds, min_odds
+from app.calculation.ev import fair_odds, min_odds
 from app.calculation.invariants import InvariantError, check_lambda, check_probability
 from app.calculation.models import Expectancy
 from app.calculation.models.model_a import ModelAResult
 from app.calculation.models.model_b2 import ModelB2Result
 from app.calculation.models.model_c import ModelCResult
 from app.calculation.poisson import Outcomes, score_grid
-
-DEFAULT_TEAM_WEIGHT = 0.5  # params_v1.4 blend.team_weight
-DEFAULT_MARKET_WEIGHT = 0.5  # params_v1.4 blend.market_weight
-DEFAULT_DELTA = 0.0  # params_v1.4 state_dependence.delta
-PRICING_VERSION = "v1.4"
+from app.domain.params import Params
 
 
 class MuSource(StrEnum):
@@ -52,7 +48,8 @@ class FairOdds:
 class Price:
     """One fixture's 15' price (fifteen_min_prices, pricing doc 14.1)."""
 
-    pricing_version: str
+    pricing_version: str  # formula version
+    params_version: str
     mu: Expectancy  # blended whole-match expectancies
     mu_source: MuSource
     w_team: float
@@ -89,13 +86,12 @@ def _market_mu(c: ModelCResult, s: float, team_mu: Expectancy) -> Expectancy:
     return Expectancy(home=total * share, away=total * (1.0 - share))
 
 
-def price(model_a: ModelAResult, s: float, model_b2: ModelB2Result | None = None,
-          model_c: ModelCResult | None = None, w_team: float = DEFAULT_TEAM_WEIGHT,
-          w_mkt: float = DEFAULT_MARKET_WEIGHT, delta: float = DEFAULT_DELTA,
-          ev_min: float = DEFAULT_EV_MIN) -> Price:
+def price(model_a: ModelAResult, s: float, params: Params, model_b2: ModelB2Result | None = None,
+          model_c: ModelCResult | None = None) -> Price:
+    """Weights: blend.team_weight / market_weight; delta: state_dependence.delta; min odds: value.ev_min."""
     s = check_probability(s, "s", strict=True)
-    if w_team < 0 or w_mkt < 0 or abs(w_team + w_mkt - 1.0) > 1e-9:
-        raise InvariantError("w_team + w_mkt must be 1")
+    w_team, w_mkt = params.blend.team_weight, params.blend.market_weight
+    delta, ev_min = params.state_dependence.delta, params.value.ev_min
     if abs(model_a.s - s) > 1e-12:
         raise InvariantError("Model A was computed with a different s")
     notes: list[str] = []
@@ -129,7 +125,8 @@ def price(model_a: ModelAResult, s: float, model_b2: ModelB2Result | None = None
     fair = FairOdds(under05=fair_odds(out.p_00), over05=fair_odds(out.p_over05), draw=fair_odds(out.p_draw),
                     home=fair_odds(out.p_home_lead), away=fair_odds(out.p_away_lead))
     return Price(
-        pricing_version=PRICING_VERSION, mu=mu, mu_source=source, w_team=w_team, w_mkt=w_mkt, share_s=s,
+        pricing_version=params.formula_version, params_version=params.params_version,
+        mu=mu, mu_source=source, w_team=w_team, w_mkt=w_mkt, share_s=s,
         index_home=i_home, index_away=i_away, lambda15=l15, delta=delta, outcomes=out, fair=fair,
         min_odds_under05=min_odds(out.p_00, ev_min), min_odds_draw=min_odds(out.p_draw, ev_min),
         p_team_00=team_out.p_00, p_team_draw=team_out.p_draw,

@@ -10,7 +10,7 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from datetime import datetime
 
-from app.calculation.recovery import DEFAULT_CUTOFF_MINUTE, FifteenMinute, derive_fifteen
+from app.calculation.recovery import FifteenMinute, derive_fifteen
 from app.domain.enums import FixtureStatus, ReconciliationStatus, Severity, SourceCode
 from app.domain.models import Score, SourceGoal, SourceMatch
 
@@ -55,7 +55,7 @@ def _rank(order: tuple[SourceCode, ...], source: SourceCode) -> int:
     return order.index(source) if source in order else len(order)
 
 
-def reconcile(records: list[SourceMatch], cutoff_minute: int = DEFAULT_CUTOFF_MINUTE) -> TrustedMatch:
+def reconcile(records: list[SourceMatch], cutoff_minute: int) -> TrustedMatch:
     """`records`: the latest record per source for one match (at least one)."""
     if not records:
         raise ValueError("reconcile needs at least one source record")

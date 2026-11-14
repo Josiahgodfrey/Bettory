@@ -17,7 +17,6 @@ from dataclasses import dataclass
 from app.domain.enums import DataStatus, FixtureStatus, Side
 from app.domain.models import Score, SourceGoal
 
-DEFAULT_CUTOFF_MINUTE = 15
 _UNPLAYED = {FixtureStatus.SCHEDULED, FixtureStatus.LIVE, FixtureStatus.POSTPONED, FixtureStatus.CANCELLED}
 
 
@@ -34,7 +33,7 @@ def derive_fifteen(
     ft: Score | None,
     ht: Score | None,
     goals: tuple[SourceGoal, ...] | None,
-    cutoff_minute: int = DEFAULT_CUTOFF_MINUTE,
+    cutoff_minute: int,
 ) -> FifteenMinute:
     """`goals` must be None unless the caller has verified the list is complete and consistent."""
     if status in _UNPLAYED:

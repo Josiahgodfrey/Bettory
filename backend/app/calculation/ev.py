@@ -17,8 +17,7 @@ from enum import StrEnum
 from app.calculation.devig import devig
 from app.calculation.invariants import InvariantError, check_fair_odds, check_probability
 from app.domain.enums import DevigMethod
-
-DEFAULT_EV_MIN = 0.05  # params_v1.4 value.ev_min
+from app.domain.params import Params
 
 
 class Bet(StrEnum):
@@ -36,7 +35,7 @@ def fair_odds(p: float) -> float:
     return check_fair_odds(1.0 / check_probability(p, "P", strict=True))
 
 
-def min_odds(p: float, ev_min: float = DEFAULT_EV_MIN) -> float:
+def min_odds(p: float, ev_min: float) -> float:
     """Lowest offered price with EV >= ev_min."""
     if ev_min < 0:
         raise InvariantError("ev_min must be >= 0")
@@ -69,17 +68,19 @@ class QuoteEvaluation:
     gap_pts: float  # |P - P_bookmaker| in percentage points
 
 
-def evaluate_quote(bet: Bet, prices: Mapping[str, float], p: float, bookmaker: str = "",
-                   ev_min: float = DEFAULT_EV_MIN, method: DevigMethod = DevigMethod.POWER,
-                   max_overround: float = 0.15) -> QuoteEvaluation:
+def evaluate_quote(bet: Bet, prices: Mapping[str, float], p: float, params: Params,
+                   bookmaker: str = "") -> QuoteEvaluation:
     """UNDER05: prices {YES, NO} of "Goal in 1-15 minutes" (NO = Under 0.5).
     DRAW: prices {HOME, DRAW, AWAY} of "1x2 - 15 minutes"."""
     sides = ("NO", "YES") if bet is Bet.UNDER05 else ("DRAW", "HOME", "AWAY")
     if set(prices) != set(sides):
         raise InvariantError(f"{bet} quote needs exactly {sorted(sides)}, got {sorted(prices)}")
-    d = devig(tuple(_check_odds(prices[s]) for s in sides), method, max_overround=max_overround)
+    v = params.value
+    method = v.devig_method
+    d = devig(tuple(_check_odds(prices[s]) for s in sides), method,
+              min_overround=v.overround_min, max_overround=v.overround_max)
     offered = prices[sides[0]]
     p = check_probability(p, "P", strict=True)
     return QuoteEvaluation(bet, bookmaker, offered, d.overround, method, d.probabilities[0], p,
-                           expected_value(offered, p), min_odds(p, ev_min), expected_price(p, d.overround),
+                           expected_value(offered, p), min_odds(p, v.ev_min), expected_price(p, d.overround),
                            abs(p - d.probabilities[0]) * 100.0)

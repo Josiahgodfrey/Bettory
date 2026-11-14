@@ -5,9 +5,18 @@ import math
 import pytest
 
 from app.calculation.invariants import InvariantError
-from app.calculation.models.model_c import MarketQuote, MarketStatus, fit_mu, model_c
+from app.calculation.models.model_c import MarketQuote, MarketStatus, ModelCResult, fit_mu
+from app.calculation.models.model_c import model_c as _model_c
 from app.calculation.poisson import asian_whole_under_share, cdf, score_grid
 from app.domain.enums import DevigMethod, MarketCode
+from tests.support import PARAMS, params
+
+
+def model_c(quotes: list[MarketQuote], r: float | None, s: float | None,
+            method: DevigMethod | None = None) -> ModelCResult:
+    """Model C with the active params; `method` overrides model_c.devig_method."""
+    p = PARAMS if method is None else params(model_c__devig_method=method)
+    return _model_c(quotes, r, s, p)
 
 R, S = 0.28, 0.12
 M = 1.06  # proportional 6% margin used to build realistic prices

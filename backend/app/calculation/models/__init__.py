@@ -12,10 +12,7 @@ from enum import StrEnum
 
 from app.calculation.invariants import InvariantError, check_lambda
 from app.calculation.team_stats import View, WindowStats
-
-DEFAULT_VENUE_WEIGHT = 0.6  # params_v1.4 blend.venue_weight
-DEFAULT_GENERAL_WEIGHT = 0.4  # params_v1.4 blend.general_weight
-DEFAULT_MIN_MATCHES = 10  # params_v1.4 data_gate.history_matches
+from app.domain.params import Params
 
 
 class ModelUnavailableError(ValueError):
@@ -64,8 +61,10 @@ class Expectancy:
         return self.home + self.away
 
 
-def _per_match(stats: WindowStats, period: Period, min_matches: int) -> tuple[float, float]:
-    """(scored, conceded) per match for one window."""
+def _per_match(stats: WindowStats, period: Period, min_matches: int, prior_scored: float, prior_conceded: float,
+               m: float) -> tuple[float, float]:
+    """(scored, conceded) per match for one window, shrunk toward the league rates with `m` pseudo-matches:
+    (goals + m x league rate) / (matches + m). m = 0 gives the raw rate (the 1.4 formula)."""
     if stats.sample_size < min_matches:
         raise ModelUnavailableError(f"{stats.view} window has {stats.sample_size} matches (< {min_matches})")
     if period is Period.FT:
@@ -74,27 +73,29 @@ def _per_match(stats: WindowStats, period: Period, min_matches: int) -> tuple[fl
         if stats.ht_goals_scored is None or stats.ht_goals_conceded is None:
             raise ModelUnavailableError(f"{stats.view} window has matches without an HT score")
         scored, conceded = stats.ht_goals_scored, stats.ht_goals_conceded
-    return scored / stats.sample_size, conceded / stats.sample_size
+    n = stats.sample_size
+    return (scored + m * prior_scored) / (n + m), (conceded + m * prior_conceded) / (n + m)
 
 
-def strength(windows: TeamWindows, period: Period, avg_home: float, avg_away: float,
-             venue_weight: float = DEFAULT_VENUE_WEIGHT, general_weight: float = DEFAULT_GENERAL_WEIGHT,
-             min_matches: int = DEFAULT_MIN_MATCHES) -> Strength:
-    """SYSTEM-DOCUMENTATION 7, Layer 2 (FT) and DATA-SOURCES 14.3 (HT): each rating is a 60/40 blend of
-    the venue view and the general view, divided by the league average for that venue (general view:
-    league average goals per team)."""
+def strength(windows: TeamWindows, period: Period, avg_home: float, avg_away: float, params: Params) -> Strength:
+    """SYSTEM-DOCUMENTATION 7, Layer 2 (FT) and DATA-SOURCES 14.3 (HT): each rating is a venue / general
+    blend (blend.venue_weight / general_weight) of the team's per-match rate divided by the league average
+    for that venue (general view: league average goals per team). Rates are first shrunk toward the league
+    average with model_a.rating_prior_matches pseudo-matches (params 1.5), so ratings from 10 matches are
+    not taken at face value and a team without goals in its window keeps a positive rating."""
     avg_home = check_lambda(avg_home, "league avg home goals")
     avg_away = check_lambda(avg_away, "league avg away goals")
     if avg_home == 0 or avg_away == 0:
         raise ModelUnavailableError("league average goals is 0")
-    if abs(venue_weight + general_weight - 1.0) > 1e-9 or venue_weight < 0 or general_weight < 0:
-        raise InvariantError("venue_weight + general_weight must be 1")
+    venue_weight, general_weight = params.blend.venue_weight, params.blend.general_weight
+    min_matches = params.data_gate.history_matches
+    m = params.model_a.rating_prior_matches.FT if period is Period.FT else params.model_a.rating_prior_matches.HT
     per_team = (avg_home + avg_away) / 2.0
 
-    h_gen_s, h_gen_c = _per_match(windows.home_general, period, min_matches)
-    h_home_s, h_home_c = _per_match(windows.home_home, period, min_matches)
-    a_gen_s, a_gen_c = _per_match(windows.away_general, period, min_matches)
-    a_away_s, a_away_c = _per_match(windows.away_away, period, min_matches)
+    h_gen_s, h_gen_c = _per_match(windows.home_general, period, min_matches, per_team, per_team, m)
+    h_home_s, h_home_c = _per_match(windows.home_home, period, min_matches, avg_home, avg_away, m)
+    a_gen_s, a_gen_c = _per_match(windows.away_general, period, min_matches, per_team, per_team, m)
+    a_away_s, a_away_c = _per_match(windows.away_away, period, min_matches, avg_away, avg_home, m)
 
     def blend(venue: float, venue_avg: float, general: float) -> float:
         return venue_weight * venue / venue_avg + general_weight * general / per_team

@@ -8,6 +8,7 @@ from app.calculation.baselines import BaselineStatus, GlobalShares, Tally, compe
 from app.calculation.devig import devig, overround
 from app.calculation.poisson import score_grid, solve_lambda_from_under
 from app.domain.enums import DevigMethod
+from tests.support import PARAMS, params
 
 # Section 10 inputs: mu 1.40 / 1.10, share s = 0.125, indexes 1.00
 LAM_HOME = 0.125 * 1.40  # 0.175
@@ -36,8 +37,9 @@ def test_under_05_closed_form_recovers_lambda() -> None:
 def test_section_10_bookmaker_a_margin_and_devig() -> None:
     odds = (1.30, 3.20)                                        # 15' Under 0.5 / Over 0.5
     assert round(overround(odds), 3) == 0.082                  # doc: 8.2%
-    mult = devig(odds, DevigMethod.MULTIPLICATIVE)
-    power = devig(odds, DevigMethod.POWER)
+    limits = {"min_overround": PARAMS.value.overround_min, "max_overround": PARAMS.value.overround_max}
+    mult = devig(odds, DevigMethod.MULTIPLICATIVE, **limits)
+    power = devig(odds, DevigMethod.POWER, **limits)
     assert round(mult.probabilities[0], 3) == 0.711            # doc: 71.1%
     assert round(power.probabilities[0], 3) == 0.739           # doc: 73.9%
     assert power.parameter is not None and round(power.parameter, 3) == 1.154   # doc: k = 1.154
@@ -50,7 +52,8 @@ def test_model_l_league_level_example() -> None:
     t = Tally(matches=1000, ft_home=1450, ft_away=1150, ht_matches=1000, ht_home=640, ht_away=510,
               exact_matches=1000, exact_goals=2600, exact_ht_goals=1150, exact_with_ht=1000,
               exact_with_ht_early=322, early_goals=322, zero_known=1000, zero_zero=725)
-    b = competition_baseline(t, GlobalShares(s=0.125, r=0.28, goals=2600, competitions=1), k_goals=0)
+    raw = params(shrinkage__early_share_K_goals=0)            # the doc example uses the raw share
+    b = competition_baseline(t, GlobalShares(s=0.125, r=0.28, goals=2600, competitions=1), raw)
     assert b.status is BaselineStatus.OK
     assert b.r == pytest.approx(0.28) and b.avg_ht_goals == pytest.approx(1.15)
     assert b.lambda15_l == pytest.approx(0.322)                # doc: 1.15 x 0.28 = 0.322

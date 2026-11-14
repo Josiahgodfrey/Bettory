@@ -18,6 +18,7 @@ from app.calculation.models import (
 from app.calculation.models.model_a import combine, model_a
 from app.calculation.models.model_l import model_l, model_l_from_strength
 from app.calculation.team_stats import StatsStatus, View, WindowStats
+from tests.support import DOC_FORMULA, PARAMS, params
 
 
 def ws(view: View, scored: float, conceded: float, ht_scored: float | None = None,
@@ -50,12 +51,12 @@ WINDOWS = TeamWindows(
 
 
 def test_system_doc_section_8_model_a_ft() -> None:
-    st = strength(WINDOWS, Period.FT, 1.45, 1.15)
+    st = strength(WINDOWS, Period.FT, 1.45, 1.15, DOC_FORMULA)
     assert (round(st.attack_home, 3), round(st.defence_away, 3)) == (0.835, 0.876)    # doc
     assert (round(st.attack_away, 3), round(st.defence_home, 3)) == (0.725, 0.777)    # doc: 0.778 (rounded inputs)
     mu = expectancy(st, 1.45, 1.15)
     assert (round(mu.home, 2), round(mu.away, 2)) == (1.06, 0.65)                     # doc
-    a = model_a(WINDOWS, baseline())
+    a = model_a(WINDOWS, baseline(), DOC_FORMULA)
     assert round(a.lambda15_ft.total, 3) == 0.205 and round(a.p00_ft, 3) == 0.815    # doc: 81.5%
 
 
@@ -69,7 +70,7 @@ def test_data_doc_14_4_model_l_match_level() -> None:
 
 
 def test_model_a_is_half_ft_half_ht() -> None:
-    a = model_a(WINDOWS, baseline())
+    a = model_a(WINDOWS, baseline(), DOC_FORMULA)
     assert a.lambda15.home == pytest.approx(0.5 * a.lambda15_ft.home + 0.5 * a.model_l.lambda15.home)
     assert a.mu.home == pytest.approx(a.lambda15.home / 0.12)                # FT-equivalent for the mu blend
     only_ft = combine(a.mu_ft, 0.12, a.model_l, ft_weight=1.0)
@@ -79,45 +80,59 @@ def test_model_a_is_half_ft_half_ht() -> None:
 
 
 def test_l_uses_ht_ratings() -> None:
-    res = model_l(WINDOWS, baseline())
+    res = model_l(WINDOWS, baseline(), DOC_FORMULA)
     assert res.strength.attack_home == pytest.approx(0.6 * 0.6 / 0.64 + 0.4 * 0.5 / 0.575)
     assert res.lambda15.total == pytest.approx(0.28 * res.lambda_ht.total)
 
 
 def test_unavailable_inputs_raise_with_reason() -> None:
     with pytest.raises(ModelUnavailableError, match="no early share"):
-        model_a(WINDOWS, baseline(s=None, status=BaselineStatus.INSUFFICIENT_DATA))
+        model_a(WINDOWS, baseline(s=None, status=BaselineStatus.INSUFFICIENT_DATA), DOC_FORMULA)
     with pytest.raises(ModelUnavailableError, match="no r"):
-        model_l(WINDOWS, baseline(r=None))
+        model_l(WINDOWS, baseline(r=None), DOC_FORMULA)
     no_ht = replace(WINDOWS, away_away=ws(View.AWAY, 0.8, 1.3))
     with pytest.raises(ModelUnavailableError, match="HT score"):
-        model_l(no_ht, baseline())
-    model_a_ft_only = strength(no_ht, Period.FT, 1.45, 1.15)                # FT ratings do not need HT
+        model_l(no_ht, baseline(), DOC_FORMULA)
+    model_a_ft_only = strength(no_ht, Period.FT, 1.45, 1.15, DOC_FORMULA)                # FT ratings do not need HT
     assert model_a_ft_only.attack_away > 0
     short = replace(WINDOWS, home_home=ws(View.HOME, 1.2, 0.9, 0.6, 0.4, n=6))
     with pytest.raises(ModelUnavailableError, match="6 matches"):
-        model_a(short, baseline())
+        model_a(short, baseline(), DOC_FORMULA)
     with pytest.raises(ModelUnavailableError, match="average goals is 0"):
-        strength(WINDOWS, Period.FT, 0.0, 1.15)
+        strength(WINDOWS, Period.FT, 0.0, 1.15, DOC_FORMULA)
 
 
 def test_invalid_configuration_rejected() -> None:
     with pytest.raises(InvariantError):
         TeamWindows(WINDOWS.home_home, WINDOWS.home_general, WINDOWS.away_general, WINDOWS.away_away)
+    with pytest.raises(ValueError):
+        params(blend__venue_weight=0.7, blend__general_weight=0.4)          # rejected when loaded
     with pytest.raises(InvariantError):
-        strength(WINDOWS, Period.FT, 1.45, 1.15, venue_weight=0.7, general_weight=0.4)
-    with pytest.raises(InvariantError):
-        combine(Expectancy(home=1.0, away=1.0), 0.12, model_l(WINDOWS, baseline()), ft_weight=1.5)
+        combine(Expectancy(home=1.0, away=1.0), 0.12, model_l(WINDOWS, baseline(), DOC_FORMULA), ft_weight=1.5)
 
 
 def test_stronger_attack_lowers_p00() -> None:
     better = replace(WINDOWS, home_home=ws(View.HOME, 2.0, 0.9, 1.0, 0.4))
-    assert model_a(better, baseline()).p00 < model_a(WINDOWS, baseline()).p00
+    assert model_a(better, baseline(), DOC_FORMULA).p00 < model_a(WINDOWS, baseline(), DOC_FORMULA).p00
 
 
-def test_team_that_never_scores_gives_zero_lambda() -> None:
-    """Documents a known weakness (no shrinkage of ratings in the doc formula): see report."""
+def test_rating_shrinkage_fixes_a_team_that_never_scores() -> None:
+    """Doc formula (no shrinkage): 0 goals in the window -> expected goals 0 (an early goal 'impossible').
+    params 1.5 shrink the rates toward the league average, so the expectancy stays positive."""
     blank = replace(WINDOWS, away_away=ws(View.AWAY, 0.0, 1.3, 0.0, 0.6),
                     away_general=ws(View.GENERAL, 0.0, 1.1, 0.0, 0.5))
-    a = model_a(blank, baseline())
-    assert a.lambda15.away == 0.0
+    assert model_a(blank, baseline(), DOC_FORMULA).lambda15.away == 0.0
+    shrunk = model_a(blank, baseline(), PARAMS)
+    assert shrunk.lambda15.away > 0.0 and shrunk.p00 < 1.0
+
+
+def test_rating_shrinkage_formula() -> None:
+    """params 1.5: per-match rate = (goals + m x league rate) / (matches + m) before the rating is formed."""
+    m = PARAMS.model_a.rating_prior_matches.FT
+    st = strength(WINDOWS, Period.FT, 1.45, 1.15, PARAMS)
+    per_team = (1.45 + 1.15) / 2
+    home_rate = (12 + m * 1.45) / (10 + m)            # home team scored 12 in 10 home matches
+    general_rate = (11 + m * per_team) / (10 + m)     # 11 in 10 general matches
+    assert st.attack_home == pytest.approx(0.6 * home_rate / 1.45 + 0.4 * general_rate / per_team)
+    raw = strength(WINDOWS, Period.FT, 1.45, 1.15, DOC_FORMULA)
+    assert abs(st.attack_home - 1.0) < abs(raw.attack_home - 1.0)    # pulled toward the league average

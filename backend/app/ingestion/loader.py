@@ -8,6 +8,7 @@ Odds are stored only for matches that are already linked. Runs inside the caller
 from __future__ import annotations
 
 from collections import Counter
+from collections.abc import Mapping
 from dataclasses import dataclass, field
 from uuid import UUID
 
@@ -32,7 +33,8 @@ class LoadStats:
 
 
 class Loader:
-    def __init__(self, conn: Connection, registry: Registry, cutoff_minute: int = 15) -> None:
+    def __init__(self, conn: Connection, registry: Registry, cutoff_minute: int) -> None:
+        """cutoff_minute: params settlement.cutoff_label_minute (a goal labelled <= it is inside 0-15)."""
         self.conn = conn
         self.registry = registry
         self.cutoff = cutoff_minute
@@ -49,7 +51,7 @@ class Loader:
         return self._seasons[key]
 
     def team_id(self, source: SourceCode, comp: CompetitionDef, name: str, provider_id: str | None,
-                stats: LoadStats, context: dict[str, object]) -> UUID | None:
+                stats: LoadStats, context: Mapping[str, object]) -> UUID | None:
         key = f"id:{provider_id}" if provider_id else f"name:{comp.country}|{name.strip()}"
         if (source, key) in self._teams:
             return self._teams[(source, key)]

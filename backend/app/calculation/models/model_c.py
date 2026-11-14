@@ -32,20 +32,16 @@ from app.calculation.poisson import (
     solve_lambda_from_asian_whole,
     solve_lambda_from_under,
 )
-from app.domain.enums import DevigMethod, MarketCode
+from app.domain.enums import MarketCode
+from app.domain.params import Params
 
-DEFAULT_MAX_LINE_DISAGREEMENT = 0.20  # params_v1.4 model_c.max_line_disagreement
 MU_LOW, MU_HIGH = 0.05, 6.0  # doc 11.4 bounds
 _TOTAL_SELECTIONS = frozenset({"OVER", "UNDER"})
 _1X2_SELECTIONS = ("HOME", "DRAW", "AWAY")
 _INPUT_MARKETS = {MarketCode.FT_1X2, MarketCode.FT_TOTAL, MarketCode.HT_TOTAL, MarketCode.HT_ASIAN_TOTAL}
-# doc 11.1: the lines Model C uses. Extreme lines (odds near 1) carry little information and sit in the
-# tail where the Poisson assumption is weakest; they are reported as ignored, never used.
-INPUT_LINES: dict[MarketCode, frozenset[float]] = {
-    MarketCode.HT_TOTAL: frozenset({0.5, 1.5}),
-    MarketCode.HT_ASIAN_TOTAL: frozenset({1.0}),
-    MarketCode.FT_TOTAL: frozenset({1.5, 2.5, 3.5}),
-}
+# The lines Model C uses come from params model_c.input_lines (doc 11.1). Extreme lines (odds near 1)
+# carry little information and sit in the tail where the Poisson assumption is weakest; any line not
+# listed is reported as ignored, never used.
 
 
 class MarketStatus(StrEnum):  # verification_results.market_consistency
@@ -118,13 +114,18 @@ def _check_quote(q: MarketQuote) -> None:
         raise InvariantError(f"O/U line must be a half-goal line: {q.line}")
 
 
-def line_estimate(q: MarketQuote, r: float | None, s: float | None,
-                  method: DevigMethod = DevigMethod.POWER) -> LineEstimate:
+def _devig(odds: tuple[float, ...], params: Params) -> tuple[float, ...]:
+    v = params.value
+    return devig(odds, params.model_c.devig_method, min_overround=v.overround_min,
+                 max_overround=v.overround_max).probabilities
+
+
+def line_estimate(q: MarketQuote, r: float | None, s: float | None, params: Params) -> LineEstimate:
     """One totals quote -> lambda of its period -> lambda15. Raises ValueError subclasses if unusable."""
     _check_quote(q)
     if q.market is MarketCode.FT_1X2 or q.line is None:
         raise InvariantError("line_estimate takes totals quotes")
-    p_under = devig((q.prices["UNDER"], q.prices["OVER"]), method).probabilities[0]
+    p_under = _devig((q.prices["UNDER"], q.prices["OVER"]), params)[0]
     if q.market is MarketCode.HT_ASIAN_TOTAL and float(q.line).is_integer():
         lam = solve_lambda_from_asian_whole(int(q.line), p_under)
     else:
@@ -173,11 +174,11 @@ def fit_mu(p_1x2: tuple[float, float, float],
 _PRIORITY = (MarketCode.HT_TOTAL, MarketCode.HT_ASIAN_TOTAL, MarketCode.FT_TOTAL)
 
 
-def model_c(quotes: Sequence[MarketQuote], r: float | None, s: float | None,
-            max_line_disagreement: float = DEFAULT_MAX_LINE_DISAGREEMENT,
-            method: DevigMethod = DevigMethod.POWER) -> ModelCResult:
+def model_c(quotes: Sequence[MarketQuote], r: float | None, s: float | None, params: Params) -> ModelCResult:
     """`r` / `s`: the fixture competition's shares (CompetitionBaseline). Quotes that cannot be used are
     listed in `reasons`; the model is UNAVAILABLE when no totals line or 1X2 is usable."""
+    max_line_disagreement = params.model_c.max_line_disagreement
+    input_lines = params.model_c.input_lines
     reasons: list[str] = []
     lines: list[LineEstimate] = []
     p_1x2: tuple[float, float, float] | None = None
@@ -188,12 +189,12 @@ def model_c(quotes: Sequence[MarketQuote], r: float | None, s: float | None,
                 if p_1x2 is not None:
                     reasons.append(f"second 1X2 quote ignored ({q.bookmaker or 'unnamed'})")
                     continue
-                d = devig(tuple(q.prices[k] for k in _1X2_SELECTIONS), method)
-                p_1x2 = (d.probabilities[0], d.probabilities[1], d.probabilities[2])
-            elif q.line not in INPUT_LINES[q.market]:
+                d = _devig(tuple(q.prices[k] for k in _1X2_SELECTIONS), params)
+                p_1x2 = (d[0], d[1], d[2])
+            elif q.line not in input_lines.get(q.market, ()):
                 reasons.append(f"{q.market} {q.line:g} {q.bookmaker}: line not a Model C input (doc 11.1)".strip())
             else:
-                lines.append(line_estimate(q, r, s, method))
+                lines.append(line_estimate(q, r, s, params))
         except ValueError as exc:  # MarketError, NoSolutionError, missing share
             reasons.append(f"{q.market} {q.line or ''} {q.bookmaker}: {exc}".strip())
 

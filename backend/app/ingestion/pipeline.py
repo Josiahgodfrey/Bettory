@@ -14,7 +14,9 @@ from uuid import UUID
 
 from sqlalchemy import Engine
 
+from app.core.settings import BACKEND_DIR, get_settings
 from app.domain.enums import FixtureStatus, RunStatus, SourceCode
+from app.domain.params import load_params
 from app.domain.registry import Registry, fdcouk_season_code, season_start_year
 from app.ingestion.api_football import ApiFootball
 from app.ingestion.base import Fetched
@@ -48,6 +50,8 @@ class Job:
         self.engine, self.store, self.registry, self.source = engine, store, registry, source
         self.reparse = reparse
         self.stats: Counter[str] = Counter()
+        # the 15' cutoff comes from the active params file (single source of parameter values)
+        self.cutoff_minute = load_params(BACKEND_DIR / get_settings().params_file).settlement.cutoff_label_minute
         with engine.begin() as conn:
             self.run_id: UUID = raw_repo.start_run(conn, source, name)
 
@@ -65,7 +69,8 @@ class Job:
                 self.stats["payloads_unchanged_skipped"] += 1
                 return None
             parsed = parse(fetched.body)
-            loaded = Loader(conn, self.registry).load(parsed, payload.id, PARSER_VERSIONS[self.source])
+            loader = Loader(conn, self.registry, self.cutoff_minute)
+            loaded = loader.load(parsed, payload.id, PARSER_VERSIONS[self.source])
             self.stats.update(loaded.counts)
             return parsed
 
@@ -76,7 +81,7 @@ class Job:
         return self.stats
 
 
-def _run(job: Job, client_requests: Callable[[], int], body: Callable[[], None]) -> Counter[str]:
+def _run(job: Job, client_requests: Callable[[], int], body: Callable[[], object]) -> Counter[str]:
     try:
         body()
     except BaseException as exc:
@@ -144,7 +149,8 @@ def api_football_day(engine: Engine, store: RawStore, registry: Registry, api_ke
         job.stats["registered_finished"] += len(finished)
         job.stats["registered_upcoming"] += len(upcoming)
         for m in finished[:max_event_requests]:
-            job.process(client.fixture_with_events(m.provider_match_key), lambda raw: p_af.parse_fixtures(raw, registry))
+            job.process(client.fixture_with_events(m.provider_match_key),
+                        lambda raw: p_af.parse_fixtures(raw, registry))
         for m in upcoming[:max_odds_requests]:
             job.process(client.http.get("/odds", {"fixture": m.provider_match_key}),
                         lambda raw: p_af.parse_odds(raw, registry))

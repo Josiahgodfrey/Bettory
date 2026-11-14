@@ -23,18 +23,10 @@ from enum import StrEnum
 
 from app.calculation.baselines import CompetitionBaseline
 from app.calculation.invariants import InvariantError, check_lambda, check_probability
-from app.calculation.models import (
-    DEFAULT_GENERAL_WEIGHT,
-    DEFAULT_MIN_MATCHES,
-    DEFAULT_VENUE_WEIGHT,
-    ModelUnavailableError,
-)
+from app.calculation.models import ModelUnavailableError
 from app.calculation.team_stats import TeamMatch, View, check_history
 from app.domain.enums import CompetitionType, DataStatus
-
-DEFAULT_INDEX_K = 3.0  # params_v1.4 shrinkage.team_index_k
-DEFAULT_W_I = 0.5  # params_v1.4 shrinkage.early_index_trust_w_I
-DEFAULT_MIN_COMPETITION_MATCHES = 50  # params_v1.4 competition_baselines.min_matches
+from app.domain.params import Params
 
 
 class BaselineMethod(StrEnum):
@@ -48,9 +40,10 @@ def _lambda15(b: CompetitionBaseline | None) -> float | None:
 
 
 def expected_for_history_match(own: CompetitionBaseline | None, team_domestic: CompetitionBaseline | None,
-                               min_matches: int = DEFAULT_MIN_COMPETITION_MATCHES) -> tuple[float, BaselineMethod]:
-    """16.7: the match's own competition-season baseline; below `min_matches` (or missing) the team's
-    domestic league baseline of that season."""
+                               params: Params) -> tuple[float, BaselineMethod]:
+    """16.7: the match's own competition-season baseline; below competition_baselines.min_matches (or
+    missing) the team's domestic league baseline of that season."""
+    min_matches = params.competition_baselines.min_matches
     if own is not None and own.matches >= min_matches and (lam := _lambda15(own)) is not None:
         return lam, BaselineMethod.OWN
     if (lam := _lambda15(team_domestic)) is not None:
@@ -60,9 +53,10 @@ def expected_for_history_match(own: CompetitionBaseline | None, team_domestic: C
 
 def fixture_baseline(competition_type: CompetitionType, own: CompetitionBaseline | None,
                      home_domestic: CompetitionBaseline | None, away_domestic: CompetitionBaseline | None,
-                     min_matches: int = DEFAULT_MIN_COMPETITION_MATCHES) -> tuple[float, BaselineMethod]:
-    """16.6: league fixture -> that league; cup / continental -> its own baseline if >= 50 matches,
-    otherwise the average of the two teams' domestic league baselines."""
+                     params: Params) -> tuple[float, BaselineMethod]:
+    """16.6: league fixture -> that league; cup / continental -> its own baseline if it has at least
+    competition_baselines.min_matches matches, otherwise the average of the two teams' domestic baselines."""
+    min_matches = params.competition_baselines.min_matches
     if competition_type is CompetitionType.FRIENDLY:
         raise ModelUnavailableError("friendlies are not priced")
     if competition_type is CompetitionType.LEAGUE:
@@ -94,16 +88,15 @@ class TeamIndex:
     index: float
 
 
-def team_index(history: Sequence[IndexMatch], view: View, as_of: datetime, k: float = DEFAULT_INDEX_K,
-               window: int = DEFAULT_MIN_MATCHES) -> TeamIndex:
-    """Index of one view from the newest `window` matches (newest first, before as_of)."""
+def team_index(history: Sequence[IndexMatch], view: View, as_of: datetime, params: Params) -> TeamIndex:
+    """Index of one view from the newest data_gate.history_matches matches (newest first, before as_of),
+    shrunk with k = shrinkage.team_index_k."""
+    k, window = params.shrinkage.team_index_k, params.data_gate.history_matches
     check_history([h.match for h in history], as_of)
     if view is View.HOME and not all(h.match.is_home for h in history):
         raise InvariantError("HOME view received an away match")
     if view is View.AWAY and any(h.match.is_home for h in history):
         raise InvariantError("AWAY view received a home match")
-    if k < 0:
-        raise InvariantError("k must be >= 0")
     hs = list(history[:window])
     if len(hs) < window:
         raise ModelUnavailableError(f"{view} index needs {window} matches, has {len(hs)}")
@@ -139,16 +132,15 @@ class ModelB2Result:
 
 
 def model_b2(home_general: TeamIndex, home_home: TeamIndex, away_general: TeamIndex, away_away: TeamIndex,
-             fixture_lambda15: float, baseline_method: BaselineMethod = BaselineMethod.OWN,
-             venue_weight: float = DEFAULT_VENUE_WEIGHT, general_weight: float = DEFAULT_GENERAL_WEIGHT,
-             w_i: float = DEFAULT_W_I) -> ModelB2Result:
+             fixture_lambda15: float, params: Params,
+             baseline_method: BaselineMethod = BaselineMethod.OWN) -> ModelB2Result:
+    venue_weight, general_weight = params.blend.venue_weight, params.blend.general_weight
+    w_i = params.shrinkage.early_index_trust_w_I
     views = ((home_general, View.GENERAL), (home_home, View.HOME), (away_general, View.GENERAL),
              (away_away, View.AWAY))
     for idx, view in views:
         if idx.view is not view:
             raise InvariantError(f"expected a {view} index, got {idx.view}")
-    if abs(venue_weight + general_weight - 1.0) > 1e-9 or not 0.0 <= w_i <= 1.0:
-        raise InvariantError("invalid Model B v2 weights")
     fixture_lambda15 = check_lambda(fixture_lambda15, "fixture lambda15")
     i_home = venue_weight * home_home.index + general_weight * home_general.index
     i_away = venue_weight * away_away.index + general_weight * away_general.index

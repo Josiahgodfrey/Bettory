@@ -17,9 +17,6 @@ from dataclasses import dataclass
 from app.calculation.baselines import CompetitionBaseline
 from app.calculation.invariants import check_probability
 from app.calculation.models import (
-    DEFAULT_GENERAL_WEIGHT,
-    DEFAULT_MIN_MATCHES,
-    DEFAULT_VENUE_WEIGHT,
     Expectancy,
     ModelUnavailableError,
     Period,
@@ -28,6 +25,7 @@ from app.calculation.models import (
     expectancy,
     strength,
 )
+from app.domain.params import Params
 
 
 @dataclass(frozen=True)
@@ -46,10 +44,8 @@ def model_l_from_strength(st: Strength, avg_ht_home: float, avg_ht_away: float, 
     return ModelLResult(st, ht, r, l15, check_probability(math.exp(-l15.total), "P_L"))
 
 
-def model_l(windows: TeamWindows, baseline: CompetitionBaseline, venue_weight: float = DEFAULT_VENUE_WEIGHT,
-            general_weight: float = DEFAULT_GENERAL_WEIGHT, min_matches: int = DEFAULT_MIN_MATCHES) -> ModelLResult:
+def model_l(windows: TeamWindows, baseline: CompetitionBaseline, params: Params) -> ModelLResult:
     if baseline.r is None or baseline.avg_ht_home_goals is None or baseline.avg_ht_away_goals is None:
         raise ModelUnavailableError(f"competition baseline has no r / HT averages ({baseline.status})")
-    st = strength(windows, Period.HT, baseline.avg_ht_home_goals, baseline.avg_ht_away_goals,
-                  venue_weight, general_weight, min_matches)
+    st = strength(windows, Period.HT, baseline.avg_ht_home_goals, baseline.avg_ht_away_goals, params)
     return model_l_from_strength(st, baseline.avg_ht_home_goals, baseline.avg_ht_away_goals, baseline.r)

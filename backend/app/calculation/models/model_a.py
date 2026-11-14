@@ -17,9 +17,6 @@ from dataclasses import dataclass
 from app.calculation.baselines import CompetitionBaseline
 from app.calculation.invariants import InvariantError, check_probability
 from app.calculation.models import (
-    DEFAULT_GENERAL_WEIGHT,
-    DEFAULT_MIN_MATCHES,
-    DEFAULT_VENUE_WEIGHT,
     Expectancy,
     ModelUnavailableError,
     Period,
@@ -29,8 +26,7 @@ from app.calculation.models import (
     strength,
 )
 from app.calculation.models.model_l import ModelLResult, model_l
-
-DEFAULT_FT_WEIGHT = 0.5  # P_A = 0.5 x A_FT + 0.5 x A_HT
+from app.domain.params import Params
 
 
 @dataclass(frozen=True)
@@ -47,8 +43,9 @@ class ModelAResult:
     p00: float  # P_A
 
 
-def combine(mu_ft: Expectancy, s: float, l_result: ModelLResult, ft_weight: float = DEFAULT_FT_WEIGHT,
+def combine(mu_ft: Expectancy, s: float, l_result: ModelLResult, ft_weight: float,
             strength_ft: Strength | None = None) -> ModelAResult:
+    """ft_weight = params model_a.ft_weight (P_A = ft_weight x A_FT + (1 - ft_weight) x A_HT)."""
     check_probability(s, "s", strict=True)
     if not 0.0 <= ft_weight <= 1.0:
         raise InvariantError("ft_weight must be within [0, 1]")
@@ -64,13 +61,10 @@ def combine(mu_ft: Expectancy, s: float, l_result: ModelLResult, ft_weight: floa
     )
 
 
-def model_a(windows: TeamWindows, baseline: CompetitionBaseline, ft_weight: float = DEFAULT_FT_WEIGHT,
-            venue_weight: float = DEFAULT_VENUE_WEIGHT, general_weight: float = DEFAULT_GENERAL_WEIGHT,
-            min_matches: int = DEFAULT_MIN_MATCHES) -> ModelAResult:
+def model_a(windows: TeamWindows, baseline: CompetitionBaseline, params: Params) -> ModelAResult:
     if baseline.s is None:
         raise ModelUnavailableError(f"competition baseline has no early share s ({baseline.status})")
-    st = strength(windows, Period.FT, baseline.avg_home_goals, baseline.avg_away_goals,
-                  venue_weight, general_weight, min_matches)
+    st = strength(windows, Period.FT, baseline.avg_home_goals, baseline.avg_away_goals, params)
     mu_ft = expectancy(st, baseline.avg_home_goals, baseline.avg_away_goals)
-    l_result = model_l(windows, baseline, venue_weight, general_weight, min_matches)
-    return combine(mu_ft, baseline.s, l_result, ft_weight, st)
+    l_result = model_l(windows, baseline, params)
+    return combine(mu_ft, baseline.s, l_result, params.model_a.ft_weight, st)

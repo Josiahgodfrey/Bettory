@@ -25,10 +25,7 @@ from typing import Any
 from app.calculation.invariants import InvariantError
 from app.domain.enums import DataStatus
 from app.domain.models import Score
-
-DEFAULT_WINDOW = 10  # params_v1.4 data_gate.history_matches
-DEFAULT_RECENT = 5  # red flag: goal before 15' in 3+ of the last 5
-DEFAULT_H2H_LIMIT = 10
+from app.domain.params import Params
 
 _EXACT = {DataStatus.COMPLETE, DataStatus.DERIVED}
 _ZERO_KNOWN = _EXACT | {DataStatus.PARTIAL_DRAW_UNKNOWN}
@@ -149,9 +146,10 @@ def check_history(matches: Sequence[TeamMatch], as_of: datetime) -> None:
             raise InvariantError("matches must be ordered newest first")
 
 
-def window_stats(matches: Sequence[TeamMatch], view: View, as_of: datetime, window: int = DEFAULT_WINDOW,
-                 recent: int = DEFAULT_RECENT) -> WindowStats:
-    """Statistics of the newest `window` matches of one view (HOME: home matches only, AWAY: away only)."""
+def window_stats(matches: Sequence[TeamMatch], view: View, as_of: datetime, params: Params) -> WindowStats:
+    """Statistics of the newest `data_gate.history_matches` matches of one view (HOME: home matches only,
+    AWAY: away only); the recent-early-goal count uses `red_flags.recent_window`."""
+    window, recent = params.data_gate.history_matches, params.red_flags.recent_window
     check_history(matches, as_of)
     if view is View.HOME and not all(m.is_home for m in matches):
         raise InvariantError("HOME view received an away match")
@@ -222,12 +220,18 @@ class H2HStats:
     early_goal: Rate | None = None
 
 
-def h2h_stats(meetings: Sequence[TeamMatch], scope: H2HScope, as_of: datetime,
-              limit: int = DEFAULT_H2H_LIMIT) -> H2HStats:
+def _years_before(t: datetime, years: int) -> datetime:
+    """Same date `years` earlier (29 February -> 28 February)."""
+    return t.replace(year=t.year - years, day=28) if (t.month, t.day) == (2, 29) else t.replace(year=t.year - years)
+
+
+def h2h_stats(meetings: Sequence[TeamMatch], scope: H2HScope, as_of: datetime, params: Params) -> H2HStats:
     """`meetings` seen from the fixture's home team (is_home = it played at home), newest first.
     H2H is context only (no weight in the formula); its 15' values follow the same selection-bias rule."""
     check_history(meetings, as_of)
-    ms = [m for m in meetings if scope is H2HScope.ALL_VENUES or m.is_home][:limit]
+    oldest = _years_before(as_of, params.h2h.max_years)
+    ms = [m for m in meetings if (scope is H2HScope.ALL_VENUES or m.is_home) and m.kickoff_utc >= oldest]
+    ms = ms[:params.h2h.max_meetings]
     n = len(ms)
     incomplete = sum(m.data_status is DataStatus.INCOMPLETE for m in ms)
     reasons = (f"{incomplete} INCOMPLETE meetings",) if incomplete else ()

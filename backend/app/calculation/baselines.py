@@ -27,14 +27,8 @@ from typing import Any
 from app.calculation.invariants import InvariantError, check_probability
 from app.domain.enums import DataStatus
 from app.domain.models import Score
+from app.domain.params import Params
 from app.domain.registry import season_start_year
-
-# params_v1.4: shrinkage.early_share_K_goals, competition_baselines.*
-DEFAULT_K_GOALS = 300
-DEFAULT_MIN_MATCHES = 50
-DEFAULT_MAX_POOLED_SEASONS = 3
-DEFAULT_SHARE_REVIEW_LOW = 0.09
-DEFAULT_SHARE_REVIEW_HIGH = 0.16
 
 _EXACT_EARLY = {DataStatus.COMPLETE, DataStatus.DERIVED}  # exact number of 0-15 goals known
 _ZERO_KNOWN = _EXACT_EARLY | {DataStatus.PARTIAL_DRAW_UNKNOWN}  # "goal before 15'?" known
@@ -121,9 +115,9 @@ def tally(matches: Iterable[BaselineMatch]) -> Tally:
     return Tally(**t)
 
 
-def pool_seasons(by_season: dict[str, Tally], max_seasons: int = DEFAULT_MAX_POOLED_SEASONS,
-                 ) -> tuple[Tally, tuple[str, ...]]:
-    """The most recent `max_seasons` seasons pooled (labels sorted by start year, newest first)."""
+def pool_seasons(by_season: dict[str, Tally], max_seasons: int) -> tuple[Tally, tuple[str, ...]]:
+    """The most recent `max_seasons` seasons pooled (labels sorted by start year, newest first);
+    max_seasons = params competition_baselines.max_pooled_seasons."""
     if max_seasons < 1:
         raise InvariantError("max_seasons must be >= 1")
     labels = sorted(by_season, key=season_start_year, reverse=True)[:max_seasons]
@@ -206,15 +200,11 @@ class CompetitionBaseline:
         return self.avg_ht_home_goals + self.avg_ht_away_goals
 
 
-def competition_baseline(
-    t: Tally,
-    shares: GlobalShares,
-    seasons: tuple[str, ...] = (),
-    k_goals: float = DEFAULT_K_GOALS,
-    min_matches: int = DEFAULT_MIN_MATCHES,
-    share_review_low: float = DEFAULT_SHARE_REVIEW_LOW,
-    share_review_high: float = DEFAULT_SHARE_REVIEW_HIGH,
-) -> CompetitionBaseline:
+def competition_baseline(t: Tally, shares: GlobalShares, params: Params,
+                         seasons: tuple[str, ...] = ()) -> CompetitionBaseline:
+    cb = params.competition_baselines
+    k_goals, min_matches = params.shrinkage.early_share_K_goals, cb.min_matches
+    share_review_low, share_review_high = cb.share_review_low, cb.share_review_high
     reasons: list[str] = []
     counts = {"matches": t.matches, "exact": t.exact_matches, "partial": t.partial, "incomplete": t.incomplete}
     if t.matches < min_matches:

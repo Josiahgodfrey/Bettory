@@ -4,8 +4,17 @@ import math
 
 import pytest
 
-from app.calculation.devig import MarketError, check_overround, devig, implied_probabilities, overround
+from app.calculation.devig import Devigged, MarketError, check_overround, implied_probabilities, overround
+from app.calculation.devig import devig as _devig
 from app.domain.enums import DevigMethod
+from tests.support import PARAMS
+
+
+def devig(odds: tuple[object, ...], method: DevigMethod = PARAMS.value.devig_method,
+          min_overround: float = PARAMS.value.overround_min) -> Devigged:
+    """devig with the active params file's margin limits."""
+    return _devig(odds, method, min_overround=min_overround,  # type: ignore[arg-type]
+                  max_overround=PARAMS.value.overround_max)
 
 ALL = list(DevigMethod)
 
@@ -62,7 +71,7 @@ def test_implausible_margins_rejected() -> None:
     with pytest.raises(MarketError, match="overround"):
         devig((2.20, 2.20))                                     # negative margin: mixed bookmakers / arbitrage
     assert devig((2.20, 2.20), min_overround=-0.1).probabilities == pytest.approx((0.5, 0.5))
-    assert check_overround(0.08) == 0.08
+    assert check_overround(0.08, PARAMS.value.overround_min, PARAMS.value.overround_max) == 0.08
 
 
 def test_implied_probabilities() -> None:
