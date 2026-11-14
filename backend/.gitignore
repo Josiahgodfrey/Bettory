@@ -21,3 +21,6 @@ dist/
 .coverage
 htmlcov/
 .hypothesis/
+
+# Phase 0 probe samples (raw provider responses)
+phase0/
