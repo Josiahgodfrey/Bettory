@@ -18,4 +18,23 @@ DATA TO DOWNLOAD
 -- Use the average to calculate each match of the give the percentage
    of goals scored in the given timeline
 
+MATCH TEAM CATEGORIZATION:\
+-- One team can be involved in more than one league so 
+   we have to calculate the 0-10 min score avg using the leagues avg for comparison
+   so comparison will be done according to the league's avg
 
+MAIN SOURCE OF DATA FORALL TO FOLLOW
+-- Which API provider will be the main source of data for the system use beside other 
+   important sources of data we have for our system.
+
+ Betting window:
+-- I need the system to create me the successful bet matches of at most 50, even after
+   analyzing all games of the given day
+-- Betting window should be 01:00 am up to 10:00 am 
+   the second window should be at 13:00 pm up to 22:00 pm
+-- This will include all matches of the day that the system will give to me before 01:00 am at night
+   and before 13:00 pm in the noon
+-- noon games will include all  games that will play up to 00:00am also night games will include
+   all games that will play up to 12:00 pm
+-- So in that window i need to system to finish the analysis and verification 2 hours before all 
+   matches of a given session have started.
