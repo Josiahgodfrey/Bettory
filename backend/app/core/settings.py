@@ -61,7 +61,7 @@ class Settings(BaseSettings):
     telegram_chat_id: str = ""
 
     # Calculation parameters (versioned file in config/)
-    params_file: str = "config/params_v1.4.yaml"
+    params_file: str = "config/params_v1.5.yaml"
 
     @property
     def resolved_database_user(self) -> str:
