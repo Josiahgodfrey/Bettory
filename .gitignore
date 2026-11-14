@@ -1,4 +1,9 @@
+# Secrets: never commit environment files (anywhere in the repository)
+.env
+.env.*
+*.env
+!.env.example
+
 # Python bytecode caches (anywhere in the repository)
 __pycache__/
 *.py[cod]
-.env
