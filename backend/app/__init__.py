@@ -1,0 +1,1 @@
+"""BETTORY backend application."""
