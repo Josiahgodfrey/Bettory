@@ -44,12 +44,15 @@ class Job:
     """One ingestion run for one source."""
 
     def __init__(self, engine: Engine, store: RawStore, registry: Registry, source: SourceCode, name: str,
-                 reparse: bool = False) -> None:
+                 reparse: bool = False, run_id: UUID | None = None) -> None:
+        """`run_id`: an already created raw.ingestion_runs row (the API creates it so it can answer at once)."""
         self.engine, self.store, self.registry, self.source = engine, store, registry, source
         self.reparse = reparse
         self.stats: Counter[str] = Counter()
-        with engine.begin() as conn:
-            self.run_id: UUID = raw_repo.start_run(conn, source, name)
+        if run_id is None:
+            with engine.begin() as conn:
+                run_id = raw_repo.start_run(conn, source, name)
+        self.run_id: UUID = run_id
 
     def process(self, fetched: Fetched, parse: Parse) -> ParseResult | None:
         digest = sha256(fetched.body)
@@ -72,11 +75,12 @@ class Job:
     def finish(self, requests_used: int, error: BaseException | None = None) -> Counter[str]:
         with self.engine.begin() as conn:
             raw_repo.finish_run(conn, self.run_id, RunStatus.FAILED if error else RunStatus.SUCCEEDED,
-                                requests_used, self.stats["source_records"], repr(error) if error else None)
+                                requests_used, self.stats["source_records"], repr(error) if error else None,
+                                dict(self.stats))
         return self.stats
 
 
-def _run(job: Job, client_requests: Callable[[], int], body: Callable[[], None]) -> Counter[str]:
+def _run(job: Job, client_requests: Callable[[], int], body: Callable[[], object]) -> Counter[str]:
     try:
         body()
     except BaseException as exc:
@@ -89,39 +93,42 @@ def _run(job: Job, client_requests: Callable[[], int], body: Callable[[], None])
 
 
 def openfootball(engine: Engine, store: RawStore, registry: Registry, comp_code: str, season: str,
-                 full: bool, reparse: bool = False) -> Counter[str]:
+                 full: bool, reparse: bool = False, run_id: UUID | None = None) -> Counter[str]:
     comp = registry.get(comp_code)
     key = comp.providers[SourceCode.OPENFOOTBALL]
     client = OpenFootball()
-    job = Job(engine, store, registry, SourceCode.OPENFOOTBALL, f"openfootball:{comp_code}:{season}", reparse)
+    job = Job(engine, store, registry, SourceCode.OPENFOOTBALL, f"openfootball:{comp_code}:{season}",
+              reparse, run_id)
     return _run(job, lambda: client.requests_used, lambda: job.process(
         client.season_file(season, key, full), lambda raw: p_of.parse_season_file(raw, comp, season, full)))
 
 
 def football_data_org(engine: Engine, store: RawStore, registry: Registry, api_key: str, comp_code: str,
-                      season: str, reparse: bool = False) -> Counter[str]:
+                      season: str, reparse: bool = False, run_id: UUID | None = None) -> Counter[str]:
     code = registry.get(comp_code).providers[SourceCode.FOOTBALL_DATA_ORG]
     client = FootballDataOrg(api_key)
-    job = Job(engine, store, registry, SourceCode.FOOTBALL_DATA_ORG, f"football_data_org:{comp_code}:{season}", reparse)
+    job = Job(engine, store, registry, SourceCode.FOOTBALL_DATA_ORG, f"football_data_org:{comp_code}:{season}",
+              reparse, run_id)
     return _run(job, lambda: client.requests_used, lambda: job.process(
         client.competition_matches(code, season_start_year(season)), lambda raw: p_fd.parse_matches(raw, registry)))
 
 
 def football_data_co_uk(engine: Engine, store: RawStore, registry: Registry, comp_code: str, season: str,
-                        reparse: bool = False) -> Counter[str]:
+                        reparse: bool = False, run_id: UUID | None = None) -> Counter[str]:
     div = registry.get(comp_code).providers[SourceCode.FOOTBALL_DATA_CO_UK]
     client = FootballDataCoUk()
     job = Job(engine, store, registry, SourceCode.FOOTBALL_DATA_CO_UK, f"football_data_co_uk:{comp_code}:{season}",
-              reparse)
+              reparse, run_id)
     return _run(job, lambda: client.requests_used, lambda: job.process(
         client.division_csv(fdcouk_season_code(season), div), lambda raw: p_uk.parse_csv(raw, registry, season)))
 
 
 def api_football_season(engine: Engine, store: RawStore, registry: Registry, api_key: str, comp_code: str,
-                        season: str, reparse: bool = False) -> Counter[str]:
+                        season: str, reparse: bool = False, run_id: UUID | None = None) -> Counter[str]:
     league = registry.get(comp_code).providers[SourceCode.API_FOOTBALL]
     client = ApiFootball(api_key)
-    job = Job(engine, store, registry, SourceCode.API_FOOTBALL, f"api_football_season:{comp_code}:{season}", reparse)
+    job = Job(engine, store, registry, SourceCode.API_FOOTBALL, f"api_football_season:{comp_code}:{season}",
+              reparse, run_id)
     return _run(job, lambda: client.requests_used, lambda: job.process(
         client.fixtures_by_league_season(league, season_start_year(season)),
         lambda raw: p_af.parse_fixtures(raw, registry)))
@@ -129,11 +136,12 @@ def api_football_season(engine: Engine, store: RawStore, registry: Registry, api
 
 def api_football_day(engine: Engine, store: RawStore, registry: Registry, api_key: str, day: date,
                      max_event_requests: int = 20, max_odds_requests: int = 20,
-                     reparse: bool = False) -> Counter[str]:
+                     reparse: bool = False, run_id: UUID | None = None) -> Counter[str]:
     """Fixtures of the day (all registered competitions), then goal minutes for finished registered
     matches and odds (incl. 15' markets) for upcoming ones - each within its request budget."""
     client = ApiFootball(api_key)
-    job = Job(engine, store, registry, SourceCode.API_FOOTBALL, f"api_football_day:{day.isoformat()}", reparse)
+    job = Job(engine, store, registry, SourceCode.API_FOOTBALL, f"api_football_day:{day.isoformat()}",
+              reparse, run_id)
 
     def body() -> None:
         parsed = job.process(client.fixtures_by_date(day), lambda raw: p_af.parse_fixtures(raw, registry))
