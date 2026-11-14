@@ -154,7 +154,7 @@ These functions take no database connection and make no network calls.
 
 ### 4.6 Command line
 
-[app/cli.py](../backend/app/cli.py) runs jobs and handles the review queue (§6).
+[app/cli.py](../backend/app/cli.py) runs jobs and handles the review queue (§6). The same jobs can be started over HTTP (§6.1).
 
 ### 4.7 Placeholder files (later phases)
 
@@ -252,13 +252,53 @@ python -m app.cli review resolve <review_id> <team_id>
 
 Add `--reparse` to parse payloads again that were already stored, for example after a parser fix. Each command prints its statistics: matches created, teams matched by alias, `reconciliation:AGREED`, `data_status:COMPLETE` and so on.
 
+### 6.1 The same jobs over the API
+
+These endpoints are in [routers/jobs.py](../backend/app/api/routers/jobs.py) and [routers/reviews.py](../backend/app/api/routers/reviews.py). All of them are owner-only (§6.2).
+
+| Method and path | Does |
+|---|---|
+| `GET /jobs/competitions` | Registry competitions, their sources and season format |
+| `POST /jobs/ingest/openfootball` | `{competition, season, full, reparse}` |
+| `POST /jobs/ingest/football-data-org` | `{competition, season, reparse}` |
+| `POST /jobs/ingest/football-data-co-uk` | `{competition, season, reparse}` |
+| `POST /jobs/ingest/api-football-season` | `{competition, season, reparse}` |
+| `POST /jobs/ingest/api-football-day` | `{date, max_event_requests, max_odds_requests, reparse}`; 1 + events + odds must be ≤ 90 |
+| `GET /jobs/runs?source=&status=&limit=` | Latest runs, from the API, the CLI and later the scheduler |
+| `GET /jobs/runs/{run_id}` | Status, requests used, error and statistics of one run |
+| `GET /reviews` | Open team-name reviews |
+| `POST /reviews/{review_id}/resolve` | `{team_id}`: maps the name to that team and adds the alias |
+| `GET /teams?q=&country=` | Find a team id, searching names and aliases |
+
+How the ingest endpoints behave:
+
+- The request is checked first: the competition exists and has that source; the season is written the competition's way (`2025-26` or `2025`); the API key is configured; unknown fields are rejected. Nothing starts if the check fails (422 or 503).
+- The run row is created, then **202** is returned at once with `run_id`. The job runs in the background ([jobs/ingest_runner.py](../backend/app/jobs/ingest_runner.py)). Poll `GET /jobs/runs/{run_id}`.
+- **One job per source at a time.** A second request for the same source gets 409, because two jobs would share one request quota.
+- If the job crashes, even before the pipeline starts, the run is marked `FAILED` with the error. A run never stays `RUNNING` because of an error. It can stay `RUNNING` if the server process is stopped in the middle of a job.
+- Run statistics are stored in `raw.ingestion_runs.stats` (migration [20261115120000_run_stats.sql](../supabase/migrations/20261115120000_run_stats.sql)).
+
+### 6.2 Owner-only access
+
+This is in [api/deps.py](../backend/app/api/deps.py). Every endpoint except `/health` requires `Authorization: Bearer <Supabase access token>`, and fails closed:
+
+| Check | Refused with |
+|---|---|
+| Token missing, malformed, bad signature, expired, wrong audience or issuer | 401 |
+| Signature verified with the project's public keys (JWKS); HS256 only if `SUPABASE_JWT_SECRET` is set; `alg: none` never | 401 |
+| `sub` ≠ `OWNER_USER_ID` | 403 |
+| `aal` ≠ `aal2` (two-factor not completed) | 403 |
+| `OWNER_USER_ID` or `SUPABASE_URL` not configured | 503 |
+
+**Local testing before the frontend exists:** set `AUTH_LOCAL_BYPASS=true` and `ENVIRONMENT=local`. Requests without a token are then accepted **only from this machine** (127.0.0.1). The app refuses to start if the bypass is on outside `local`, and the interactive `/docs` page is also off outside `local`.
+
 **Recommended order for a new competition:** openfootball `--full` first, then football-data.org, then the rest. Sources that come later match the teams created by the first one.
 
 ---
 
 ## 7. Tests and real results
 
-**93 tests pass**:
+**122 tests pass**:
 ```bash
 TEST_DATABASE_URL=postgresql://postgres:test@127.0.0.1:54329/postgres pytest
 ```
@@ -272,6 +312,8 @@ This uses the Docker `postgres:17` container `bettory-pg`. The integration tests
 | `unit/test_parsers.py` | All four parsers on real payload slices (football-data.co.uk: synthetic CSV) |
 | `integration/test_core_schema.py` | Every DB CHECK, append-only triggers, link-once, point-in-time functions, RLS |
 | `integration/test_ingestion_pipeline.py` | End to end across sources: no duplicate teams, minutes not erased, idempotent re-runs, review queue |
+| `unit/test_api_auth.py` | Every refused token case (401/403/503), the local bypass limited to this machine and to `local` |
+| `integration/test_api_jobs.py` | Ingest through the API into a real database, statistics, failed runs recorded, lock released, 409 when busy, invalid requests, review resolve flow |
 
 **Real dev-database runs (Premier League):**
 
