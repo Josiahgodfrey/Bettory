@@ -82,3 +82,18 @@ def test_devig_recovers_a_proportional_market(p: float, margin: float, method: D
     assert abs(sum(probs) - 1.0) < 1e-9 and all(0 < q < 1 for q in probs)
     if method is DevigMethod.MULTIPLICATIVE:
         assert abs(probs[0] - p) < 1e-9                         # exact inverse of a proportional margin
+
+
+# --- baselines -----------------------------------------------------------------------------------
+
+from app.calculation.baselines import shrink  # noqa: E402
+
+
+@given(st.integers(0, 500), st.integers(0, 500), st.floats(0.01, 0.99), st.floats(0, 1000))
+def test_shrunk_share_lies_between_raw_and_prior(count: int, extra: int, prior: float, k: float) -> None:
+    total = count + extra
+    if total == 0 and k == 0:
+        return
+    value = shrink(count, total, prior, k)
+    raw = count / total if total else prior
+    assert min(raw, prior) - 1e-12 <= value <= max(raw, prior) + 1e-12

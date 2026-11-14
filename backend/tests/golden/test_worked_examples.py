@@ -1,9 +1,10 @@
-"""Worked examples from the docs reproduce exactly (FIFTEEN-MINUTE-ODDS-CALCULATION.md section 10)."""
+"""Worked examples from the docs reproduce exactly."""
 
 import math
 
 import pytest
 
+from app.calculation.baselines import BaselineStatus, GlobalShares, Tally, competition_baseline, shrink
 from app.calculation.devig import devig, overround
 from app.calculation.poisson import score_grid, solve_lambda_from_under
 from app.domain.enums import DevigMethod
@@ -42,3 +43,22 @@ def test_section_10_bookmaker_a_margin_and_devig() -> None:
     assert power.parameter is not None and round(power.parameter, 3) == 1.154   # doc: k = 1.154
     p_model = math.exp(-0.3125)
     assert round(abs(p_model - power.probabilities[0]) * 100, 1) == 0.7         # doc: gap 0.7 pts
+
+
+def test_model_l_league_level_example() -> None:
+    """DATA-SOURCES-AND-MARKET-MODEL.md 14.4: avg HT goals 1.15 (0.64 / 0.51), r = 0.28 -> 72.5%, fair 1.38."""
+    t = Tally(matches=1000, ft_home=1450, ft_away=1150, ht_matches=1000, ht_home=640, ht_away=510,
+              exact_matches=1000, exact_goals=2600, exact_ht_goals=1150, exact_with_ht=1000,
+              exact_with_ht_early=322, early_goals=322, zero_known=1000, zero_zero=725)
+    b = competition_baseline(t, GlobalShares(s=0.125, r=0.28, goals=2600, competitions=1), k_goals=0)
+    assert b.status is BaselineStatus.OK
+    assert b.r == pytest.approx(0.28) and b.avg_ht_goals == pytest.approx(1.15)
+    assert b.lambda15_l == pytest.approx(0.322)                # doc: 1.15 x 0.28 = 0.322
+    assert b.p00_l is not None and round(b.p00_l, 3) == 0.725  # doc: 72.5%
+    assert round(1 / b.p00_l, 2) == 1.38                       # doc: fair 1.38
+
+
+def test_early_share_shrinkage_formula() -> None:
+    """FIFTEEN-MINUTE-ODDS-CALCULATION.md 5.2: s = (goals_<=T + K s_global) / (all goals + K), K = 300."""
+    assert shrink(30, 300, 0.125, 300) == pytest.approx((30 + 300 * 0.125) / 600)
+    assert shrink(30, 300, 0.125, 0) == pytest.approx(0.10)
