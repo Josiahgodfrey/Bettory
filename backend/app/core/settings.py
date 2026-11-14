@@ -38,6 +38,13 @@ class Settings(BaseSettings):
     database_password: SecretStr = SecretStr("")
     database_sslmode: Literal["require", "verify-full"] = "require"
     database_statement_timeout_ms: int = 30_000
+    # Full URL override for LOCAL development databases only (e.g. the Docker test database).
+    # Non-TLS connections are allowed only to localhost / 127.0.0.1.
+    database_url: SecretStr = SecretStr("")
+
+    # Raw payload files: "local" (backend/<raw_store_dir>) or "supabase" (private Storage bucket)
+    raw_store: Literal["local", "supabase"] = "local"
+    raw_store_dir: str = "data/raw"
 
     # Auth: the single owner (Architecture 7)
     owner_user_id: str = ""
