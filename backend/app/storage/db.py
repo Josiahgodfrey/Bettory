@@ -10,7 +10,7 @@ always encoded correctly. Connections always use TLS (sslmode=require or stricte
 from dataclasses import dataclass
 from functools import lru_cache
 
-from sqlalchemy import URL, Engine, create_engine, text
+from sqlalchemy import URL, Engine, create_engine, make_url, text
 
 from app.core.settings import Settings, get_settings
 
@@ -21,7 +21,16 @@ class DatabaseConfigError(RuntimeError):
     """Raised when required database settings are missing."""
 
 
+LOCAL_HOSTS = {"localhost", "127.0.0.1"}
+
+
 def build_url(settings: Settings) -> URL:
+    override = settings.database_url.get_secret_value()
+    if override:
+        url = make_url(override).set(drivername="postgresql+psycopg")
+        if url.host not in LOCAL_HOSTS and url.query.get("sslmode") not in ("require", "verify-full"):
+            raise DatabaseConfigError("DATABASE_URL to a non-local host must use sslmode=require or verify-full")
+        return url
     missing = [
         name
         for name, value in (
