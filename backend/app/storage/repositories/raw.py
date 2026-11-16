@@ -28,12 +28,43 @@ def start_run(conn: Connection, source: SourceCode, job_name: str) -> UUID:
 
 
 def finish_run(conn: Connection, run_id: UUID, status: RunStatus, requests_used: int,
-               items_stored: int, error: str | None = None) -> None:
+               items_stored: int, error: str | None = None, stats: dict[str, int] | None = None) -> None:
     conn.execute(
         text("update raw.ingestion_runs set status = :st, finished_at = now(), requests_used = :r, "
-             "items_stored = :i, error = :e where id = :id"),
-        {"st": status.value, "r": requests_used, "i": items_stored, "e": error, "id": run_id},
+             "items_stored = :i, error = :e, stats = cast(:stats as jsonb) where id = :id"),
+        {"st": status.value, "r": requests_used, "i": items_stored, "e": error,
+         "stats": json.dumps(stats or {}, sort_keys=True), "id": run_id},
     )
+
+
+def fail_if_running(conn: Connection, run_id: UUID, error: str) -> None:
+    """Mark a run FAILED if it never reached finish_run (e.g. it crashed while setting up)."""
+    conn.execute(
+        text("update raw.ingestion_runs set status = 'FAILED', finished_at = now(), error = :e "
+             "where id = :id and status = 'RUNNING'"),
+        {"e": error, "id": run_id},
+    )
+
+
+_RUN_COLUMNS = ("select r.id, s.code as source, r.job_name, r.status, r.started_at, r.finished_at, "
+                "r.requests_used, r.items_stored, r.error, r.stats "
+                "from raw.ingestion_runs r join core.sources s on s.id = r.source_id")
+
+
+def list_runs(conn: Connection, source: SourceCode | None = None, status: RunStatus | None = None,
+              limit: int = 50) -> list[dict[str, Any]]:
+    rows = conn.execute(
+        text(f"{_RUN_COLUMNS} where (cast(:s as smallint) is null or r.source_id = :s) "
+             "and (cast(:st as text) is null or r.status = cast(:st as core.run_status)) "
+             "order by r.started_at desc, r.id limit :lim"),
+        {"s": SOURCE_IDS[source] if source else None, "st": status.value if status else None, "lim": limit},
+    )
+    return [dict(r) for r in rows.mappings()]
+
+
+def get_run(conn: Connection, run_id: UUID) -> dict[str, Any] | None:
+    row = conn.execute(text(f"{_RUN_COLUMNS} where r.id = :id"), {"id": run_id}).mappings().one_or_none()
+    return dict(row) if row else None
 
 
 def insert_payload(conn: Connection, *, run_id: UUID, source: SourceCode, endpoint: str,

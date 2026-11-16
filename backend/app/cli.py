@@ -17,21 +17,12 @@ import sys
 from datetime import date
 from uuid import UUID
 
-from app.core.settings import BACKEND_DIR, get_settings
+from app.core.settings import get_settings
 from app.domain.registry import load_registry
 from app.ingestion import pipeline
 from app.storage.db import get_engine
-from app.storage.raw_store import LocalRawStore, RawStore, SupabaseRawStore
+from app.storage.raw_store import store_from_settings
 from app.storage.repositories import reference as ref
-
-
-def _store() -> RawStore:
-    s = get_settings()
-    if s.raw_store == "supabase":
-        store = SupabaseRawStore(s.supabase_url, s.supabase_service_role_key.get_secret_value())
-        store.ensure_bucket()
-        return store
-    return LocalRawStore(BACKEND_DIR / s.raw_store_dir)
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -71,7 +62,7 @@ def main(argv: list[str] | None = None) -> int:
                 print("resolved")
         return 0
 
-    store = _store()
+    store = store_from_settings(settings)
     if args.source == "openfootball":
         stats = pipeline.openfootball(engine, store, registry, args.comp, args.season, args.full, args.reparse)
     elif args.source == "football-data-org":

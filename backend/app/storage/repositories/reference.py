@@ -125,3 +125,17 @@ def resolve_review(conn: Connection, review_id: UUID, team_id: UUID) -> None:
              "resolved_at = now() where id = :q"),
         {"t": team_id, "q": review_id},
     )
+
+
+def search_teams(conn: Connection, query: str | None, country: str | None, limit: int = 50) -> list[dict[str, Any]]:
+    """Teams whose name or any alias contains `query` (normalised), for resolving reviews."""
+    needle = normalize_team_name(query) if query and query.strip() else None
+    rows = conn.execute(text("""
+        select t.id, t.name, t.country from core.teams t
+        where (cast(:c as text) is null or t.country = :c)
+          and (cast(:q as text) is null or exists (
+                select 1 from core.team_aliases a
+                where a.team_id = t.id and a.normalized_alias like '%' || :q || '%'))
+        order by t.country, t.name limit :lim"""),
+        {"c": country, "q": needle, "lim": limit})
+    return [dict(r) for r in rows.mappings()]
