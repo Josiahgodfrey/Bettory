@@ -15,12 +15,14 @@ What is measured
     est. value     data doc 9 scenario (needs main-market odds): assumed bookmaker 15' price from Model C
     periods        optional split date: tuning (before) and validation (from the split, unseen)
 
-Gate B (each PASS / FAIL / NOT_EVALUABLE; the gate passes only if all four pass)
+Gate B (owner decisions 2026-11-16; the same rules as the tuning report)
     1  >= gate_b.min_qualified listed selections with a known result
     2  calibration: |actual - predicted| <= max(tolerance_pts, noise_multiplier x SE) in every bucket with
        >= min_bucket_matches fixtures (SE: binomial standard error of the bucket's actual rate)
-    3  final price beats the competition-only baseline (lower Brier, same fixtures)
-    4  estimated ROI > 0 on the validation period (estimated-value scenario)
+    3  beats the competition-only baseline: the paired Brier interval (sessions resampled) lies entirely below 0
+    4  profit: PAPER BETTING - ROI at the minimum odds is shown with its interval as a consistency check only;
+       profit is proven in paper betting, never by a historical number
+The gate passes when 1-3 pass (statuses PAPER BETTING and NOTE never block).
 """
 
 from __future__ import annotations
@@ -54,6 +56,7 @@ from app.settlement.statistics import (
 from app.storage.results import SeasonShare
 
 PASS, FAIL, NOT_EVALUABLE = "PASS", "FAIL", "NOT_EVALUABLE"
+PAPER_BETTING, NOTE = "PAPER BETTING", "NOTE"  # informative statuses: never block the gate
 _MODELS: tuple[tuple[str, Callable[[BacktestRow], float | None]], ...] = (
     ("Final price", lambda r: r.p_under05), ("Model A", lambda r: r.p_model_a),
     ("Model B v2", lambda r: r.p_model_b2), ("Competition only", lambda r: r.p_league_00))
@@ -131,7 +134,7 @@ class Summary:
 
     @property
     def gate_passed(self) -> bool:
-        return all(c.status == PASS for c in self.gate)
+        return all(c.status == PASS for c in self.gate if c.status not in (PAPER_BETTING, NOTE))
 
 
 def allowed_gap_pts(b: Bucket, c: Calibration) -> float:
@@ -197,9 +200,29 @@ def _min_odds_settlements(rows: Iterable[BacktestRow], bet: Bet, stake: float) -
     return out
 
 
-def _gate(listed: Sequence[BacktestRow], buckets: list[Bucket], models: list[tuple[str, Score | None]],
-          estimated: dict[str, Roi], split: date | None, cfg: BacktestConfig,
-          paired: Paired | None = None) -> list[Criterion]:
+def profit_criterion(roi_: Roi, interval: Interval | None, label: str) -> Criterion:
+    if roi_.roi is None:
+        return Criterion("Profit", PAPER_BETTING, "no listed bets; profit is proven in paper betting")
+    ci = "" if interval is None else f", interval [{interval.low:+.1%}, {interval.high:+.1%}]"
+    return Criterion("Profit", PAPER_BETTING,
+                     f"{label}: ROI at the minimum odds {roi_.roi:+.1%} over {roi_.bets} bets{ci} - consistency check "
+                     "only; profit is proven in paper betting")
+
+
+def baseline_criterion(paired: Paired | None, u: Uncertainty) -> Criterion:
+    ci = paired.brier if paired is not None else None
+    if ci is None:
+        return Criterion("Beats competition-only baseline", NOT_EVALUABLE, "no comparable fixtures")
+    if ci.blocks < u.min_sessions:
+        return Criterion("Beats competition-only baseline", NOT_EVALUABLE,
+                         f"only {ci.blocks} sessions (need {u.min_sessions})")
+    return Criterion("Beats competition-only baseline", PASS if ci.high < 0 else FAIL,
+                     f"paired Brier difference {ci.estimate:+.4f} [{ci.low:+.4f}, {ci.high:+.4f}] over "
+                     f"{paired.n if paired else 0} fixtures; PASS needs the whole interval below 0")
+
+
+def _gate(listed: Sequence[BacktestRow], buckets: list[Bucket], split: date | None, cfg: BacktestConfig,
+          paired: Paired | None, roi_: Roi, roi_ci: Interval | None) -> list[Criterion]:
     gate: list[Criterion] = []
     known = sum(_outcome(r, Bet.UNDER05) is not None for r in listed)
     need = cfg.gate_b.min_qualified
@@ -217,31 +240,8 @@ def _gate(listed: Sequence[BacktestRow], buckets: list[Bucket], models: list[tup
                               f"{len(judged)} buckets judged, {failing} outside; tightest: {worst.gap_pts:+.1f} pts "
                               f"in {worst.lo_pts:g}-{worst.hi_pts:g} % (n={worst.n}, allowed ±{allowed:.1f})"))
 
-    final, league = dict(models).get("Final price"), dict(models).get("Competition only")
-    if final is None or league is None:
-        gate.append(Criterion("Beats competition-only baseline", NOT_EVALUABLE, "no comparable fixtures"))
-    else:
-        ci = paired.brier if paired is not None else None
-        if ci is None:
-            extra = ""
-        elif ci.blocks < cfg.uncertainty.min_sessions:
-            extra = f"; paired interval unreliable (only {ci.blocks} sessions)"
-        else:
-            extra = (f"; paired difference {ci.estimate:+.4f} [{ci.low:+.4f}, {ci.high:+.4f}], "
-                     f"{'significant' if ci.excludes(0.0) else 'not distinguishable from 0'}")
-        gate.append(Criterion("Beats competition-only baseline", PASS if final.brier < league.brier else FAIL,
-                              f"Brier {final.brier:.4f} vs {league.brier:.4f} (n={final.n}){extra}"))
-
-    period = "validation" if split is not None else "all"
-    est = estimated.get(period)
-    if split is None:
-        gate.append(Criterion("Estimated ROI on unseen period", NOT_EVALUABLE, "no validation split given"))
-    elif est is None or est.bets == 0 or est.roi is None:
-        gate.append(Criterion("Estimated ROI on unseen period", NOT_EVALUABLE,
-                              "no estimated-value bets (needs main-market odds; see the report notes)"))
-    else:
-        gate.append(Criterion("Estimated ROI on unseen period", PASS if est.roi > 0 else FAIL,
-                              f"{est.roi:+.1%} over {est.bets} bets"))
+    gate.append(baseline_criterion(paired, cfg.uncertainty))
+    gate.append(profit_criterion(roi_, roi_ci, "validation period" if split is not None else "whole period"))
     return gate
 
 
@@ -319,7 +319,9 @@ def summarise(run: BacktestRun, cfg: BacktestConfig, split: date | None = None) 
         over_cap=sum(r.decision is Decision.QUALIFIED_OVER_CAP for r in rows),
         calibration=cal, models=models, models_n=len(common), by_competition=by_comp, by_grade=by_grade,
         min_odds_roi=min_odds, estimated=estimated, with_market=sum(r.p_market is not None for r in rows),
-        gate=_gate(listed, cal[Bet.UNDER05.value]["priced"][1], models, estimated, split, cfg, paired[0]),
+        gate=_gate(listed, cal[Bet.UNDER05.value]["priced"][1], split, cfg, paired[0],
+                   min_odds["validation" if split is not None else "all"][Bet.UNDER05.value],
+                   roi_ci["validation" if split is not None else "all"][Bet.UNDER05.value]),
         quality=quality, paired=paired, roi_interval=roi_ci, season_shares=run.season_shares,
     )
 

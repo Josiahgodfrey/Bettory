@@ -12,6 +12,7 @@ from app.backtest.estimate import assumed_quotes
 from app.backtest.report import (
     FAIL,
     NOT_EVALUABLE,
+    PAPER_BETTING,
     PASS,
     allowed_gap_pts,
     render_markdown,
@@ -66,8 +67,10 @@ def test_well_calibrated_model_beating_the_baseline() -> None:
     s = summarise(run(rows), CFG)
     g = {c.name: c for c in s.gate}
     assert g["Qualified selections"].status == PASS and g["Calibration"].status == PASS
-    assert g["Beats competition-only baseline"].status == PASS
-    assert g["Estimated ROI on unseen period"].status == NOT_EVALUABLE and not s.gate_passed
+    ci = s.paired[0].brier                                          # the rule: the whole interval below 0
+    assert ci is not None and g["Beats competition-only baseline"].status == (PASS if ci.high < 0 else FAIL)
+    assert g["Profit"].status == PAPER_BETTING                      # never decided by a historical number
+    assert s.gate_passed == (g["Beats competition-only baseline"].status == PASS)
     under = s.min_odds_roi["all"]["UNDER05"]                        # min odds 1.44 at a true 75 %: ROI +8 %
     assert under.bets == 400 and under.roi == pytest.approx(0.75 * 1.08 / 0.75 - 1)
 
@@ -100,7 +103,8 @@ def test_estimated_value_on_the_validation_period() -> None:
     assert set(s.estimated) == {"all", "tuning", "validation"}
     val = s.estimated["validation"]
     assert val.bets == sum(1 for r in rows if r.session.day >= split)
-    assert {c.name: c.status for c in s.gate}["Estimated ROI on unseen period"] in (PASS, FAIL)
+    profit = {c.name: c for c in s.gate}["Profit"]
+    assert profit.status == PAPER_BETTING and profit.detail.startswith("validation period")
 
 
 def test_outputs_render() -> None:
@@ -149,7 +153,7 @@ def test_quality_and_paired_comparisons() -> None:
     assert final.decomposition.resolution > league.decomposition.resolution
     paired = next(p for p in s.paired if p.name.startswith("Final price") and p.market == "UNDER05")
     assert paired.brier is not None and paired.brier.high < 0 and paired.n == 400
-    assert {g.name: g.detail for g in s.gate}["Beats competition-only baseline"].endswith("significant")
+    assert {g.name: g.status for g in s.gate}["Beats competition-only baseline"] == PASS
     interval = s.roi_interval["all"]["UNDER05"]
     assert interval is not None and interval.low <= interval.estimate <= interval.high
     md = render_markdown(s, CFG)
@@ -163,4 +167,5 @@ def test_intervals_from_few_sessions_are_marked_unreliable() -> None:
     s = summarise(run(rows), CFG)
     md = render_markdown(s, CFG)
     assert "too few sessions" in md and "sessions: unreliable" in md
-    assert "unreliable (only 10 sessions)" in {g.name: g.detail for g in s.gate}["Beats competition-only baseline"]
+    baseline = {g.name: g for g in s.gate}["Beats competition-only baseline"]
+    assert baseline.status == NOT_EVALUABLE and "only 10 sessions" in baseline.detail
