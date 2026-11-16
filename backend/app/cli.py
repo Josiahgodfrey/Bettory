@@ -8,6 +8,7 @@ Examples (from backend/, venv active):
   python -m app.cli ingest api-football-day --date 2026-11-14 --events 20 --odds 20
   python -m app.cli review list
   python -m app.cli review resolve <review_id> <team_id>
+  python -m app.cli crosscheck --comp ENG1 --season 2025-26 --show 10
 """
 
 from __future__ import annotations
@@ -17,11 +18,14 @@ import sys
 from datetime import date
 from uuid import UUID
 
-from app.core.settings import get_settings
+from app.core.settings import BACKEND_DIR, get_settings
+from app.domain.params import load_params
 from app.domain.registry import load_registry
 from app.ingestion import pipeline
+from app.normalisation.crosscheck import cross_check
 from app.storage.db import get_engine
 from app.storage.raw_store import store_from_settings
+from app.storage.repositories import matches as mrepo
 from app.storage.repositories import reference as ref
 
 
@@ -49,8 +53,30 @@ def main(argv: list[str] | None = None) -> int:
     res.add_argument("review_id", type=UUID)
     res.add_argument("team_id", type=UUID)
 
+    cc = sub.add_parser("crosscheck", help="agreement between sources (FT, HT, 15')")
+    cc.add_argument("--comp", required=True)
+    cc.add_argument("--season", required=True)
+    cc.add_argument("--show", type=int, default=10, help="disagreements to list")
+
     args = parser.parse_args(argv)
     settings, engine, registry = get_settings(), get_engine(), load_registry()
+
+    if args.cmd == "crosscheck":
+        cutoff = load_params(BACKEND_DIR / settings.params_file).settlement.cutoff_label_minute
+        with engine.connect() as conn:
+            ids = mrepo.season_match_ids(conn, args.comp, args.season)
+            report = cross_check(((str(i), mrepo.latest_records(conn, i)) for i in ids), cutoff)
+        print(f"{args.comp} {args.season}: {report.matches} matches, {report.multi_source} with 2+ sources")
+        rows = (("FT", report.ft), ("HT", report.ht), ("15'", report.h15), ("15' vs other HT", report.h15_vs_ht))
+        for name, a in rows:
+            rate = "n/a (fewer than 2 sources)" if a.rate is None else f"{a.rate:.1%}"
+            print(f"  {name:<16} {a.agreed}/{a.compared} agree  {rate}")
+        verdict = report.passes()
+        print("  exit criterion (15' >= 98%):", "not measurable yet - needs 2 goal-minute sources" if verdict is None
+              else ("PASS" if verdict else "FAIL"))
+        for d in report.disagreements[:args.show]:
+            print(f"  ! {d.kind} {d.match_key}: " + ", ".join(f"{s.value}={v}" for s, v in d.values))
+        return 0
 
     if args.cmd == "review":
         with engine.begin() as conn:
