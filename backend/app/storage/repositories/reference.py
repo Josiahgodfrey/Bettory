@@ -14,7 +14,7 @@ from app.normalisation.names import normalize_team_name
 
 
 def ensure_competition(conn: Connection, comp: CompetitionDef) -> UUID:
-    return conn.execute(
+    row_id: UUID = conn.execute(
         text("""
             insert into core.competitions (code, name, country, competition_type, level, timezone)
             values (:code, :name, :country, :type, :level, :tz)
@@ -25,6 +25,7 @@ def ensure_competition(conn: Connection, comp: CompetitionDef) -> UUID:
         {"code": comp.code, "name": comp.name, "country": comp.country, "type": comp.type.value,
          "level": comp.level, "tz": comp.timezone},
     ).scalar_one()
+    return row_id
 
 
 def claim_team_source(conn: Connection, competition_code: str, source: SourceCode) -> bool:
@@ -38,13 +39,14 @@ def claim_team_source(conn: Connection, competition_code: str, source: SourceCod
 
 
 def ensure_season(conn: Connection, competition_id: UUID, label: str) -> UUID:
-    return conn.execute(
+    row_id: UUID = conn.execute(
         text("""
             insert into core.competition_seasons (competition_id, label) values (:c, :l)
             on conflict (competition_id, label) do update set label = excluded.label
             returning id"""),
         {"c": competition_id, "l": label},
     ).scalar_one()
+    return row_id
 
 
 def mapped_entity(conn: Connection, source: SourceCode, entity_type: EntityType, provider_key: str) -> UUID | None:
@@ -72,7 +74,7 @@ def team_by_alias(conn: Connection, country: str, normalized: str) -> UUID | Non
 
 
 def create_team(conn: Connection, name: str, country: str, normalized: str, source: SourceCode) -> UUID:
-    team_id = conn.execute(
+    team_id: UUID = conn.execute(
         text("insert into core.teams (name, country) values (:n, :c) returning id"),
         {"n": name, "c": country},
     ).scalar_one()
@@ -93,7 +95,8 @@ def queue_for_review(conn: Connection, source: SourceCode, entity_type: EntityTy
                      provider_name: str, context: dict[str, Any]) -> None:
     conn.execute(
         text("insert into core.entity_review_queue (source_id, entity_type, provider_key, provider_name, context) "
-             "values (:s, :t, :k, :n, cast(:ctx as jsonb)) on conflict (source_id, entity_type, provider_key) do nothing"),
+             "values (:s, :t, :k, :n, cast(:ctx as jsonb)) "
+             "on conflict (source_id, entity_type, provider_key) do nothing"),
         {"s": SOURCE_IDS[source], "t": entity_type.value, "k": provider_key, "n": provider_name,
          "ctx": json.dumps(context, default=str)},
     )

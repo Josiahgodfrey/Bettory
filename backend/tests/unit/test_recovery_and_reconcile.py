@@ -2,11 +2,23 @@ from datetime import UTC, datetime
 
 import pytest
 
-from app.calculation.recovery import derive_fifteen
+from app.calculation.recovery import derive_fifteen as _derive_fifteen
 from app.domain.enums import DataStatus, FixtureStatus, ReconciliationStatus, Side, SourceCode
 from app.domain.models import Score, SourceGoal, SourceMatch
 from app.normalisation.names import normalize_team_name
-from app.normalisation.reconcile import reconcile
+from app.normalisation.reconcile import TrustedMatch
+from app.normalisation.reconcile import reconcile as _reconcile
+from tests.support import PARAMS
+
+CUTOFF = PARAMS.settlement.cutoff_label_minute
+
+
+def derive_fifteen(*args: object):  # type: ignore[no-untyped-def]
+    return _derive_fifteen(*args, cutoff_minute=CUTOFF)  # type: ignore[arg-type]
+
+
+def reconcile(records: list[SourceMatch]) -> TrustedMatch:
+    return _reconcile(records, CUTOFF)
 
 KO = datetime(2025, 8, 15, 19, 0, tzinfo=UTC)
 
@@ -105,7 +117,8 @@ def test_inconsistent_goal_list_is_not_used() -> None:
 def test_h15_conflict_between_goal_sources() -> None:
     other = (g(Side.HOME, "12"), g(Side.HOME, "49"), g(Side.AWAY, "64"), g(Side.AWAY, "76"),
              g(Side.HOME, "88"), g(Side.HOME, "90+4"))
-    t = reconcile([rec(SourceCode.API_FOOTBALL, (4, 2), (1, 0), other), rec(SourceCode.OPENFOOTBALL, (4, 2), (1, 0), GOALS)])
+    t = reconcile([rec(SourceCode.API_FOOTBALL, (4, 2), (1, 0), other),
+                   rec(SourceCode.OPENFOOTBALL, (4, 2), (1, 0), GOALS)])
     assert t.reconciliation is ReconciliationStatus.CONFLICT
     assert any(i.code == "H15_CONFLICT" for i in t.issues)
 

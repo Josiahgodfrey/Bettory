@@ -360,7 +360,7 @@ Each bookmaker record stores its own `T` and rules; the engine recalculates `s` 
 | **P(0-0 at 15') = P(15' Under 0.5)** = e^−0.3125 | **73.2%** → fair odds **1.37** |
 | P(1-1 at 15') = 0.732 × 0.175 × 0.1375 | 1.8% |
 | **P(15' Draw)** = 73.2% + 1.8% + ~0.0% | **74.9%** → fair odds **1.33** |
-| P(Home leads at 15') | 14.1% → fair 7.07 |
+| P(Home leads at 15') | 14.2% (14.16%) → fair 7.06 |
 | P(Away leads at 15') | 10.9% → fair 9.17 |
 | Minimum acceptable odds, 15' Under 0.5 = 1.05 / 0.732 | **1.44** |
 

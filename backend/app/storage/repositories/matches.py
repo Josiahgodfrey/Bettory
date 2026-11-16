@@ -22,7 +22,7 @@ def _goals_json(goals: tuple[SourceGoal, ...]) -> str:
 
 def insert_source_record(conn: Connection, m: SourceMatch, payload_id: UUID, parser_version: str,
                          home_team_id: UUID | None, away_team_id: UUID | None) -> UUID:
-    inserted = conn.execute(
+    inserted: UUID | None = conn.execute(
         text("""
             insert into core.match_source_records (source_id, provider_match_key, payload_id,
               provider_competition_key, kickoff_utc, kickoff_date, home_name, away_name, home_team_id,
@@ -42,11 +42,12 @@ def insert_source_record(conn: Connection, m: SourceMatch, payload_id: UUID, par
     if inserted is not None:
         return inserted
     # Same payload parsed again (append-only table: keep the original row).
-    return conn.execute(
+    row_id: UUID = conn.execute(
         text("select id from core.match_source_records where source_id = :s and provider_match_key = :k "
              "and payload_id = :p"),
         {"s": SOURCE_IDS[m.source], "k": m.provider_match_key, "p": payload_id},
     ).scalar_one()
+    return row_id
 
 
 def link_source_record(conn: Connection, record_id: UUID, match_id: UUID) -> None:
@@ -65,11 +66,12 @@ def find_match(conn: Connection, home_id: UUID, away_id: UUID, day: date) -> UUI
 
 
 def create_match(conn: Connection, season_id: UUID, m: SourceMatch, home_id: UUID, away_id: UUID) -> UUID:
-    return conn.execute(
+    row_id: UUID = conn.execute(
         text("insert into core.matches (competition_season_id, kickoff_utc, home_team_id, away_team_id, status) "
              "values (:s, :ko, :h, :a, 'SCHEDULED') returning id"),
         {"s": season_id, "ko": m.kickoff_utc, "h": home_id, "a": away_id},
     ).scalar_one()
+    return row_id
 
 
 _RECORDS_SQL = """
@@ -106,7 +108,7 @@ def latest_records(conn: Connection, match_id: UUID) -> list[SourceMatch]:
         use_minutes = (with_minutes is not None
                        and _score_of(with_minutes, "ft") == _score_of(latest, "ft")
                        and _score_of(with_minutes, "ht") == _score_of(latest, "ht"))
-        goals_row = with_minutes if use_minutes else latest
+        goals_row = with_minutes if use_minutes and with_minutes is not None else latest
         out.append(SourceMatch(
             source=_SOURCE_BY_ID[source_id], provider_match_key=latest["provider_match_key"],
             competition_code=latest["comp_code"], season_label=latest["season_label"],
@@ -174,9 +176,10 @@ def match_for_provider_key(conn: Connection, source: SourceCode, key: str) -> UU
 
 
 def ensure_bookmaker(conn: Connection, name: str) -> UUID:
-    return conn.execute(
+    row_id: UUID = conn.execute(
         text("insert into core.bookmakers (name) values (:n) on conflict (name) do update set name = excluded.name "
              "returning id"), {"n": name}).scalar_one()
+    return row_id
 
 
 def insert_odds(conn: Connection, o: SourceOdds, match_id: UUID, bookmaker_id: UUID, payload_id: UUID) -> None:

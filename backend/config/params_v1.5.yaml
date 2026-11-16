@@ -1,0 +1,98 @@
+# BETTORY calculation parameters — params_version 1.5
+# The ONLY source of model parameters. Loaded and validated by app/domain/params.py (unknown or missing
+# keys are rejected). Every price records the params_version it used.
+# ALL values are starting values, to be calibrated by the backtest (Phase 4).
+# Any change → copy this file to a new version; never edit a version that has produced results.
+#
+# Changes from 1.4:
+#   + model_a.ft_weight (was fixed in code), model_a.rating_prior_matches (new: shrinkage of attack/defence
+#     ratings toward the league average; derived below), model_c.input_lines (was fixed in code),
+#     h2h.* (was fixed in code / SQL), red_flags.recent_window, value.overround_min,
+#     screen.league_p00_min (data doc 14.5, was only in the docs), red_flags.h2h_bonus_zero_zero_rate (data doc 11.2)
+#   - data_gate.min_complete_per_view (superseded by the selection-bias rule, DATA-MODEL.md 7.1)
+#
+# rating_prior_matches derivation (2026-11-15, ENG1 + GER1 2025-26): empirical-Bayes m = within-team
+# per-match variance / between-team variance of goal rates. Measured m mostly 14-40 for FT goals and
+# higher for HT goals: over 10 matches most of the spread between teams is noise. Starting values
+# FT 20, HT 30. Without shrinkage (m = 0) a team with no goals in its window gets expected goals 0, and
+# a point-in-time test on 180 fixtures showed the model over-confident (P >= 76% bucket: ~80% predicted,
+# ~72% actual).
+
+params_version: "1.5"
+formula_version: "v1.4"
+
+sessions:
+  timezone: "Africa/Nairobi"          # EAT, UTC+3, no DST
+  night: { start: "01:00", end: "12:59", deadline: "01:00" }
+  noon:  { start: "13:00", end: "00:59", deadline: "13:00" }
+  lead_time_hours: 2                  # ready_by = min(deadline, first_ko - 2h)
+  run_buffer_minutes: 45
+  max_matches_per_session: 50         # maximum, never a target
+
+screen:
+  league_p00_min: 0.70                # Layer 0: competition Model L P(0-0 at 15') (data doc 14.5)
+
+data_gate:
+  history_matches: 10                 # matches per view (GENERAL / HOME / AWAY)
+
+blend:
+  venue_weight: 0.6
+  general_weight: 0.4
+  team_weight: 0.5                    # mu level (pricing doc 4)
+  market_weight: 0.5                  # 0 when no usable market odds
+
+shrinkage:
+  early_share_K_goals: 300            # pricing doc 5.2
+  team_index_k: 3                     # data doc 16.3
+  early_index_trust_w_I: 0.5          # pricing doc 6
+
+model_a:
+  ft_weight: 0.5                      # P_A = 0.5 x A_FT + 0.5 x A_HT (data doc 15)
+  rating_prior_matches: { FT: 20, HT: 30 }
+
+competition_baselines:
+  min_matches: 50
+  max_pooled_seasons: 3
+  share_review_low: 0.09
+  share_review_high: 0.16
+
+model_c:
+  max_line_disagreement: 0.20
+  devig_method: "POWER"
+  input_lines:                        # pricing doc 11.1
+    HT_TOTAL: [0.5, 1.5]
+    HT_ASIAN_TOTAL: [1.0]
+    FT_TOTAL: [1.5, 2.5, 3.5]
+
+value:
+  ev_min: 0.05
+  ev_min_no_market: 0.08              # proposed stricter threshold without market check
+  max_model_gap_pts: 10
+  max_bookmaker_gap_pts: 10
+  overround_min: 0.0
+  overround_max: 0.15
+  devig_method: "POWER"               # bookmaker 15' quotes
+
+grades:
+  a_max_gap_pts: 5
+  b_max_gap_pts: 10
+
+red_flags:
+  favourite_odds_below: 1.50
+  favourite_proxy_home_win_rate: 0.70
+  favourite_proxy_away_win_rate: 0.20
+  recent_window: 5
+  recent_early_goals_last5: 3
+  h2h_min_meetings: 4
+  h2h_early_goal_rate: 0.50
+  h2h_bonus_zero_zero_rate: 0.80      # supporting note only, no effect on P (data doc 11.2)
+
+h2h:
+  max_meetings: 10
+  max_years: 5
+
+state_dependence:
+  delta: 0.0
+
+settlement:
+  cutoff_label_minute: 15             # provider label "15'" = 14:00–14:59 → inside 0–15

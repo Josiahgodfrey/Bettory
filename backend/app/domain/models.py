@@ -47,7 +47,7 @@ class SourceGoal(Strict):
         if not match:
             raise ValueError(f"invalid minute label: {label!r}")
         extra = int(match.group(2)) if match.group(2) else None
-        return cls(side=side, minute=int(match.group(1)), extra_minute=extra, **kwargs)  # type: ignore[arg-type]
+        return cls(side=side, minute=int(match.group(1)), extra_minute=extra, **kwargs)
 
     @property
     def sort_key(self) -> tuple[int, int]:
@@ -90,9 +90,9 @@ class SourceMatch(Strict):
             raise ValueError("home and away team names are identical")
         if self.status is FixtureStatus.FINISHED and self.ft is None:
             raise ValueError("FINISHED match without full-time score")
-        if self.status in (FixtureStatus.SCHEDULED, FixtureStatus.POSTPONED, FixtureStatus.CANCELLED):
-            if self.ft is not None or self.goals:
-                raise ValueError(f"{self.status} match must not carry scores or goals")
+        unplayed = self.status in (FixtureStatus.SCHEDULED, FixtureStatus.POSTPONED, FixtureStatus.CANCELLED)
+        if unplayed and (self.ft is not None or self.goals):
+            raise ValueError(f"{self.status} match must not carry scores or goals")
         if self.ht and self.ft and (self.ht.home > self.ft.home or self.ht.away > self.ft.away):
             raise ValueError("half-time score exceeds full-time score")
         if self.goals and not self.has_goal_minutes:

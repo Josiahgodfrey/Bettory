@@ -12,9 +12,9 @@ from sqlalchemy import Engine, create_engine, text
 
 from app.api.deps import Owner, engine_dep, raw_store_factory_dep, require_owner
 from app.domain.enums import SourceCode
+from app.ingestion import runner as ingest_runner
 from app.ingestion.base import Fetched, FetchError
 from app.ingestion.openfootball import OpenFootball
-from app.jobs import ingest_runner
 from app.main import create_app
 from app.storage.raw_store import LocalRawStore
 from tests.integration.conftest import ADMIN_URL

@@ -67,7 +67,7 @@ class Settings(BaseSettings):
     telegram_chat_id: str = ""
 
     # Calculation parameters (versioned file in config/)
-    params_file: str = "config/params_v1.4.yaml"
+    params_file: str = "config/params_v1.5.yaml"
 
     @model_validator(mode="after")
     def _bypass_only_local(self) -> "Settings":

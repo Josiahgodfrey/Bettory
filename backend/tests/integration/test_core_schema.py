@@ -125,7 +125,8 @@ def test_match_updates_are_recorded(conn: psycopg.Connection) -> None:
     w = setup_world(conn)
     mid = add_match(conn, w["season"], w["Alpha"], w["Beta"], T0)
     conn.execute("update core.matches set round = 'Matchday 3' where id = %s", (mid,))
-    rev = one(conn, "select operation, old_row->>'round' as old_round from core.match_revisions where match_id = %s", mid)
+    rev = one(conn, "select operation, old_row->>'round' as old_round from core.match_revisions "
+                    "where match_id = %s", mid)
     assert rev == {"operation": "UPDATE", "old_round": None}
 
 
@@ -154,9 +155,10 @@ def test_source_record_link_once_then_frozen(conn: psycopg.Connection) -> None:
     w = setup_world(conn)
     mid = add_match(conn, w["season"], w["Alpha"], w["Beta"], T0)
     pid = _payload(conn)
-    rid = one(conn, "insert into core.match_source_records (source_id, provider_match_key, payload_id, kickoff_date, home_name, "
-                    "away_name, status, ft_home, ft_away, has_goal_minutes, parser_version) "
-                    "values (3, 'k', %s, '2025-09-01', 'Alpha', 'Beta', 'FINISHED', 1, 0, false, 'p1') returning id", pid)["id"]
+    rid = one(conn, "insert into core.match_source_records (source_id, provider_match_key, payload_id, "
+                    "kickoff_date, home_name, away_name, status, ft_home, ft_away, has_goal_minutes, parser_version) "
+                    "values (3, 'k', %s, '2025-09-01', 'Alpha', 'Beta', 'FINISHED', 1, 0, false, 'p1') "
+                    "returning id", pid)["id"]
     conn.execute("update core.match_source_records set match_id = %s where id = %s", (mid, rid))   # link: allowed
     with pytest.raises(errors.RaiseException), conn.transaction():
         conn.execute("update core.match_source_records set ft_home = 2 where id = %s", (rid,))  # data change

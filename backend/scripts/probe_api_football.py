@@ -115,7 +115,8 @@ def main() -> int:
         bulk = p.get("03_fixtures_bulk_ids", "/fixtures", {"ids": "-".join(ids)})
         got = bulk.get("response") or []
         err = api_errors(bulk)
-        p.record("T4 bulk 20 ids", len(got) == len(ids) and not err, True, f"{len(got)}/{len(ids)} returned {err}".strip())
+        p.record("T4 bulk 20 ids", len(got) == len(ids) and not err, True,
+                 f"{len(got)}/{len(ids)} returned {err}".strip())
         with_events = [f for f in got if f.get("events")]
         goals = [
             e for f in got for e in (f.get("events") or [])
@@ -127,10 +128,12 @@ def main() -> int:
             f"{len(with_events)}/{len(got)} fixtures have events, {len(goals)} goals, all with minute={minutes_ok}",
         )
         early = sorted({g['time']['elapsed'] for g in goals if g['time']['elapsed'] <= 16})
-        p.record("T3 minute labels <= 16", None, False, f"minutes seen: {early} (extra field present: {any('extra' in g['time'] for g in goals)})")
+        has_extra = any("extra" in g["time"] for g in goals)
+        p.record("T3 minute labels <= 16", None, False, f"minutes seen: {early} (extra field present: {has_extra})")
         # T6 - lineups
         lu = p.get("05_lineups", "/fixtures/lineups", {"fixture": ids[0]})
-        p.record("T6 lineups", bool(lu.get("response")), False, f"{len(lu.get('response') or [])} teams {api_errors(lu)}".strip())
+        p.record("T6 lineups", bool(lu.get("response")), False,
+                 f"{len(lu.get('response') or [])} teams {api_errors(lu)}".strip())
     else:
         p.record("T3/T4", False, True, "no finished fixtures accessible to test")
 
@@ -138,15 +141,19 @@ def main() -> int:
     today = date.today().isoformat()
     by_date = p.get("04_fixtures_today", "/fixtures", {"date": today, "timezone": "Africa/Nairobi"})
     err = api_errors(by_date)
-    p.record("T5 fixtures by date", not err, True, f"{len(by_date.get('response') or [])} fixtures on {today} {err}".strip())
+    p.record("T5 fixtures by date", not err, True,
+             f"{len(by_date.get('response') or [])} fixtures on {today} {err}".strip())
 
     # T7 - odds markets
     bets = p.get("06_odds_bets", "/odds/bets")
     names = [b.get("name") or "" for b in bets.get("response") or []]
     interesting = [n for n in names if any(k in n.lower() for k in ("first half", "1st half", "minute", "15"))]
-    p.record("T7 odds market list", bool(names), False, f"{len(names)} markets; relevant: {interesting[:15]} {api_errors(bets)}".strip())
+    p.record("T7 odds market list", bool(names), False,
+             f"{len(names)} markets; relevant: {interesting[:15]} {api_errors(bets)}".strip())
     odds_today = p.get("07_odds_today", "/odds", {"date": today, "timezone": "Africa/Nairobi"})
-    p.record("T7 odds for today", None, False, f"{odds_today.get('results', 0)} results, pages={(odds_today.get('paging') or {}).get('total')} {api_errors(odds_today)}".strip())
+    pages = (odds_today.get("paging") or {}).get("total")
+    p.record("T7 odds for today", None, False,
+             f"{odds_today.get('results', 0)} results, pages={pages} {api_errors(odds_today)}".strip())
 
     return finish(p)
 

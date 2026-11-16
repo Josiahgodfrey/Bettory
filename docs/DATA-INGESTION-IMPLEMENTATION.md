@@ -273,7 +273,7 @@ These endpoints are in [routers/jobs.py](../backend/app/api/routers/jobs.py) and
 How the ingest endpoints behave:
 
 - The request is checked first: the competition exists and has that source; the season is written the competition's way (`2025-26` or `2025`); the API key is configured; unknown fields are rejected. Nothing starts if the check fails (422 or 503).
-- The run row is created, then **202** is returned at once with `run_id`. The job runs in the background ([jobs/ingest_runner.py](../backend/app/jobs/ingest_runner.py)). Poll `GET /jobs/runs/{run_id}`.
+- The run row is created, then **202** is returned at once with `run_id`. The job runs in the background ([ingestion/runner.py](../backend/app/ingestion/runner.py)). Poll `GET /jobs/runs/{run_id}`.
 - **One job per source at a time.** A second request for the same source gets 409, because two jobs would share one request quota.
 - If the job crashes, even before the pipeline starts, the run is marked `FAILED` with the error. A run never stays `RUNNING` because of an error. It can stay `RUNNING` if the server process is stopped in the middle of a job.
 - Run statistics are stored in `raw.ingestion_runs.stats` (migration [20261115120000_run_stats.sql](../supabase/migrations/20261115120000_run_stats.sql)).

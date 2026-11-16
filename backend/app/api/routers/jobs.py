@@ -24,7 +24,7 @@ from app.api.schemas import (
 from app.domain.enums import RunStatus, SourceCode
 from app.domain.registry import CompetitionDef, Registry, season_label, season_start_year
 from app.ingestion import pipeline
-from app.jobs import ingest_runner
+from app.ingestion import runner as ingest_runner
 from app.storage.repositories import raw as raw_repo
 
 router = APIRouter(prefix="/jobs", tags=["jobs"])
