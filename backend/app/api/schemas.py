@@ -104,3 +104,12 @@ class TeamOut(Strict):
     id: UUID
     name: str
     country: str
+
+
+class CrossCheckRequest(Strict):
+    competition: str = Field(min_length=1, description="competition code, e.g. ENG1")
+    season: str = Field(pattern=r"^\d{4}(-\d{2})?$", description="season label, e.g. 2025-26")
+
+
+class AcceptCrossCheck(Strict):
+    note: str = Field(min_length=3, max_length=2000, description="what was reviewed and why the data is accepted")

@@ -8,16 +8,19 @@ repositories.matches.latest_records):
 - implied 15': a source's 15' score from goals must agree with every other source's HT score
   (HT 0-0 anywhere -> the 15' score must be 0-0; 15' goals can never exceed another source's HT goals)
 Disagreements are listed with the values of each source, so they can be explained.
+`evaluate` judges a report against config/data_quality.yaml (crosscheck.*): PASS / FAIL / NOT_MEASURABLE.
 """
 
 from __future__ import annotations
 
 from collections.abc import Iterable, Sequence
 from dataclasses import dataclass, field
+from enum import StrEnum
 
 from app.calculation.recovery import derive_fifteen
 from app.domain.enums import FixtureStatus, SourceCode
 from app.domain.models import Score, SourceMatch
+from app.domain.quality_config import CrossCheckRules
 
 
 @dataclass(frozen=True)
@@ -94,9 +97,31 @@ class CrossCheckReport:
     h15_vs_ht: Agreement
     disagreements: tuple[Disagreement, ...] = field(default=())
 
-    def passes(self, threshold: float = 0.98) -> bool | None:
-        """Exit criterion on 15' results; None when no 15' result could be compared between two sources."""
-        return None if self.h15.rate is None else self.h15.rate >= threshold
+    def agreements(self) -> dict[str, Agreement]:
+        return {"FT": self.ft, "HT": self.ht, "H15": self.h15, "H15_VS_HT": self.h15_vs_ht}
+
+
+class CheckStatus(StrEnum):
+    PASS = "PASS"  # every judged value agrees often enough
+    FAIL = "FAIL"  # at least one judged value below min_agreement: the season's data is not trusted
+    NOT_MEASURABLE = "NOT_MEASURABLE"  # nothing compared on enough matches (e.g. a single source)
+
+
+@dataclass(frozen=True)
+class CrossCheckVerdict:
+    status: CheckStatus
+    fifteen_verified: bool  # 15' results judged between >= 2 goal-minute sources and passed (Phase 3 exit)
+    failed: tuple[str, ...]  # FT / HT / H15 / H15_VS_HT below min_agreement
+    judged: tuple[str, ...]  # values compared on >= min_compared matches
+
+
+def evaluate(report: CrossCheckReport, rules: CrossCheckRules) -> CrossCheckVerdict:
+    """A value is judged when compared on >= rules.min_compared matches; judged values must agree at
+    >= rules.min_agreement. Fewer comparisons are reported, never judged."""
+    judged = tuple(k for k, a in report.agreements().items() if a.compared >= rules.min_compared)
+    failed = tuple(k for k in judged if (report.agreements()[k].rate or 0.0) < rules.min_agreement)
+    status = CheckStatus.FAIL if failed else (CheckStatus.PASS if judged else CheckStatus.NOT_MEASURABLE)
+    return CrossCheckVerdict(status, "H15" in judged and "H15" not in failed, failed, judged)
 
 
 def cross_check(matches: Iterable[tuple[str, Sequence[SourceMatch]]], cutoff_minute: int) -> CrossCheckReport:

@@ -202,6 +202,18 @@ def provider_keys_with_minutes(conn: Connection, source: SourceCode, keys: list[
         {"s": SOURCE_IDS[source], "k": keys}).scalars())
 
 
+def provider_keys_with_known_15(conn: Connection, source: SourceCode, keys: list[str]) -> set[str]:
+    """Provider match keys of `source` whose trusted match already has a known 15' result (COMPLETE, DERIVED):
+    fetching their goal minutes adds only a second source for the cross-check."""
+    if not keys:
+        return set()
+    return set(conn.execute(text(
+        "select distinct r.provider_match_key from core.match_source_records r "
+        "join core.matches m on m.id = r.match_id "
+        "where r.source_id = :s and r.provider_match_key = any(:k) and m.data_status in ('COMPLETE', 'DERIVED')"),
+        {"s": SOURCE_IDS[source], "k": keys}).scalars())
+
+
 def season_match_ids(conn: Connection, competition_code: str, season_label: str) -> list[UUID]:
     """Matches of one competition-season that have at least one linked source record, by kick-off."""
     return list(conn.execute(text("""

@@ -15,7 +15,7 @@ import time
 from datetime import date
 from typing import Any
 
-from app.ingestion.base import Fetched, HttpSource
+from app.ingestion.base import Fetched, FetchError, HttpSource
 
 log = logging.getLogger(__name__)
 
@@ -39,6 +39,15 @@ class ApiFootball:
             raise ValueError("requests_per_minute must be >= 1")
         self.http = HttpSource(BASE_URL, headers={"x-apisports-key": key}, min_interval_s=60.0 / requests_per_minute,
                                max_requests=max_requests)
+        self.rate_limit_retries = 0
+
+    def quota(self) -> tuple[int, int]:
+        """(requests used today, daily limit) from /status, which API-Football does not count."""
+        body = json.loads(self.http.get("/status", counted=False).body)
+        if body.get("errors"):
+            raise FetchError(f"API-Football /status: {body['errors']}")
+        r = body["response"]["requests"]
+        return int(r["current"]), int(r["limit_day"])
 
     def _get(self, path: str, params: dict[str, Any]) -> Fetched:
         for attempt in range(RATE_LIMIT_RETRIES + 1):
@@ -47,6 +56,7 @@ class ApiFootball:
                 return fetched
             log.warning("API-Football per-minute limit hit; waiting %.0f s (retry %d)", RATE_LIMIT_WINDOW_S,
                         attempt + 1)
+            self.rate_limit_retries += 1
             time.sleep(RATE_LIMIT_WINDOW_S)
         raise AssertionError("unreachable")
 

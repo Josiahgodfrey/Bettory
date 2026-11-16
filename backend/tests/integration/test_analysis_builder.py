@@ -123,3 +123,31 @@ def test_unregistered_or_unoffered_competition_is_skipped(world: tuple[Connectio
     v = AnalysisContext(conn, PARAMS, no_market, w["kickoff"] - timedelta(hours=2)).verdict(w["fixture"])
     assert v.decision in (Decision.SKIP, Decision.INSUFFICIENT_DATA)
     assert "FIFTEEN_MINUTE_MARKET" in {c.code for c in v.failed}
+
+
+def test_untrusted_league_season_cannot_qualify(world: tuple[Connection, dict[str, Any]], fresh_db_url: str) -> None:
+    """docs/DATA-HEALTH.md 2: the latest cross-check of a pooled season FAILED -> INSUFFICIENT_DATA, until the
+    owner accepts it after review; a newer FAIL blocks again."""
+    conn, w = world
+    as_of = w["kickoff"] - timedelta(hours=2)
+    insert = ("insert into core.crosscheck_results (competition_season_id, status, fifteen_verified, matches, "
+              "multi_source, ft_compared, ft_agreed, ht_compared, ht_agreed, h15_compared, h15_agreed, "
+              "h15_vs_ht_compared, h15_vs_ht_agreed, min_agreement, min_compared, failed_checks, checked_at) "
+              "values (%s, 'FAIL', false, 132, 132, 132, 120, 132, 132, 0, 0, 0, 0, 0.98, 20, '{FT}', %s) returning id")
+    with psycopg.connect(fresh_db_url, row_factory=dict_row, autocommit=True) as c:
+        first = one(c, insert, w["current"], datetime(2026, 1, 1, tzinfo=UTC))
+    v = AnalysisContext(conn, PARAMS, REGISTRY, as_of).verdict(w["fixture"])
+    assert v.decision is Decision.INSUFFICIENT_DATA
+    (check,) = [ch for ch in v.failed if ch.code == "SOURCE_AGREEMENT"]
+    assert "2025-26: FT below" in check.value
+
+    with psycopg.connect(fresh_db_url, autocommit=True) as c:
+        c.execute("update core.crosscheck_results set accepted_at = now(), accepted_note = 'reviewed' where id = %s",
+                  (first,))
+    accepted = AnalysisContext(conn, PARAMS, REGISTRY, as_of).verdict(w["fixture"])
+    assert "SOURCE_AGREEMENT" not in {ch.code for ch in accepted.failed}
+
+    with psycopg.connect(fresh_db_url, row_factory=dict_row, autocommit=True) as c:
+        one(c, insert, w["current"], datetime(2026, 2, 1, tzinfo=UTC))          # new data, new FAIL
+    again = AnalysisContext(conn, PARAMS, REGISTRY, as_of).verdict(w["fixture"])
+    assert "SOURCE_AGREEMENT" in {ch.code for ch in again.failed}

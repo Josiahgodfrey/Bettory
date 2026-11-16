@@ -56,11 +56,20 @@ def body(items: list[dict[str, Any]], errors: Any = None) -> bytes:
     return json.dumps({"get": "fixtures", "errors": errors or [], "results": len(items), "response": items}).encode()
 
 
-class FakeApi:
-    """Counts requests like the real client; `free` answers bulk ids with the real free-plan error."""
+class FakeHttp:
+    max_requests: int | None = None
 
-    def __init__(self, free: bool) -> None:
+
+class FakeApi:
+    """Counts requests like the real client; `free` answers bulk ids with the real free-plan error.
+    `used_today`: requests already used today when the run starts (the quota answer of /status)."""
+
+    def __init__(self, free: bool, used_today: int = 0, limit: int = 100) -> None:
         self.free, self.requests_used, self.calls = free, 0, []
+        self.used_today, self.limit, self.rate_limit_retries, self.http = used_today, limit, 0, FakeHttp()
+
+    def quota(self) -> tuple[int, int]:
+        return self.used_today + self.requests_used, self.limit
 
     def _f(self, endpoint: str, params: dict[str, Any], payload: bytes) -> Fetched:
         self.requests_used += 1
@@ -148,3 +157,53 @@ def test_real_client_guards() -> None:
     client.http.requests_used = 1
     with pytest.raises(FetchError, match="budget"):
         client.fixture_with_events("1")
+
+
+def run_row(engine: Engine) -> Any:
+    with engine.connect() as c:
+        return c.execute(text("select status, audit_status, audit, stats from raw.ingestion_runs "
+                              "order by started_at desc limit 1")).mappings().one()
+
+
+def test_unknown_15_minute_results_are_fetched_first(engine: Engine, tmp_path: Path,
+                                                      monkeypatch: pytest.MonkeyPatch) -> None:
+    """Odd fixtures have their goal at 70': half-time 0-0, so their 15' result (0-0) is already known from the
+    listing. With room for 10 matches, the 10 requested must all be fixtures whose 15' result is unknown."""
+    fake = FakeApi(free=True)
+    install(monkeypatch, fake)
+    stats = run(engine, tmp_path, bulk=False, max_requests=11)
+    requested = [int(c["id"]) - 5000 for c in fake.calls if "id" in c]
+    assert len(requested) == 10 and all(n % 2 == 0 for n in requested)
+    assert stats["todo_unknown_15"] == N // 2 and stats["todo_known_15_crosscheck_only"] == N // 2
+
+
+def test_run_is_planned_inside_the_quota(engine: Engine, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    fake = FakeApi(free=True, used_today=90)                   # 10 left, reserve 5 -> 5 for this run
+    install(monkeypatch, fake)
+    stats = run(engine, tmp_path, bulk=False, max_requests=100)
+    assert fake.requests_used == 5 and stats["request_budget"] == 5 and stats["stopped_at_request_budget"] == 1
+    assert stats["quota_used_after"] == 95 and stats["quota_remaining_after"] == 5
+    row = run_row(engine)
+    codes = {f["code"] for f in row["audit"]}
+    assert row["audit_status"] == "OK" and {"BUDGET_REACHED", "QUOTA_LOW"} <= codes
+
+
+def test_no_quota_left_fails_visibly_without_a_request(engine: Engine, tmp_path: Path,
+                                                        monkeypatch: pytest.MonkeyPatch) -> None:
+    fake = FakeApi(free=True, used_today=96)
+    install(monkeypatch, fake)
+    with pytest.raises(pipeline.QuotaError, match="96/100"):
+        run(engine, tmp_path, bulk=False, max_requests=100)
+    row = run_row(engine)
+    assert fake.requests_used == 0 and row["status"] == "FAILED" and row["audit_status"] == "ERROR"
+
+
+def test_every_run_is_cross_checked_and_audited(engine: Engine, tmp_path: Path,
+                                                 monkeypatch: pytest.MonkeyPatch) -> None:
+    install(monkeypatch, FakeApi(free=False))
+    run(engine, tmp_path, bulk=True, max_requests=100)
+    row = run_row(engine)
+    assert row["audit_status"] == "OK" and row["stats"]["crosscheck:NOT_MEASURABLE"] == 1   # one source only
+    with engine.connect() as c:
+        check = c.execute(text("select status, matches, run_id is not null from core.crosscheck_results")).one()
+    assert tuple(check) == ("NOT_MEASURABLE", N, True)

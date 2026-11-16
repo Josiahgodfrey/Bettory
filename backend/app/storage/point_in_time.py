@@ -19,6 +19,7 @@ from uuid import UUID
 from sqlalchemy import Connection, text
 
 from app.domain.enums import CompetitionType, DataStatus, FixtureStatus, MarketCode, ReconciliationStatus
+from app.storage.repositories import health as health_repo
 
 
 class PointInTimeError(RuntimeError):
@@ -181,6 +182,16 @@ class PointInTimeReader:
         if len(rows) > 1:
             raise PointInTimeError(f"team {team_id} played in {len(rows)} leagues in {season_label}")
         return rows[0] if rows else None
+
+    # --- data trust ------------------------------------------------------------------------------------
+
+    def untrusted_seasons(self, competition_season_ids: Sequence[UUID]) -> list[str]:
+        """Seasons among these whose current cross-check is an unaccepted FAIL (docs/DATA-HEALTH.md 2).
+
+        Deliberately NOT limited to as_of: like a match's CONFLICT status, a cross-check describes whether the
+        stored data can be trusted, not anything that happened in a match, so the current state applies."""
+        rows = health_repo.blocking_crosschecks(self.conn, competition_season_ids)
+        return sorted(f"{r['season']}: {', '.join(r['failed_checks'])} below the agreement threshold" for r in rows)
 
     # --- odds ------------------------------------------------------------------------------------------
 

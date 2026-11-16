@@ -234,6 +234,10 @@ class AnalysisContext:
         if a is not None and base is not None and base.s is not None:
             pr = price(a, base.s, p, b2, c)
 
+        pooled = set(base.seasons) if base is not None else set()
+        trust_ids = [s.id for s in self.reader.competition_seasons(f.competition_id) if s.label in pooled]
+        untrusted = tuple(self.reader.untrusted_seasons([f.competition_season_id, *trust_ids]))
+
         meetings = self.reader.h2h(f.home_team_id, f.away_team_id, p.h2h.max_meetings, p.h2h.max_years)
         h2h: H2HStats = h2h_stats([team_match(m, f.home_team_id) for m in meetings], H2HScope.ALL_VENUES,
                                   self.as_of, p)
@@ -241,7 +245,7 @@ class AnalysisContext:
             fixture_id=str(match_id), kickoff_utc=f.kickoff_utc, baseline=base,
             fifteen_minute_market=bool(comp and comp.fifteen_minute_market), windows=windows, model_a=a,
             model_b2=b2, model_c=c, price=pr, unavailable=tuple(unavailable), h2h=h2h, favourite_odds=favourite,
-            context_flags=context_flags, quotes=dict(quotes or {}), bookmaker=bookmaker,
+            context_flags=context_flags, quotes=dict(quotes or {}), bookmaker=bookmaker, untrusted_data=untrusted,
         )
 
     def evaluate(self, match_id: UUID, quotes: Mapping[Bet, Mapping[str, float]] | None = None,

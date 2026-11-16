@@ -10,6 +10,8 @@ Examples (from backend/, venv active):
   python -m app.cli review list
   python -m app.cli review resolve <review_id> <team_id>
   python -m app.cli crosscheck --comp ENG1 --season 2025-26 --show 10
+  python -m app.cli crosscheck-accept <crosscheck_id> --note "reviewed: ..."
+  python -m app.cli health --runs 10 --quota
   python -m app.cli backtest --from 2025-09-01 --to 2026-05-31 --comp ENG1 --comp GER1 --split 2026-02-01
 """
 
@@ -27,12 +29,15 @@ from app.backtest.report import render_markdown, rows_csv, summarise, summary_js
 from app.backtest.runner import SessionRun, run_backtest
 from app.core.settings import BACKEND_DIR, get_settings
 from app.domain.params import load_params
+from app.domain.quality_config import load_quality_config
 from app.domain.registry import load_registry
 from app.ingestion import pipeline
-from app.normalisation.crosscheck import cross_check
+from app.ingestion.api_football import ApiFootball
+from app.ingestion.health_view import render_text, snapshot
+from app.ingestion.quality import crosscheck_season
 from app.storage.db import get_engine
 from app.storage.raw_store import store_from_settings
-from app.storage.repositories import matches as mrepo
+from app.storage.repositories import health as health_repo
 from app.storage.repositories import reference as ref
 
 
@@ -70,6 +75,14 @@ def main(argv: list[str] | None = None) -> int:
     cc.add_argument("--comp", required=True)
     cc.add_argument("--season", required=True)
     cc.add_argument("--show", type=int, default=10, help="disagreements to list")
+    acc = sub.add_parser("crosscheck-accept", help="accept a FAILED cross-check after reviewing it")
+    acc.add_argument("crosscheck_id", type=UUID)
+    acc.add_argument("--note", required=True, help="what was reviewed and why the data is accepted")
+
+    hp = sub.add_parser("health", help="coverage, cross-checks, run audits and open items")
+    hp.add_argument("--runs", type=int, default=10, help="latest runs to show")
+    hp.add_argument("--quota", action="store_true", help="also show the API-Football quota (not counted)")
+    hp.add_argument("--json", action="store_true", help="print the snapshot as JSON")
 
     bt = sub.add_parser("backtest", help="replay sessions point in time and report calibration / Gate B")
     bt.add_argument("--from", dest="first", required=True, type=date.fromisoformat, help="first session date")
@@ -104,19 +117,49 @@ def main(argv: list[str] | None = None) -> int:
 
     if args.cmd == "crosscheck":
         cutoff = load_params(BACKEND_DIR / settings.params_file).settlement.cutoff_label_minute
-        with engine.connect() as conn:
-            ids = mrepo.season_match_ids(conn, args.comp, args.season)
-            report = cross_check(((str(i), mrepo.latest_records(conn, i)) for i in ids), cutoff)
+        rules = load_quality_config().crosscheck
+        with engine.begin() as conn:
+            season_id = health_repo.season_id(conn, args.comp, args.season)
+            if season_id is None:
+                print(f"{args.comp} {args.season}: no such competition-season in the database", file=sys.stderr)
+                return 1
+            stored = crosscheck_season(conn, season_id, cutoff, rules)
+        report, verdict = stored.report, stored.verdict
         print(f"{args.comp} {args.season}: {report.matches} matches, {report.multi_source} with 2+ sources")
         rows = (("FT", report.ft), ("HT", report.ht), ("15'", report.h15), ("15' vs other HT", report.h15_vs_ht))
         for name, a in rows:
             rate = "n/a (fewer than 2 sources)" if a.rate is None else f"{a.rate:.1%}"
-            print(f"  {name:<16} {a.agreed}/{a.compared} agree  {rate}")
-        verdict = report.passes()
-        print("  exit criterion (15' >= 98%):", "not measurable yet - needs 2 goal-minute sources" if verdict is None
-              else ("PASS" if verdict else "FAIL"))
+            judged = "" if a.compared >= rules.min_compared else f"  (not judged: < {rules.min_compared} compared)"
+            print(f"  {name:<16} {a.agreed}/{a.compared} agree  {rate}{judged}")
+        print(f"  status: {verdict.status.value}" + (f" ({', '.join(verdict.failed)} below "
+                                                     f"{rules.min_agreement:.0%})" if verdict.failed else ""))
+        print("  15' results verified between two goal-minute sources:", "yes" if verdict.fifteen_verified else "no")
+        if verdict.failed:
+            print(f"  this season's matches cannot qualify until reviewed: "
+                  f"python -m app.cli crosscheck-accept {stored.id} --note \"...\"")
         for d in report.disagreements[:args.show]:
             print(f"  ! {d.kind} {d.match_key}: " + ", ".join(f"{s.value}={v}" for s, v in d.values))
+        print(f"  stored as {stored.id}")
+        return 0
+
+    if args.cmd == "crosscheck-accept":
+        with engine.begin() as conn:
+            health_repo.accept_crosscheck(conn, args.crosscheck_id, args.note)
+        print("accepted")
+        return 0
+
+    if args.cmd == "health":
+        with engine.connect() as conn:
+            snap = snapshot(conn, args.runs)
+        quota = None
+        key = settings.api_football_key.get_secret_value()
+        if args.quota and key:
+            quota = ApiFootball(key, max_requests=1, requests_per_minute=settings.api_football_requests_per_minute
+                                ).quota()
+        if args.json:
+            print(json.dumps({**snap, "quota": quota}, indent=2, default=str))
+        else:
+            print(render_text(snap, quota))
         return 0
 
     if args.cmd == "review":

@@ -352,6 +352,8 @@ Baseline pooling: the fixture's own season is always included; older seasons are
 
 ### 8.3 Commands
 
+Data health (coverage, stored cross-checks with the bet gate, run audits, quota): see [DATA-HEALTH.md](DATA-HEALTH.md) — `python -m app.cli health --quota`.
+
 ```bash
 python -m app.cli crosscheck --comp ENG1 --season 2025-26 --show 10
 python -m app.cli ingest api-football-backfill --comp ENG1 --season 2024-25 --max-requests 50
@@ -386,7 +388,7 @@ The analysis builder priced the last 90 matches of each of the Premier League an
 | football-data.co.uk | Blocked by the network's Sophos TLS interception. Certificate checks are deliberately **not** disabled. The parser is tested on a synthetic CSV only. Parked: full checklist for another network in [FOOTBALL-DATA-CO-UK-SETUP.md](FOOTBALL-DATA-CO-UK-SETUP.md) |
 | API-Football league ids | ✅ All 9 verified 2026-11-16 with one `/leagues` request (39, 40, 78, 218, 140, 135, 61, 88, 94: names and countries match; goal-event coverage for 2022-2025 in every league) |
 | `fifteen_minute_market` flags | Assumed `true`; confirm per league with your bookmaker |
-| Migrations on Supabase | Applied to local Docker only. Applying them to the Supabase project changes the live database and needs the owner's go-ahead |
+| Migrations on Supabase | Applied to local Docker only (incl. `20261116120000_data_health.sql`). Applying them to the Supabase project changes the live database and needs the owner's go-ahead |
 | DB password | It was in git history. **Rotate it** in Supabase |
 | `PARTIAL_DRAW_UNKNOWN` | No source produces it yet |
 
