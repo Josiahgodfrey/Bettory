@@ -385,11 +385,11 @@ A task is done when:
 
 | Phase | Status | Started | Finished | Notes |
 |---|---|---|---|---|
-| 0 — Verify assumptions | ⬜ Not started | | | |
-| 1 — Foundation | ⬜ Not started | | | |
-| 2 — Calculation engine | ⬜ Not started | | | |
-| 3 — Data pipeline | ⬜ Not started | | | |
-| 4 — Backtest (Gate B) | ⬜ Not started | | | |
+| 0 — Verify assumptions | 🟡 In progress | | | Open: your bookmaker's 15' rules (V6), 15' market per league |
+| 1 — Foundation | ✅ Done | | | |
+| 2 — Calculation engine | ✅ Done | | | Models L, A, B v2, C, pricing, decision layer; params v1.5 |
+| 3 — Data pipeline | 🟡 In progress | | | Infrastructure done; 15'-vs-15' cross-check and multi-season goal minutes wait for API-Football Pro |
+| 4 — Backtest (Gate B) | 🟡 In progress | 2026-11-16 | | Runner done; first run on one season: Gate B not passed (see BACKTEST-REPORT.md) |
 | 5 — Session pipeline + API | ⬜ Not started | | | |
 | 6 — Frontend | ⬜ Not started | | | |
 | 7 — Deployment + go-live | ⬜ Not started | | | |
