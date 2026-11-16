@@ -189,3 +189,32 @@ All decided on 2026-11-16 and fixed in the pre-registered plan
 The plan above was written and committed **before** the tuning seasons were loaded. Once a real tuning run uses it,
 its SHA-256 is recorded in `config/tuning_lock.yaml` and the tool refuses any later edit; a changed plan must be a
 new file (`tuning_v2.yaml`), and the report must list every plan and every variation that was run.
+
+## 7. The tuning tool and its dry run (2026-11-17)
+
+`python -m app.cli tune` (dry run by default; `--real` for the run that counts):
+[app/backtest/tuning.py](../backend/app/backtest/tuning.py), report in
+[tuning_report.py](../backend/app/backtest/tuning_report.py).
+
+- every variation is scored on the **same** fixtures (priced in all variations, result known);
+- variations with identical predictions are grouped: the report gives the **effective number of trials** and the
+  grid dimensions that are **not testable**;
+- the holdout is run once for the selected variation and once for the base; Gate B uses the plan's rules;
+- a real run locks the plan first and writes `params_v1.6.yaml` only if a non-base variation wins (never
+  overwriting); a dry run may override the periods and never locks or writes.
+
+**Dry run on the data at hand** (tuning Aug 2025 – Jan 2026, holdout Feb – May 2026; a test of the tool, not
+evidence; 55 s for 36 variations):
+
+| Result | Value |
+|---|---|
+| Fixtures scored in every variation | 143 |
+| Effective trials | **12 of 36** — `team_vs_market` not testable (no main-market odds) |
+| Best | 0.57314 log loss = the base v08 (m20 / wI0.5); 12 variations within the tie tolerance → base kept |
+| Rating shrinkage 20 → 160 | changes log loss by ≤ 0.0003: almost no effect |
+| Early-goal index trust 0 / 0.25 / 0.5 | 0.5 best (+0.0025 worse at 0) — **the best value is at the edge of the grid** |
+| Holdout (base) | 342 fixtures, calibration slope 0.21; paired Brier vs competition-only +0.0001 [−0.0033, +0.0036] → FAIL |
+| Hypotheses | too few sessions in the short tuning window; holdout H1 Grade B −0.195 [−0.399, +0.006] (26 sessions → too few), H2 −0.133 [−0.291, +0.019] not confirmed |
+
+Two points for the owner (see the session notes): the 2025-26 "holdout" has already been examined (first backtest,
+step 1, this dry run), and the early-goal index trust is best at the edge of the registered grid.
