@@ -36,6 +36,8 @@ class OpenFootballIngest(SeasonIngest):
 class ApiFootballBackfill(SeasonIngest):
     max_requests: int | None = Field(None, ge=1, description="Request cap for this run; at most "
                                      "API_FOOTBALL_MAX_REQUESTS_PER_RUN (the default)")
+    skip_known_15: bool = Field(False, description="Do not fetch fixtures whose 15' result is already known "
+                                "(use when no second goal-minute source exists for the season)")
 
 
 class ApiFootballDayIngest(Strict):

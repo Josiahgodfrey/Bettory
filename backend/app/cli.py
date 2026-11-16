@@ -12,6 +12,9 @@ Examples (from backend/, venv active):
   python -m app.cli crosscheck --comp ENG1 --season 2025-26 --show 10
   python -m app.cli crosscheck-accept <crosscheck_id> --note "reviewed: ..."
   python -m app.cli health --runs 10 --quota
+  python -m app.cli backfill-daily              # where every target stands (no request)
+  python -m app.cli backfill-daily --run        # run today's backfill now
+  python -m app.cli worker                      # start the scheduler (foreground)
   python -m app.cli backtest --from 2025-09-01 --to 2026-05-31 --comp ENG1 --comp GER1 --split 2026-02-01
 """
 
@@ -19,6 +22,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import logging
 import sys
 from datetime import UTC, date, datetime
 from pathlib import Path
@@ -35,6 +39,8 @@ from app.ingestion import pipeline
 from app.ingestion.api_football import ApiFootball
 from app.ingestion.health_view import render_text, snapshot
 from app.ingestion.quality import crosscheck_season
+from app.jobs.backfill import load_backfill_config, plan, run_daily_backfill
+from app.jobs.scheduler import build_scheduler
 from app.storage.db import get_engine
 from app.storage.raw_store import store_from_settings
 from app.storage.repositories import health as health_repo
@@ -59,6 +65,8 @@ def main(argv: list[str] | None = None) -> int:
     bf.add_argument("--max-requests", type=int, default=None,
                     help="request cap for this run (default and maximum: API_FOOTBALL_MAX_REQUESTS_PER_RUN)")
     bf.add_argument("--reparse", action="store_true")
+    bf.add_argument("--skip-known", action="store_true",
+                    help="do not fetch fixtures whose 15' result is already known (no second goal-minute source)")
     day = ingest.add_parser("api-football-day")
     day.add_argument("--date", required=True, type=date.fromisoformat)
     day.add_argument("--events", type=int, default=20, help="max requests for goal minutes")
@@ -83,6 +91,10 @@ def main(argv: list[str] | None = None) -> int:
     hp.add_argument("--runs", type=int, default=10, help="latest runs to show")
     hp.add_argument("--quota", action="store_true", help="also show the API-Football quota (not counted)")
     hp.add_argument("--json", action="store_true", help="print the snapshot as JSON")
+
+    bd = sub.add_parser("backfill-daily", help="automatic API-Football backfill (config/backfill.yaml)")
+    bd.add_argument("--run", action="store_true", help="run today's backfill now (otherwise: show the plan)")
+    sub.add_parser("worker", help="start the scheduler in the foreground (Ctrl+C to stop)")
 
     bt = sub.add_parser("backtest", help="replay sessions point in time and report calibration / Gate B")
     bt.add_argument("--from", dest="first", required=True, type=date.fromisoformat, help="first session date")
@@ -148,6 +160,32 @@ def main(argv: list[str] | None = None) -> int:
         print("accepted")
         return 0
 
+    if args.cmd in ("backfill-daily", "worker"):
+        logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s: %(message)s")
+        backfill_cfg = load_backfill_config()
+        backfill_cfg.check_registry(registry)
+        if args.cmd == "worker":
+            sched = build_scheduler(engine, lambda: store_from_settings(settings), registry, settings, backfill_cfg)
+            for j in sched.get_jobs():
+                print(f"scheduled: {j.name} ({j.trigger})")
+            print("worker running - Ctrl+C to stop")
+            try:
+                sched.start()
+            except (KeyboardInterrupt, SystemExit):
+                print("worker stopped")
+            return 0
+        if args.run:
+            outcome = run_daily_backfill(engine, lambda: store_from_settings(settings), registry, settings,
+                                         backfill_cfg)
+            print(json.dumps(outcome.as_dict(), indent=2))
+            return 0
+        sch = backfill_cfg.schedule
+        print(f"daily at {sch.time} {sch.timezone}, at most {backfill_cfg.daily_max_requests} requests")
+        for st in plan(engine, backfill_cfg):
+            left = "" if st.still_without_minutes is None else f", {st.still_without_minutes} still without minutes"
+            print(f"  {st.target.competition} {st.target.season:<8} {st.target.mode.value:<10} {st.state.value}{left}")
+        return 0
+
     if args.cmd == "health":
         with engine.connect() as conn:
             snap = snapshot(conn, args.runs)
@@ -189,7 +227,7 @@ def main(argv: list[str] | None = None) -> int:
         stats = pipeline.api_football_backfill(engine, store, registry, settings.api_football_key.get_secret_value(),
                                                args.comp, args.season, settings.api_football_plan == "pro",
                                                min(args.max_requests or cap, cap), args.reparse,
-                                               requests_per_minute=rpm)
+                                               requests_per_minute=rpm, skip_known_15=args.skip_known)
     else:
         stats = pipeline.api_football_day(engine, store, registry, settings.api_football_key.get_secret_value(),
                                           args.date, args.events, args.odds, args.reparse, requests_per_minute=rpm)

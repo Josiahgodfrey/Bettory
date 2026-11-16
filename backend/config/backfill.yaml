@@ -1,0 +1,33 @@
+# Automatic daily API-Football goal-minute backfill (docs/DAILY-BACKFILL.md).
+# Loaded and validated by app/jobs/backfill.py (unknown or missing keys, unknown competitions and duplicate
+# targets are rejected). Each day the worker spends what the quota allows on the FIRST unfinished targets, in
+# this order; a target is finished when its last run left no fixture without goal minutes.
+#
+# mode
+#   history     fetch only fixtures whose 15' result is still UNKNOWN (no second goal-minute source exists
+#               for these seasons, so the others would add nothing)
+#   crosscheck  fetch every finished fixture, also those already known: the minutes are a second goal-minute
+#               source for the 15'-vs-15' cross-check (e.g. 2025-26 next to openfootball)
+#
+# Free plan: league seasons 2022-2024 only (2022-23 .. 2024-25). Later seasons need a paid plan.
+# Targets are meant for FINISHED seasons; the current season is collected by the daily session jobs (Phase 5).
+
+schedule:
+  timezone: "UTC"
+  time: "00:30"                # API-Football's daily quota resets at 00:00 UTC (to verify on your dashboard)
+
+daily_max_requests: 90         # upper bound per day; the quota guard (config/data_quality.yaml) still applies
+
+targets:
+  - { competition: ENG1, season: "2024-25", mode: history }
+  - { competition: GER1, season: "2024-25", mode: history }
+  - { competition: AUT1, season: "2024-25", mode: history }
+  - { competition: ENG1, season: "2023-24", mode: history }
+  - { competition: GER1, season: "2023-24", mode: history }
+  - { competition: AUT1, season: "2023-24", mode: history }
+  - { competition: ENG1, season: "2022-23", mode: history }
+  - { competition: GER1, season: "2022-23", mode: history }
+  - { competition: AUT1, season: "2022-23", mode: history }
+  # after upgrading to a paid plan (2025 seasons are not on the free plan):
+  # - { competition: ENG1, season: "2025-26", mode: crosscheck }
+  # - { competition: GER1, season: "2025-26", mode: crosscheck }

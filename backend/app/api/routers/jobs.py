@@ -149,7 +149,8 @@ def ingest_api_football_backfill(body: ApiFootballBackfill, _: OwnerDep, backgro
                   f"api:api_football_backfill:{body.competition}:{body.season}",
                   lambda run_id: pipeline.api_football_backfill(engine, store(), registry, key, body.competition,
                                                                 body.season, bulk, limit, body.reparse, run_id,
-                                                                requests_per_minute=rpm))
+                                                                requests_per_minute=rpm,
+                                                                skip_known_15=body.skip_known_15))
 
 
 @router.post("/ingest/api-football-day", status_code=status.HTTP_202_ACCEPTED, response_model=JobAccepted)
