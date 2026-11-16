@@ -12,7 +12,8 @@ What is measured
 
 Gate B (each PASS / FAIL / NOT_EVALUABLE; the gate passes only if all four pass)
     1  >= gate_b.min_qualified listed selections with a known result
-    2  calibration: |actual - predicted| <= tolerance in every bucket with >= min_bucket_matches fixtures
+    2  calibration: |actual - predicted| <= max(tolerance_pts, noise_multiplier x SE) in every bucket with
+       >= min_bucket_matches fixtures (SE: binomial standard error of the bucket's actual rate)
     3  final price beats the competition-only baseline (lower Brier, same fixtures)
     4  estimated ROI > 0 on the validation period (estimated-value scenario)
 """
@@ -27,7 +28,7 @@ from dataclasses import dataclass
 from datetime import date
 from typing import Any
 
-from app.backtest.config import BacktestConfig
+from app.backtest.config import BacktestConfig, Calibration
 from app.backtest.runner import BacktestRow, BacktestRun
 from app.calculation.ev import Bet
 from app.domain.enums import Decision
@@ -90,6 +91,11 @@ class Summary:
         return all(c.status == PASS for c in self.gate)
 
 
+def allowed_gap_pts(b: Bucket, c: Calibration) -> float:
+    """Largest acceptable |actual - predicted| for this bucket: the tolerance, or the noise if larger."""
+    return max(c.tolerance_pts, c.noise_multiplier * b.se_pts)
+
+
 def _min_odds_settlements(rows: Iterable[BacktestRow], bet: Bet, stake: float) -> list[Settlement]:
     out = []
     for r in rows:
@@ -111,11 +117,12 @@ def _gate(listed: Sequence[BacktestRow], buckets: list[Bucket], models: list[tup
     if not judged:
         gate.append(Criterion("Calibration", NOT_EVALUABLE, f"no bucket with >= {c.min_bucket_matches} fixtures"))
     else:
-        worst = max(judged, key=lambda b: abs(b.gap_pts))
-        ok = abs(worst.gap_pts) <= c.tolerance_pts
-        gate.append(Criterion("Calibration", PASS if ok else FAIL,
-                              f"{len(judged)} buckets judged; largest gap {worst.gap_pts:+.1f} pts in "
-                              f"{worst.lo_pts:g}-{worst.hi_pts:g} % (n={worst.n}); tolerance {c.tolerance_pts:g}"))
+        worst = max(judged, key=lambda b: abs(b.gap_pts) / allowed_gap_pts(b, c))
+        allowed = allowed_gap_pts(worst, c)
+        failing = sum(abs(b.gap_pts) > allowed_gap_pts(b, c) for b in judged)
+        gate.append(Criterion("Calibration", PASS if failing == 0 else FAIL,
+                              f"{len(judged)} buckets judged, {failing} outside; tightest: {worst.gap_pts:+.1f} pts "
+                              f"in {worst.lo_pts:g}-{worst.hi_pts:g} % (n={worst.n}, allowed ±{allowed:.1f})"))
 
     final, league = dict(models).get("Final price"), dict(models).get("Competition only")
     if final is None or league is None:
@@ -210,6 +217,12 @@ def _roi_cells(r: Roi) -> str:
             f"{'—' if r.roi is None else f'{r.roi:+.1%}'}")
 
 
+def _judged(b: Bucket, c: Calibration) -> str:
+    if b.n < c.min_bucket_matches:
+        return "no (small)"
+    return "pass" if abs(b.gap_pts) <= allowed_gap_pts(b, c) else "**FAIL**"
+
+
 def render_markdown(s: Summary, cfg: BacktestConfig) -> str:
     run = s.run
     c = cfg.calibration
@@ -229,19 +242,20 @@ def render_markdown(s: Summary, cfg: BacktestConfig) -> str:
             "Most frequent blocking checks: " + ", ".join(f"{code} ({n})" for code, n in s.blocking), ""]
 
     out += ["## Calibration", "",
-            f"Buckets of {c.bucket_width_pts:g} pts; judged when n >= {c.min_bucket_matches} "
-            f"(tolerance ±{c.tolerance_pts:g} pts). SE = binomial standard error of the actual rate.", ""]
+            f"Buckets of {c.bucket_width_pts:g} pts; judged when n >= {c.min_bucket_matches}. Allowed gap = "
+            f"max({c.tolerance_pts:g} pts, {c.noise_multiplier:g} x SE); SE = binomial standard error of the "
+            "actual rate.", ""]
     for market, label in ((Bet.UNDER05.value, "Under 0.5 (0-0 at 15')"), (Bet.DRAW.value, "Draw at 15'")):
         for name in ("priced", "listed"):
             sc, buckets = s.calibration[market][name]
             out += [f"### {label} — {'all priced fixtures' if name == 'priced' else 'listed (qualified)'}", "",
                     "n | mean predicted | actual | Brier | log loss", "---|---|---|---|---", _score_cells(sc), ""]
             if buckets:
-                out += ["| Bucket | n | Predicted | Actual | Gap (pts) | SE (pts) | Judged |",
-                        "|---|---|---|---|---|---|---|"]
+                out += ["| Bucket | n | Predicted | Actual | Gap (pts) | SE (pts) | Allowed (pts) | Judged |",
+                        "|---|---|---|---|---|---|---|---|"]
                 out += [f"| {b.lo_pts:g}-{b.hi_pts:g} % | {b.n} | {_pct(b.mean_p)} | {_pct(b.actual)} | "
-                        f"{b.gap_pts:+.1f} | {b.se_pts:.1f} | {'yes' if b.n >= c.min_bucket_matches else 'no'} |"
-                        for b in buckets]
+                        f"{b.gap_pts:+.1f} | {b.se_pts:.1f} | ±{allowed_gap_pts(b, c):.1f} | "
+                        f"{_judged(b, c)} |" for b in buckets]
                 out.append("")
 
     out += ["## Models (Under 0.5, same fixtures)", "", f"{s.models_n} fixtures with every model available.", "",

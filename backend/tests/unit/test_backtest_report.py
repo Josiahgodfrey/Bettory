@@ -9,7 +9,16 @@ import pytest
 
 from app.backtest.config import load_backtest_config
 from app.backtest.estimate import assumed_quotes
-from app.backtest.report import FAIL, NOT_EVALUABLE, PASS, render_markdown, rows_csv, summarise, summary_json
+from app.backtest.report import (
+    FAIL,
+    NOT_EVALUABLE,
+    PASS,
+    allowed_gap_pts,
+    render_markdown,
+    rows_csv,
+    summarise,
+    summary_json,
+)
 from app.backtest.runner import BacktestRow, BacktestRun, EstimatedBet, SessionRun
 from app.calculation.ev import Bet
 from app.calculation.models.model_c import MarketStatus, ModelCResult
@@ -114,3 +123,16 @@ def test_assumed_quotes() -> None:
     assert assumed_quotes(replace(c, status=MarketStatus.MARKET_INCONSISTENT), 0.07) == {}
     with pytest.raises(ValueError):
         assumed_quotes(c, 1.0)
+
+
+def test_calibration_tolerance_follows_the_noise() -> None:
+    """Owner decision: allowed gap = max(3 pts, 2 x SE). n = 100 at 75 %: SE 4.3, allowed 8.7 pts."""
+    near = [replace(r, p_under05=0.75) for r in calibrated(100, 0.70)]        # -5 pts: within the noise
+    far = [replace(r, p_under05=0.75) for r in calibrated(100, 0.60)]         # -15 pts: beyond it
+    flat = CFG.model_copy(update={"calibration": CFG.calibration.model_copy(update={"noise_multiplier": 0})})
+    assert gate(near)["Calibration"] == PASS and gate(far)["Calibration"] == FAIL
+    assert {c.name: c.status for c in summarise(run(near), flat).gate}["Calibration"] == FAIL   # old flat rule
+    bucket = summarise(run(near), CFG).calibration["UNDER05"]["priced"][1][0]
+    assert allowed_gap_pts(bucket, CFG.calibration) == pytest.approx(2 * bucket.se_pts)
+    big = [replace(r, p_under05=0.75) for r in calibrated(10000, 0.75)]
+    assert allowed_gap_pts(summarise(run(big), CFG).calibration["UNDER05"]["priced"][1][0], CFG.calibration) == 3

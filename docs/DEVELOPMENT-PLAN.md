@@ -256,7 +256,7 @@ Phase 7  Deployment → paper betting → small real stakes
 ### Gate B — exit criteria
 
 - ✅ ≥ 300 qualified historical selections.
-- ✅ Calibration: predicted and actual 0-0 rates within ±3 pts in each populated bucket.
+- ✅ Calibration: predicted and actual 0-0 rates within max(±3 pts, 2 × standard error) in each populated bucket (≥ 50 fixtures). *(Owner decision 2026-11-16; a flat ±3 pts is below the noise for buckets under ~900 fixtures.)*
 - ✅ Model beats the competition-average baseline (lower Brier score).
 - ✅ Estimated ROI positive on the **unseen validation period**.
 - If not met → adjust formula/parameters (new version), re-run; **do not start Phase 5** until passed.

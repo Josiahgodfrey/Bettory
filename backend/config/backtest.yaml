@@ -4,7 +4,10 @@
 
 calibration:
   bucket_width_pts: 2          # 70-72 %, 72-74 % ... (pricing doc 15)
-  tolerance_pts: 3             # Gate B: |actual - predicted| <= 3 pts in each populated bucket
+  tolerance_pts: 3             # Gate B: |actual - predicted| <= max(tolerance_pts, noise_multiplier x SE)
+  noise_multiplier: 2          # in each populated bucket; SE = binomial standard error of the bucket's actual
+                               # rate. Owner decision 2026-11-16: a flat 3 pts is tighter than the noise
+                               # below ~900 fixtures per bucket (a perfect model would fail it by chance)
   min_bucket_matches: 50       # "populated": fewer predictions are shown but not judged (at n = 50 and
                                # p = 0.73 the standard error alone is 6.3 pts)
 

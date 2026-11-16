@@ -17,6 +17,7 @@ class _Strict(BaseModel):
 class Calibration(_Strict):
     bucket_width_pts: float = Field(gt=0, le=50)
     tolerance_pts: float = Field(gt=0)
+    noise_multiplier: float = Field(ge=0)  # 0 = the flat tolerance only
     min_bucket_matches: int = Field(ge=1)
 
 

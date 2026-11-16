@@ -60,7 +60,7 @@ cap was never reached. Germany's many SKIPs are the league screen (P_L < 70 %).
 | Criterion | Status | Detail |
 |---|---|---|
 | ≥ 300 qualified selections | **FAIL** | 243 |
-| Calibration within ±3 pts per populated bucket | **FAIL** | worst: 74–76 % bucket, +6.2 pts (n = 90, standard error 4.6) |
+| Calibration: gap ≤ max(3 pts, 2 × SE) per populated bucket | **PASS** | 4 buckets judged, none outside; tightest: 74–76 %, +6.2 pts (n = 90, allowed ±9.1) |
 | Beats the competition-only baseline | **PASS (barely)** | Brier 0.2009 vs 0.2013 on 378 fixtures |
 | Estimated ROI > 0 on the unseen period | **NOT EVALUABLE** | no main-market odds |
 
@@ -114,10 +114,15 @@ worthless. They are written down here **before** the next seasons are loaded, so
    fair odds; the scenario assumes the bookmaker offers Model C's fair odds minus a margin, which is always lower.
    The scenario is implemented and tested, and will correctly report 0 bets when odds exist. Gate B's ROI criterion
    therefore needs a different value estimate — options in §5.
-2. **The calibration tolerance is tighter than the noise.** With n = 90 in a bucket the standard error of the actual
+2. **A flat ±3 pts tolerance was tighter than the noise.** With n = 90 in a bucket the standard error of the actual
    rate is 4.6 pts, so a perfectly calibrated model fails "±3 pts" in about half of such buckets. ±3 pts is a fair
    tolerance only from roughly 900 fixtures per bucket; with ~4 populated buckets and ~160 priced fixtures per
    league-season that is about 20 league-seasons with goal minutes (e.g. 3 seasons × 7 leagues).
+   **Decided 2026-11-16 (owner):** a bucket passes when |gap| ≤ max(3 pts, 2 × SE)
+   (`calibration.noise_multiplier: 2` in [config/backtest.yaml](../backend/config/backtest.yaml)). With the old flat
+   rule the same run failed on the 74–76 % bucket (+6.2 pts).
+   Caveat: buckets with fewer than 50 fixtures are still not judged, so the over-confident top end (76–78 %:
+   −12.6 pts, n = 42) is not yet tested by the gate — it stays open as the §2.5 hypothesis.
 
 ---
 
@@ -133,8 +138,7 @@ worthless. They are written down here **before** the next seasons are loaded, so
 
 ## 5. Decisions needed (owner)
 
-1. **Calibration criterion** — keep ±3 pts, or judge each bucket against its noise (e.g. |gap| ≤ max(3 pts, 2 × SE)).
-   Recommendation: the noise-aware rule; it keeps ±3 pts where the data is large and stops random failures where it is not.
+1. ~~**Calibration criterion**~~ — **decided 2026-11-16:** |gap| ≤ max(3 pts, 2 × SE) per populated bucket (§3.2).
 2. **ROI criterion** — since the data-doc estimate cannot produce bets under v1.4, accept "ROI at the minimum odds on
    the unseen period" as the historical criterion, with real profit measured in paper betting (Phase 7).
 3. **Next run** — after the Pro backfill: tune on 2022-23 to 2024-25, validate on 2025-26, and test the two
