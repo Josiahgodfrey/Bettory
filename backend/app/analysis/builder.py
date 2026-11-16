@@ -52,7 +52,7 @@ from app.domain.enums import Decision, Grade, MarketCode
 from app.domain.models import Score
 from app.domain.params import Params
 from app.domain.registry import Registry, season_start_year
-from app.storage.point_in_time import FixtureRow, MatchRow, OddsRow, PointInTimeReader
+from app.storage.point_in_time import FixtureRow, MatchRow, OddsRow, PointInTimeReader, ReadCache
 
 log = logging.getLogger(__name__)
 
@@ -95,8 +95,11 @@ def market_quotes(odds: Sequence[OddsRow]) -> dict[str, list[MarketQuote]]:
 
 
 class AnalysisContext:
-    def __init__(self, conn: Connection, params: Params, registry: Registry, as_of: datetime) -> None:
-        self.reader = PointInTimeReader(conn, as_of)
+    def __init__(self, conn: Connection, params: Params, registry: Registry, as_of: datetime,
+                 cache: ReadCache | None = None) -> None:
+        """`cache`: share point-in-time reads with other contexts at the same as_of (backtest parameter
+        variations); results that depend on params are never cached across contexts."""
+        self.reader = PointInTimeReader(conn, as_of, cache)
         self.params, self.registry, self.as_of = params, registry, as_of
         self._tallies: dict[UUID, Tally] = {}
         self._baselines: dict[UUID, CompetitionBaseline] = {}
@@ -106,10 +109,11 @@ class AnalysisContext:
     # --- competition baselines ------------------------------------------------------------------------------
 
     def tally(self, season_id: UUID) -> Tally:
-        if season_id not in self._tallies:
-            label = self.reader.season(season_id).label
-            rows = self.reader.competition_matches(season_id)
-            self._tallies[season_id] = tally(baseline_match(m, label) for m in rows)
+        if season_id not in self._tallies:  # a tally depends only on the data, not on params: shareable
+            def load() -> Tally:
+                label = self.reader.season(season_id).label
+                return tally(baseline_match(m, label) for m in self.reader.competition_matches(season_id))
+            self._tallies[season_id] = self.reader.memo("tally", (season_id,), load)
         return self._tallies[season_id]
 
     def shares(self) -> GlobalShares:

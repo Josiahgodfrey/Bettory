@@ -15,6 +15,9 @@ Examples (from backend/, venv active):
   python -m app.cli backfill-daily              # where every target stands (no request)
   python -m app.cli backfill-daily --run        # run today's backfill now
   python -m app.cli worker                      # start the scheduler (foreground)
+  python -m app.cli tuning-plan                 # the pre-registered tuning plan (config/tuning_v1.yaml)
+  python -m app.cli tune --tuning 2025-08-01 2026-01-31 --holdout 2026-02-01 2026-05-31   # dry run
+  python -m app.cli tune --real                 # the real run: locks the plan, may write a new params file
   python -m app.cli backtest --from 2025-09-01 --to 2026-05-31 --comp ENG1 --comp GER1 --split 2026-02-01
 """
 
@@ -31,6 +34,9 @@ from uuid import UUID
 from app.backtest.config import load_backtest_config
 from app.backtest.report import render_markdown, rows_csv, summarise, summary_json
 from app.backtest.runner import SessionRun, run_backtest
+from app.backtest.tuning import TuningNotReady, period_of, run_tuning
+from app.backtest.tuning_plan import check_unchanged, current_plan_path, lineage, load_plan, sha256_of, variations
+from app.backtest.tuning_report import render_tuning, tuning_json, variations_csv
 from app.core.settings import BACKEND_DIR, get_settings
 from app.domain.params import load_params
 from app.domain.quality_config import load_quality_config
@@ -95,6 +101,17 @@ def main(argv: list[str] | None = None) -> int:
     bd = sub.add_parser("backfill-daily", help="automatic API-Football backfill (config/backfill.yaml)")
     bd.add_argument("--run", action="store_true", help="run today's backfill now (otherwise: show the plan)")
     sub.add_parser("worker", help="start the scheduler in the foreground (Ctrl+C to stop)")
+    tn = sub.add_parser("tune", help="run a pre-registered tuning plan (dry run unless --real)")
+    tn.add_argument("--plan", type=Path, default=None, help="plan file (default: the newest registered plan)")
+    tn.add_argument("--real", action="store_true",
+                    help="the real run: locks the plan for good and may write a new params file")
+    tn.add_argument("--tuning", nargs=2, type=date.fromisoformat, metavar=("FIRST", "LAST"),
+                    help="dry run only: override the tuning period")
+    tn.add_argument("--holdout", nargs=2, type=date.fromisoformat, metavar=("FIRST", "LAST"),
+                    help="dry run only: override the holdout period")
+    tn.add_argument("--out", type=Path, default=None, help="output folder (default: backtests/tuning_...)")
+    tp = sub.add_parser("tuning-plan", help="show and validate a pre-registered tuning plan")
+    tp.add_argument("--plan", type=Path, default=None, help="plan file (default: the newest registered plan)")
 
     bt = sub.add_parser("backtest", help="replay sessions point in time and report calibration / Gate B")
     bt.add_argument("--from", dest="first", required=True, type=date.fromisoformat, help="first session date")
@@ -158,6 +175,69 @@ def main(argv: list[str] | None = None) -> int:
         with engine.begin() as conn:
             health_repo.accept_crosscheck(conn, args.crosscheck_id, args.note)
         print("accepted")
+        return 0
+
+    if args.cmd == "tune":
+        if args.real and (args.tuning or args.holdout):
+            print("a real run uses the registered periods: --tuning / --holdout are for dry runs", file=sys.stderr)
+            return 2
+        plan_path = args.plan or current_plan_path()
+        try:
+            result = run_tuning(
+                engine, registry, load_backtest_config(), plan_path, dry_run=not args.real,
+                tuning_override=period_of(*args.tuning) if args.tuning else None,
+                holdout_override=period_of(*args.holdout) if args.holdout else None,
+                progress=lambda m: print(f"  {m}", file=sys.stderr))
+        except TuningNotReady as e:
+            print(f"NOT READY: {e}", file=sys.stderr)
+            return 3
+        cfg_bt = load_backtest_config()
+        stamp = datetime.now(UTC).strftime("%Y%m%dT%H%M%SZ")
+        kind = "real" if args.real else "dryrun"
+        out = args.out or BACKEND_DIR / "backtests" / f"tuning_{plan_path.stem}_{kind}_{stamp}"
+        out.mkdir(parents=True, exist_ok=True)
+        text_report = render_tuning(result, cfg_bt)
+        (out / "report.md").write_text(text_report, encoding="utf-8")
+        (out / "summary.json").write_text(json.dumps(tuning_json(result), indent=2), encoding="utf-8")
+        (out / "variations.csv").write_text(variations_csv(result), encoding="utf-8")
+        (out / "holdout_selected.md").write_text(render_markdown(result.holdout_selected, cfg_bt), encoding="utf-8")
+        if result.holdout_base is not None:
+            (out / "holdout_base.md").write_text(render_markdown(result.holdout_base, cfg_bt), encoding="utf-8")
+        print(text_report)
+        print(f"written to {out}")
+        return 0
+
+    if args.cmd == "tuning-plan":
+        path = args.plan or current_plan_path()
+        tplan = load_plan(path)
+        tplan.check_registry(registry)
+        used = check_unchanged(path)
+        base = load_params(BACKEND_DIR / "config" / f"params_v{tplan.base_params}.yaml")
+        vs = variations(tplan, base)
+        (base_v,) = [v for v in vs if v.is_base]
+        print(f"{path.name}  plan {tplan.plan_version}, "
+              f"registered {tplan.registered_on}, sha256 {sha256_of(path)[:16]}")
+        print("  status: " + (f"LOCKED - used by a real run at {used}" if used else "not used yet (editable)"))
+        print(f"  base params {tplan.base_params} = {base_v.id} ({base_v.name}); competitions "
+              f"{', '.join(tplan.competitions)}")
+        for name, older in lineage(path)[1:]:
+            print(f"  supersedes {name} (v{older.plan_version}, {older.registered_on}): {tplan.change_reason}")
+        pr = tplan.periods
+        print(f"  tuning {pr.tuning.first} .. {pr.tuning.last}; holdout {pr.holdout.first} .. {pr.holdout.last} "
+              f"(touched once; {tplan.holdout_status.value})")
+        if pr.prospective is not None:
+            print(f"  prospective {pr.prospective.first} .. {pr.prospective.last} (not yet played at registration)")
+        sel = tplan.selection
+        print(f"  selection: lowest {sel.metric.value} of {sel.market.value}; ties within {sel.tie_tolerance} -> "
+              "fewest changes from the base")
+        for dim in tplan.grid:
+            print(f"  {dim.name}: " + ", ".join(o.label for o in dim.options))
+        print(f"  {len(vs)} variations")
+        for h in tplan.hypotheses:
+            print(f"  {h.id}: {h.statement}")
+        g = tplan.gate_b
+        print(f"  Gate B (holdout): >= {g.min_qualified} listed; calibration {g.calibration}; baseline "
+              f"{g.beats_baseline}; profit {g.profit}")
         return 0
 
     if args.cmd in ("backfill-daily", "worker"):

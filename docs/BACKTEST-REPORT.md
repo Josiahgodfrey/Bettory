@@ -27,6 +27,7 @@ ranking and the 50-match cap. Results are read **separately, afterwards**, only 
 | Live-identical decisions | The runner calls `AnalysisContext.evaluate`, `verify` and `rank_and_cap`; no backtest-only decision logic |
 | No writes | The run is a `READ ONLY` transaction; tested |
 | Reproducible | Output records params_version; rows, summary and report written to `backend/backtests/<run>/` |
+| Fast, without changing results | Point-in-time reads are memoised per `as_of` (`ReadCache`); parameter variations share one cache. Tested: identical rows with and without it, a warm run reads no history, different `as_of` never share. Full season 88 s → 34 s; a further variation on cached reads ≈ 16× faster |
 | Selection bias | INCOMPLETE matches are never dropped: a window containing one is INSUFFICIENT_DATA (DATA-MODEL 7.1) |
 
 What is measured (settings in [config/backtest.yaml](../backend/config/backtest.yaml), never in code):
@@ -124,6 +125,36 @@ worthless. They are written down here **before** the next seasons are loaded, so
    Caveat: buckets with fewer than 50 fixtures are still not judged, so the over-confident top end (76–78 %:
    −12.6 pts, n = 42) is not yet tested by the gate — it stays open as the §2.5 hypothesis.
 
+### 3.1 Step 1 measurements (2026-11-16, same data, same params 1.5)
+
+The report now adds probability-quality statistics and paired intervals
+([RESEARCH-PHASE4-TUNING.md](RESEARCH-PHASE4-TUNING.md) §3, §6). Under 0.5, 378 fixtures with every model:
+
+| Model | Brier | Reliability | Resolution | Skill vs competition-only | Mean z | Spiegelhalter z | Slope |
+|---|---|---|---|---|---|---|---|
+| Final price | 0.2009 | 0.00663 | 0.00648 | +0.18 % | −0.04 | +0.19 | **0.38** |
+| Model A | 0.2009 | 0.00365 | 0.00323 | +0.17 % | +0.17 | −0.09 | **0.20** |
+| Model B v2 | 0.2013 | 0.00961 | 0.00931 | +0.01 % | −0.09 | +0.33 | **0.26** |
+
+| Paired (model − competition-only, 95 %, sessions resampled) | Brier difference | Verdict |
+|---|---|---|
+| Final price, Under 0.5 | −0.0004 [−0.0036, +0.0030] | not distinguishable |
+| Model A, Under 0.5 | −0.0003 [−0.0018, +0.0011] | not distinguishable |
+| Final price, Draw | −0.0003 [−0.0023, +0.0020] | not distinguishable |
+
+What this says:
+- **The average is right** (both z ≈ 0), **the spread is not**: a recalibration slope of 0.38 means real
+  differences between fixtures are about a third of what the model predicts. What the model gains by separating
+  matches (resolution) it loses to over-confident differences (reliability) — net skill ≈ 0.
+- The earlier "Beats competition-only baseline: PASS" was a lower Brier by 0.0004, **not statistically
+  distinguishable from zero**. Gate B criterion 3 must use the paired interval (decision 1, pending).
+- Direction for tuning (to be tested, not concluded): much stronger shrinkage of team ratings / indexes, or a
+  recalibration of P toward the competition level. Both belong in the pre-registered grid.
+- Observed 15' share of goals: s = 13.9 % (AUT1), 11.6 % (ENG1), 11.1 % (GER1) in 2025-26 — per-league baselines
+  are justified.
+- ROI at the minimum odds, validation: Under 0.5 +3.1 % with interval [−6.4 %, +12.1 %]; Draw +4.6 %
+  [−4.7 %, +13.3 %] — both include zero, as §6 of the research notes predicted.
+
 ---
 
 ## 4. Why Gate B cannot be decided yet
@@ -136,10 +167,107 @@ worthless. They are written down here **before** the next seasons are loaded, so
 
 ---
 
-## 5. Decisions needed (owner)
+## 5. Owner decisions
 
-1. ~~**Calibration criterion**~~ — **decided 2026-11-16:** |gap| ≤ max(3 pts, 2 × SE) per populated bucket (§3.2).
-2. **ROI criterion** — since the data-doc estimate cannot produce bets under v1.4, accept "ROI at the minimum odds on
-   the unseen period" as the historical criterion, with real profit measured in paper betting (Phase 7).
-3. **Next run** — after the Pro backfill: tune on 2022-23 to 2024-25, validate on 2025-26, and test the two
-   hypotheses of §2.5 there.
+All decided on 2026-11-16 and fixed in the pre-registered plan
+[config/tuning_v1.yaml](../backend/config/tuning_v1.yaml) (`python -m app.cli tuning-plan`):
+
+1. **Calibration criterion:** |gap| ≤ max(3 pts, 2 × SE) per populated bucket (§3).
+2. **Beating the baseline:** the paired Brier difference with the competition-only baseline must have the upper end
+   of its 95 % interval (sessions resampled) below 0 — a lower average alone is not enough (§3.1).
+3. **Profit:** no historical profit criterion. ROI at the minimum odds is reported with its interval as a
+   consistency check; profit is proven in paper betting (Phase 7) with sequential e-values
+   ([RESEARCH-PHASE4-TUNING.md](RESEARCH-PHASE4-TUNING.md) §3.6, §6).
+4. **Variation grid:** rating shrinkage 20 / 40 / 80 / 160 prior matches × early-goal index trust 0 / 0.25 / 0.5 ×
+   team weight 1.0 / 0.5 / 0.25 = 36 variations; selection by lowest log loss of P(Under 0.5) on 2022-23 – 2024-25;
+   2025-26 is the holdout, evaluated once by the selected variation and by params 1.5 (= variation v08).
+5. **Grade B:** if hypothesis H1 is confirmed, Grade B fixtures are no longer listed in reports (a decision
+   setting; probabilities are not retuned for it).
+
+## 6. Pre-registration
+
+The plan was written and committed **before any model result on the tuning seasons (2022-23 to 2024-25) was
+computed**. *Correction (2026-11-17):* an earlier version of this sentence, and tuning_v1's header, said "before the
+tuning seasons were loaded"; in fact part of ENG1 2024-25 was already in the database through the goal-minute
+backfill (only coverage counts had been looked at). Once a real tuning run uses a plan, its SHA-256 is recorded in
+`config/tuning_lock.yaml` and the tool refuses any later edit; a changed plan must be a new file that supersedes it,
+and every report lists every plan and every variation that was run.
+
+## 7. The tuning tool and its dry run (2026-11-17)
+
+`python -m app.cli tune` (dry run by default; `--real` for the run that counts):
+[app/backtest/tuning.py](../backend/app/backtest/tuning.py), report in
+[tuning_report.py](../backend/app/backtest/tuning_report.py).
+
+- every variation is scored on the **same** fixtures (priced in all variations, result known);
+- variations with identical predictions are grouped: the report gives the **effective number of trials** and the
+  grid dimensions that are **not testable**;
+- the holdout is run once for the selected variation and once for the base; Gate B uses the plan's rules;
+- a real run locks the plan first and writes `params_v1.6.yaml` only if a non-base variation wins (never
+  overwriting); a dry run may override the periods and never locks or writes.
+
+**Dry run on the data at hand** (tuning Aug 2025 – Jan 2026, holdout Feb – May 2026; a test of the tool, not
+evidence; 55 s for 36 variations):
+
+| Result | Value |
+|---|---|
+| Fixtures scored in every variation | 143 |
+| Effective trials | **12 of 36** — `team_vs_market` not testable (no main-market odds) |
+| Best | 0.57314 log loss = the base v08 (m20 / wI0.5); 12 variations within the tie tolerance → base kept |
+| Rating shrinkage 20 → 160 | changes log loss by ≤ 0.0003: almost no effect |
+| Early-goal index trust 0 / 0.25 / 0.5 | 0.5 best (+0.0025 worse at 0) — **the best value is at the edge of the grid** |
+| Holdout (base) | 342 fixtures, calibration slope 0.21; paired Brier vs competition-only +0.0001 [−0.0033, +0.0036] → FAIL |
+| Hypotheses | too few sessions in the short tuning window; holdout H1 Grade B −0.195 [−0.399, +0.006] (26 sessions → too few), H2 −0.133 [−0.291, +0.019] not confirmed |
+
+Two points for the owner (see the session notes): the 2025-26 "holdout" has already been examined (first backtest,
+step 1, this dry run), and the early-goal index trust is best at the edge of the registered grid.
+
+## 8. Plan v2: the validation protocol (2026-11-17)
+
+Owner decisions of 2026-11-17 ("yes to both recommendations"):
+[config/tuning_v2.yaml](../backend/config/tuning_v2.yaml) supersedes v1 (never used by a real run). The tools use
+the newest registered plan by default (`python -m app.cli tuning-plan`).
+
+| Element | What it guarantees |
+|---|---|
+| **Plan history** | `supersedes` + `change_reason` are validated (the old plan must exist, have a lower version and an earlier or equal registration) and every tuning report prints the full history: nobody can quietly replace a plan |
+| **Wider grid** | early-goal index trust 0 / 0.25 / 0.5 / **0.75 / 1.0** (60 variations): the v1 dry run had found the best value at the edge of its grid |
+| **Honest holdout** | `holdout_status: examined_before_registration` with the note of what was examined; every report shows it as a banner and Gate B carries a **NOTE** (it never blocks, never hides) |
+| **Prospective period** | 2026-11-18 → 2027-06-30, starting **after** the registration date (validated): fixtures not yet played when the plan was fixed, the truly unseen test. Every later run evaluates it automatically (selected and base params, beats-the-baseline rule) as matches are played and loaded; until then it shows PENDING |
+| **One rule set** | the normal backtest report now uses the same Gate B rules as the tuning report (paired interval vs the competition-only baseline; profit = PAPER BETTING, never a historical number) |
+
+Dry run of v2 on the data at hand (tuning Aug 2025 – Jan 2026, holdout Feb – May 2026 — a test of the tool, not
+evidence; 83 s for 60 variations):
+
+| Result | Value |
+|---|---|
+| Effective trials | 20 of 60 (`team_vs_market` not testable without main-market odds) |
+| Selected | **v14 (m20 / wI1.0 / team0.5)**: log loss −0.0022 vs the base on the tuning months — the best value is again at the edge, but 1.0 (full trust in the index) is the natural maximum of the parameter |
+| Holdout | paired Brier vs competition-only +0.0011 [−0.0040, +0.0069] → FAIL; calibration PASS (1 bucket judged) |
+| Prospective | PENDING — starts 2026-11-18 |
+
+Read with care: the tuning window here is five months of one season; the real run tunes on three seasons.
+
+## 9. First real-run attempt: not ready (2026-11-16 23:04 UTC, 2026-11-17 EAT)
+
+`python -m app.cli tune --real` was started on `tuning_v2.yaml` before the backfill had loaded the tuning seasons.
+All 60 variations ran on the tuning period and **none could be scored**: no metric was computed, the holdout and
+the prospective period were not touched, no params file was written.
+
+| Tuning period content (base params) | Fixtures | Priced | Known 15' result | Most common failed checks |
+|---|---|---|---|---|
+| ENG1 2024-25 | 380 | 0 | 160 | WINDOW_HOME_HOME, WINDOW_AWAY_AWAY, MODEL_A_AVAILABLE (all 380) |
+| GER1, AUT1 | — | — | — | no fixture loaded in the period |
+
+Cause: ENG1 2024-25 is the oldest season in the database, and the team windows and ratings need an earlier season.
+Consequence for the real run: each competition's first loaded season (2022-23) is **warm-up only**; the scored
+tuning data will be 2023-24 and 2024-25.
+
+The run had already written `config/tuning_lock.yaml` (the SHA-256 of `tuning_v2.yaml`). The entry is kept and
+committed: it is true that a real run started on that plan, it fixes the plan as it was, and it does not block the
+later run (locking is idempotent for an unchanged plan). Since this event the tool:
+
+- locks a plan only once the tuning period has been scored, and before the holdout is touched;
+- stops with **NOT READY** (exit code 3) and a per-season readiness table (fixtures, priced, known results, failed
+  checks, competitions with nothing loaded) when nothing can be scored;
+- shows "N fixtures, M priced with a known result" per variation instead of the fixture count alone.

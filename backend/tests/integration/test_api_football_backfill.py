@@ -217,3 +217,13 @@ def test_history_mode_skips_known_15_minute_results(engine: Engine, tmp_path: Pa
     requested = [int(c["id"]) - 5000 for c in fake.calls if "id" in c]
     assert sorted(requested) == [n for n in range(N) if n % 2 == 0]        # only the unknown ones
     assert stats["skipped_known_15"] == N // 2 and stats["fixtures_still_without_minutes"] == 0
+
+
+def test_a_budget_too_small_for_one_fixture_is_not_spent(engine: Engine, tmp_path: Path,
+                                                         monkeypatch: pytest.MonkeyPatch) -> None:
+    """94 used, reserve 5 -> 1 request left: the season listing alone would achieve nothing, so nothing is spent."""
+    fake = FakeApi(free=True, used_today=94)
+    install(monkeypatch, fake)
+    with pytest.raises(pipeline.QuotaError, match="1 left, this run needs at least 2"):
+        run(engine, tmp_path, bulk=False, max_requests=100)
+    assert fake.requests_used == 0
