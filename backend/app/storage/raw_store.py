@@ -15,6 +15,7 @@ from typing import Protocol
 
 import httpx
 
+from app.core.settings import BACKEND_DIR, Settings
 from app.domain.enums import SourceCode
 
 
@@ -73,3 +74,12 @@ class SupabaseRawStore:
         resp = self.client.get(f"{self.base}/object/{self.bucket}/{path}")
         resp.raise_for_status()
         return gzip.decompress(resp.content)
+
+
+def store_from_settings(settings: Settings) -> RawStore:
+    """The raw store chosen by RAW_STORE ("local" or "supabase")."""
+    if settings.raw_store == "supabase":
+        store = SupabaseRawStore(settings.supabase_url, settings.supabase_service_role_key.get_secret_value())
+        store.ensure_bucket()
+        return store
+    return LocalRawStore(BACKEND_DIR / settings.raw_store_dir)
