@@ -3,6 +3,11 @@
 What is measured
     calibration    every PRICED fixture with a known 15' result (the model, independent of the bet filter),
                    and the LISTED (qualified) fixtures separately; 2-point buckets, Brier, log loss
+    quality        per model: Brier = reliability - resolution + uncertainty, skill vs the competition-only
+                   baseline, calibration-in-the-large z, Spiegelhalter z, recalibration slope / intercept
+    paired         model minus competition-only, per match, with a confidence interval from resampling whole
+                   sessions: "better" only when the interval excludes 0
+    season shares  observed 15' share of goals per season (s = of full-time goals, r = of half-time goals)
     models         Final price, Model A, Model B v2, Model C, competition-only baseline - on the SAME fixtures
     min-odds ROI   every listed fixture settled at its own minimum odds, per market: the report-mode promise
                    ("bet only at or above these odds") checked against what happened. Expected: about +EV_req
@@ -22,18 +27,31 @@ from __future__ import annotations
 
 import csv
 import io
-from collections import Counter
+import math
+from collections import Counter, defaultdict
 from collections.abc import Callable, Iterable, Sequence
 from dataclasses import dataclass
 from datetime import date
 from typing import Any
 
-from app.backtest.config import BacktestConfig, Calibration
+from app.backtest.config import BacktestConfig, Calibration, Uncertainty
 from app.backtest.runner import BacktestRow, BacktestRun
 from app.calculation.ev import Bet
-from app.domain.enums import Decision
+from app.domain.enums import BetOutcome, Decision
 from app.settlement.performance import Bucket, Pair, Roi, Score, calibration, roi, score
 from app.settlement.settle import Settlement, settle
+from app.settlement.statistics import (
+    Decomposition,
+    Interval,
+    Recalibration,
+    block_bootstrap,
+    calibration_in_the_large_z,
+    decompose,
+    recalibration,
+    skill,
+    spiegelhalter_z,
+)
+from app.storage.results import SeasonShare
 
 PASS, FAIL, NOT_EVALUABLE = "PASS", "FAIL", "NOT_EVALUABLE"
 _MODELS: tuple[tuple[str, Callable[[BacktestRow], float | None]], ...] = (
@@ -61,6 +79,27 @@ def _period(r: BacktestRow, split: date | None) -> str:
 
 
 @dataclass(frozen=True)
+class ModelQuality:
+    name: str
+    market: str
+    score: Score
+    decomposition: Decomposition
+    skill_vs_league: float | None
+    citl_z: float | None
+    spiegelhalter_z: float | None
+    recalibration: Recalibration | None
+
+
+@dataclass(frozen=True)
+class Paired:
+    name: str  # "<model> - Competition only"
+    market: str
+    n: int
+    brier: Interval | None  # mean per-match difference: negative = the model is better
+    log_loss: Interval | None
+
+
+@dataclass(frozen=True)
 class Criterion:
     name: str
     status: str
@@ -85,6 +124,10 @@ class Summary:
     estimated: dict[str, Roi]  # period -> ROI
     with_market: int
     gate: list[Criterion]
+    quality: list[ModelQuality]
+    paired: list[Paired]
+    roi_interval: dict[str, dict[str, Interval | None]]  # period -> market -> ROI interval
+    season_shares: tuple[SeasonShare, ...]
 
     @property
     def gate_passed(self) -> bool:
@@ -94,6 +137,55 @@ class Summary:
 def allowed_gap_pts(b: Bucket, c: Calibration) -> float:
     """Largest acceptable |actual - predicted| for this bucket: the tolerance, or the noise if larger."""
     return max(c.tolerance_pts, c.noise_multiplier * b.se_pts)
+
+
+_LEAGUE = "Competition only"
+_DRAW_MODELS: tuple[tuple[str, Callable[[BacktestRow], float | None]], ...] = (
+    ("Final price", lambda r: r.p_draw), (_LEAGUE, lambda r: r.p_league_draw))
+_CLIP = 1e-12
+
+
+def _quality(name: str, market: str, pairs: list[Pair], league: list[Pair], width: float) -> ModelQuality | None:
+    sc = score(pairs)
+    if sc is None:
+        return None
+    ref = score(league)
+    return ModelQuality(name, market, sc, decompose(pairs, width),
+                        skill(sc.brier, ref.brier) if ref is not None else None,
+                        calibration_in_the_large_z(pairs), spiegelhalter_z(pairs), recalibration(pairs))
+
+
+def _loss(p: float, y: bool) -> float:
+    return -math.log(min(max(p if y else 1.0 - p, _CLIP), 1.0))
+
+
+def _paired(name: str, market: str, rows: Sequence[BacktestRow], model: Callable[[BacktestRow], float | None],
+            league: Callable[[BacktestRow], float | None], bet: Bet, u: Uncertainty) -> Paired:
+    brier: dict[str, list[tuple[float, float]]] = defaultdict(list)
+    loss: dict[str, list[tuple[float, float]]] = defaultdict(list)
+    n = 0
+    for r in rows:
+        pm, pl, y = model(r), league(r), _outcome(r, bet)
+        if pm is None or pl is None or y is None:
+            continue
+        n += 1
+        brier[str(r.session)].append(((pm - y) ** 2 - (pl - y) ** 2, 1.0))
+        loss[str(r.session)].append((_loss(pm, y) - _loss(pl, y), 1.0))
+    def interval(blocks: dict[str, list[tuple[float, float]]]) -> Interval | None:
+        return block_bootstrap(list(blocks.values()), u.bootstrap_samples, u.confidence, u.seed)
+    return Paired(f"{name} - {_LEAGUE}", market, n, interval(brier), interval(loss))
+
+
+def _roi_interval(rows: Sequence[BacktestRow], bet: Bet, stake: float, u: Uncertainty) -> Interval | None:
+    blocks: dict[str, list[tuple[float, float]]] = defaultdict(list)
+    for r in rows:
+        odds = r.min_odds_under05 if bet is Bet.UNDER05 else r.min_odds_draw
+        if r.result is None or odds is None:
+            continue
+        s = settle(bet, r.result, odds, stake)
+        if s.outcome in (BetOutcome.WIN, BetOutcome.LOSE):
+            blocks[str(r.session)].append((s.profit, s.stake))
+    return block_bootstrap(list(blocks.values()), u.bootstrap_samples, u.confidence, u.seed)
 
 
 def _min_odds_settlements(rows: Iterable[BacktestRow], bet: Bet, stake: float) -> list[Settlement]:
@@ -106,7 +198,8 @@ def _min_odds_settlements(rows: Iterable[BacktestRow], bet: Bet, stake: float) -
 
 
 def _gate(listed: Sequence[BacktestRow], buckets: list[Bucket], models: list[tuple[str, Score | None]],
-          estimated: dict[str, Roi], split: date | None, cfg: BacktestConfig) -> list[Criterion]:
+          estimated: dict[str, Roi], split: date | None, cfg: BacktestConfig,
+          paired: Paired | None = None) -> list[Criterion]:
     gate: list[Criterion] = []
     known = sum(_outcome(r, Bet.UNDER05) is not None for r in listed)
     need = cfg.gate_b.min_qualified
@@ -128,8 +221,16 @@ def _gate(listed: Sequence[BacktestRow], buckets: list[Bucket], models: list[tup
     if final is None or league is None:
         gate.append(Criterion("Beats competition-only baseline", NOT_EVALUABLE, "no comparable fixtures"))
     else:
+        ci = paired.brier if paired is not None else None
+        if ci is None:
+            extra = ""
+        elif ci.blocks < cfg.uncertainty.min_sessions:
+            extra = f"; paired interval unreliable (only {ci.blocks} sessions)"
+        else:
+            extra = (f"; paired difference {ci.estimate:+.4f} [{ci.low:+.4f}, {ci.high:+.4f}], "
+                     f"{'significant' if ci.excludes(0.0) else 'not distinguishable from 0'}")
         gate.append(Criterion("Beats competition-only baseline", PASS if final.brier < league.brier else FAIL,
-                              f"Brier {final.brier:.4f} vs {league.brier:.4f} (n={final.n})"))
+                              f"Brier {final.brier:.4f} vs {league.brier:.4f} (n={final.n}){extra}"))
 
     period = "validation" if split is not None else "all"
     est = estimated.get(period)
@@ -183,6 +284,29 @@ def summarise(run: BacktestRun, cfg: BacktestConfig, split: date | None = None) 
                if r.estimated is not None and r.result is not None]
         estimated[period] = roi(est)
 
+    u = cfg.uncertainty
+    league_pairs = _pairs(common, lambda r: r.p_league_00, Bet.UNDER05)
+    quality = [q for name, f in _MODELS
+               if (q := _quality(name, "UNDER05", _pairs(common, f, Bet.UNDER05), league_pairs, width)) is not None]
+    if market_rows:
+        q = _quality("Model C", "UNDER05", _pairs(market_rows, lambda r: r.p_market, Bet.UNDER05),
+                     _pairs(market_rows, lambda r: r.p_league_00, Bet.UNDER05), width)
+        if q is not None:
+            quality.append(q)
+    common_draw = [r for r in rows if _outcome(r, Bet.DRAW) is not None
+                   and all(f(r) is not None for _, f in _DRAW_MODELS)]
+    draw_league = _pairs(common_draw, lambda r: r.p_league_draw, Bet.DRAW)
+    quality += [q for name, f in _DRAW_MODELS
+                if (q := _quality(name, "DRAW", _pairs(common_draw, f, Bet.DRAW), draw_league, width)) is not None]
+    paired = [_paired(name, "UNDER05", common, f, lambda r: r.p_league_00, Bet.UNDER05, u)
+              for name, f in _MODELS if name != _LEAGUE]
+    paired.append(_paired("Final price", "DRAW", common_draw, lambda r: r.p_draw, lambda r: r.p_league_draw,
+                          Bet.DRAW, u))
+    roi_ci: dict[str, dict[str, Interval | None]] = {}
+    for period in periods:
+        sub = [r for r in listed if period == "all" or _period(r, split) == period]
+        roi_ci[period] = {b.value: _roi_interval(sub, b, stake, u) for b in (Bet.UNDER05, Bet.DRAW)}
+
     active = [s for s in run.sessions if s.fixtures]
     qualified = [s.qualified for s in active]
     return Summary(
@@ -195,7 +319,8 @@ def summarise(run: BacktestRun, cfg: BacktestConfig, split: date | None = None) 
         over_cap=sum(r.decision is Decision.QUALIFIED_OVER_CAP for r in rows),
         calibration=cal, models=models, models_n=len(common), by_competition=by_comp, by_grade=by_grade,
         min_odds_roi=min_odds, estimated=estimated, with_market=sum(r.p_market is not None for r in rows),
-        gate=_gate(listed, cal[Bet.UNDER05.value]["priced"][1], models, estimated, split, cfg),
+        gate=_gate(listed, cal[Bet.UNDER05.value]["priced"][1], models, estimated, split, cfg, paired[0]),
+        quality=quality, paired=paired, roi_interval=roi_ci, season_shares=run.season_shares,
     )
 
 
@@ -215,6 +340,27 @@ def _score_cells(s: Score | None) -> str:
 def _roi_cells(r: Roi) -> str:
     return (f"{r.bets} | {_pct(r.hit_rate)} | {_pct(r.break_even)} | {r.profit:+.2f} | "
             f"{'—' if r.roi is None else f'{r.roi:+.1%}'}")
+
+
+def _z(x: float | None) -> str:
+    return "—" if x is None else f"{x:+.2f}"
+
+
+def _ci(i: Interval | None, u: Uncertainty, fmt: str = "+.4f") -> str:
+    if i is None:
+        return "—"
+    few = f" (only {i.blocks} sessions: unreliable)" if i.blocks < u.min_sessions else ""
+    return f"{i.estimate:{fmt}} [{i.low:{fmt}}, {i.high:{fmt}}]{few}"
+
+
+def _verdict(i: Interval | None, u: Uncertainty) -> str:
+    if i is None:
+        return "—"
+    if i.blocks < u.min_sessions:
+        return "too few sessions"
+    if not i.excludes(0.0):
+        return "not distinguishable"
+    return "model better" if i.high < 0 else "model worse"
 
 
 def _judged(b: Bucket, c: Calibration) -> str:
@@ -261,6 +407,36 @@ def render_markdown(s: Summary, cfg: BacktestConfig) -> str:
     out += ["## Models (Under 0.5, same fixtures)", "", f"{s.models_n} fixtures with every model available.", "",
             "| Model | n | Mean predicted | Actual | Brier | Log loss |", "|---|---|---|---|---|---|"]
     out += [f"| {name} | {_score_cells(sc)} |" for name, sc in s.models]
+    u = cfg.uncertainty
+    out += ["", "## Probability quality", "",
+            "Brier = reliability - resolution + uncertainty (Murphy). Reliability: calibration penalty (lower is "
+            "better). Resolution: how well the model separates matches (higher is better). Skill: 1 - Brier / "
+            "competition-only Brier. z values are ~N(0,1) when calibrated (|z| > 1.96: evidence of miscalibration). "
+            "Slope < 1: over-confident, > 1: under-confident.", "",
+            "| Model | Market | n | Brier | Reliability | Resolution | Uncertainty | Skill | Mean z | "
+            "Spiegelhalter z | Slope | Intercept |", "|---|---|---|---|---|---|---|---|---|---|---|---|"]
+    for q in s.quality:
+        d, rc = q.decomposition, q.recalibration
+        out.append(f"| {q.name} | {q.market} | {q.score.n} | {d.brier:.4f} | {d.reliability:.5f} | "
+                   f"{d.resolution:.5f} | {d.uncertainty:.4f} | "
+                   f"{'—' if q.skill_vs_league is None else f'{q.skill_vs_league:+.2%}'} | {_z(q.citl_z)} | "
+                   f"{_z(q.spiegelhalter_z)} | {'—' if rc is None else f'{rc.slope:.2f}'} | "
+                   f"{'—' if rc is None else f'{rc.intercept:+.2f}'} |")
+    out += ["", f"## Paired comparisons with the competition-only baseline ({u.confidence:.0%} intervals, "
+            f"{u.bootstrap_samples} resamples of whole sessions)", "",
+            "Per-match difference (model minus baseline): negative = the model is better.", "",
+            "| Comparison | Market | n | Brier difference | Log-loss difference | Verdict (Brier) |",
+            "|---|---|---|---|---|---|"]
+    out += [f"| {p.name} | {p.market} | {p.n} | {_ci(p.brier, u)} | {_ci(p.log_loss, u)} | "
+            f"{_verdict(p.brier, u)} |" for p in s.paired]
+    if s.season_shares:
+        out += ["", "## Observed 15' share of goals per season", "",
+                "s = goals before 15' / full-time goals; r = goals before 15' / half-time goals (matches with a known "
+                "15' result). Drift between seasons (e.g. after stoppage-time rule changes) matters for the baselines.",
+                "", "| Competition | Season | Matches | s | r |", "|---|---|---|---|---|"]
+        out += [f"| {x.competition} | {x.season} | {x.matches} | {_pct(x.s)} | {_pct(x.r)} |"
+                for x in s.season_shares]
+
     out += ["", "## Listed fixtures by competition and grade (Under 0.5)", "",
             "| Group | n | Mean predicted | Actual | Brier | Log loss | Brier, competition only |",
             "|---|---|---|---|---|---|---|"]
@@ -271,9 +447,14 @@ def render_markdown(s: Summary, cfg: BacktestConfig) -> str:
     out += ["", "## ROI at the minimum odds (report mode)", "",
             "Every listed fixture settled at its own minimum odds, per market (the report never bets both).",
             "If the probabilities are right, ROI is about +EV_req; a negative ROI means the minimum odds are too low.",
-            "", "| Period | Market | Bets | Hit rate | Break-even | Profit | ROI |", "|---|---|---|---|---|---|---|"]
+            f"Interval: {u.confidence:.0%}, resampling whole sessions.",
+            "", "| Period | Market | Bets | Hit rate | Break-even | Profit | ROI | ROI interval |",
+            "|---|---|---|---|---|---|---|---|"]
     for period, markets in s.min_odds_roi.items():
-        out += [f"| {period} | {m} | {_roi_cells(r)} |" for m, r in markets.items()]
+        out += [f"| {period} | {m} | {_roi_cells(r)} | "
+                f"{'—' if (i := s.roi_interval[period][m]) is None else f'[{i.low:+.1%}, {i.high:+.1%}]'}"
+                f"{'' if i is None or i.blocks >= u.min_sessions else f' (only {i.blocks} sessions: unreliable)'} |"
+                for m, r in markets.items()]
     out += ["", "## Estimated value (data doc 9)", "",
             f"Fixtures with usable main-market odds (Model C): {s.with_market}. Assumed bookmaker 15' price = "
             f"Model C fair odds x (1 - {cfg.estimated_value.assumed_bookmaker_margin:.0%}).", "",
@@ -313,6 +494,10 @@ def rows_csv(rows: Iterable[BacktestRow]) -> str:
     return buf.getvalue()
 
 
+def _iv(i: Interval | None) -> dict[str, Any] | None:
+    return None if i is None else {"estimate": i.estimate, "low": i.low, "high": i.high, "blocks": i.blocks}
+
+
 def summary_json(s: Summary) -> dict[str, Any]:
     def sc(x: Score | None) -> dict[str, Any] | None:
         return None if x is None else {"n": x.n, "mean_p": x.mean_p, "actual": x.actual, "brier": x.brier,
@@ -336,6 +521,19 @@ def summary_json(s: Summary) -> dict[str, Any]:
              "gap_pts": b.gap_pts, "se_pts": b.se_pts} for b in v[1]]} for k, v in d.items()}
             for m, d in s.calibration.items()},
         "models": {name: sc(x) for name, x in s.models},
+        "quality": [{"model": q.name, "market": q.market, "score": sc(q.score),
+                     "reliability": q.decomposition.reliability, "resolution": q.decomposition.resolution,
+                     "uncertainty": q.decomposition.uncertainty, "within_bin": q.decomposition.within_bin,
+                     "skill_vs_league": q.skill_vs_league, "calibration_in_the_large_z": q.citl_z,
+                     "spiegelhalter_z": q.spiegelhalter_z,
+                     "recalibration": None if q.recalibration is None else {
+                         "slope": q.recalibration.slope, "intercept": q.recalibration.intercept,
+                         "converged": q.recalibration.converged}} for q in s.quality],
+        "paired": [{"comparison": p.name, "market": p.market, "n": p.n, "brier": _iv(p.brier),
+                    "log_loss": _iv(p.log_loss)} for p in s.paired],
+        "roi_interval": {per: {m: _iv(i) for m, i in d.items()} for per, d in s.roi_interval.items()},
+        "season_shares": [{"competition": x.competition, "season": x.season, "matches": x.matches, "s": x.s,
+                           "r": x.r} for x in s.season_shares],
         "min_odds_roi": {p: {m: ro(r) for m, r in d.items()} for p, d in s.min_odds_roi.items()},
         "estimated": {p: ro(r) for p, r in s.estimated.items()}, "with_market": s.with_market,
         "gate_b": [{"name": g.name, "status": g.status, "detail": g.detail} for g in s.gate],

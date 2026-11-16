@@ -136,3 +136,31 @@ def test_calibration_tolerance_follows_the_noise() -> None:
     assert allowed_gap_pts(bucket, CFG.calibration) == pytest.approx(2 * bucket.se_pts)
     big = [replace(r, p_under05=0.75) for r in calibrated(10000, 0.75)]
     assert allowed_gap_pts(summarise(run(big), CFG).calibration["UNDER05"]["priced"][1][0], CFG.calibration) == 3
+
+
+def test_quality_and_paired_comparisons() -> None:
+    """A model that separates matches (85 % where 0-0 happened, 60 % where it did not) against a flat 72 % league
+    baseline: positive skill, resolution above zero, and a paired Brier interval entirely below 0."""
+    rows = [replace(row(i, 0.85 if i % 4 else 0.60, bool(i % 4)), p_model_a=0.8, p_model_b2=0.8) for i in range(400)]
+    s = summarise(run(rows), CFG)
+    final = next(q for q in s.quality if q.name == "Final price" and q.market == "UNDER05")
+    league = next(q for q in s.quality if q.name == "Competition only" and q.market == "UNDER05")
+    assert final.skill_vs_league is not None and final.skill_vs_league > 0
+    assert final.decomposition.resolution > league.decomposition.resolution
+    paired = next(p for p in s.paired if p.name.startswith("Final price") and p.market == "UNDER05")
+    assert paired.brier is not None and paired.brier.high < 0 and paired.n == 400
+    assert {g.name: g.detail for g in s.gate}["Beats competition-only baseline"].endswith("significant")
+    interval = s.roi_interval["all"]["UNDER05"]
+    assert interval is not None and interval.low <= interval.estimate <= interval.high
+    md = render_markdown(s, CFG)
+    assert "## Probability quality" in md and "model better" in md and "ROI interval" in md
+    js = summary_json(s)
+    assert js["paired"][0]["brier"]["high"] < 0 and js["quality"][0]["recalibration"] is not None
+
+
+def test_intervals_from_few_sessions_are_marked_unreliable() -> None:
+    rows = [replace(row(i, 0.85 if i % 4 else 0.60, bool(i % 4))) for i in range(20)]     # 10 sessions < 30
+    s = summarise(run(rows), CFG)
+    md = render_markdown(s, CFG)
+    assert "too few sessions" in md and "sessions: unreliable" in md
+    assert "unreliable (only 10 sessions)" in {g.name: g.detail for g in s.gate}["Beats competition-only baseline"]

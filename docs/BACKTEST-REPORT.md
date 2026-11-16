@@ -124,6 +124,36 @@ worthless. They are written down here **before** the next seasons are loaded, so
    Caveat: buckets with fewer than 50 fixtures are still not judged, so the over-confident top end (76–78 %:
    −12.6 pts, n = 42) is not yet tested by the gate — it stays open as the §2.5 hypothesis.
 
+### 3.1 Step 1 measurements (2026-11-16, same data, same params 1.5)
+
+The report now adds probability-quality statistics and paired intervals
+([RESEARCH-PHASE4-TUNING.md](RESEARCH-PHASE4-TUNING.md) §3, §6). Under 0.5, 378 fixtures with every model:
+
+| Model | Brier | Reliability | Resolution | Skill vs competition-only | Mean z | Spiegelhalter z | Slope |
+|---|---|---|---|---|---|---|---|
+| Final price | 0.2009 | 0.00663 | 0.00648 | +0.18 % | −0.04 | +0.19 | **0.38** |
+| Model A | 0.2009 | 0.00365 | 0.00323 | +0.17 % | +0.17 | −0.09 | **0.20** |
+| Model B v2 | 0.2013 | 0.00961 | 0.00931 | +0.01 % | −0.09 | +0.33 | **0.26** |
+
+| Paired (model − competition-only, 95 %, sessions resampled) | Brier difference | Verdict |
+|---|---|---|
+| Final price, Under 0.5 | −0.0004 [−0.0036, +0.0030] | not distinguishable |
+| Model A, Under 0.5 | −0.0003 [−0.0018, +0.0011] | not distinguishable |
+| Final price, Draw | −0.0003 [−0.0023, +0.0020] | not distinguishable |
+
+What this says:
+- **The average is right** (both z ≈ 0), **the spread is not**: a recalibration slope of 0.38 means real
+  differences between fixtures are about a third of what the model predicts. What the model gains by separating
+  matches (resolution) it loses to over-confident differences (reliability) — net skill ≈ 0.
+- The earlier "Beats competition-only baseline: PASS" was a lower Brier by 0.0004, **not statistically
+  distinguishable from zero**. Gate B criterion 3 must use the paired interval (decision 1, pending).
+- Direction for tuning (to be tested, not concluded): much stronger shrinkage of team ratings / indexes, or a
+  recalibration of P toward the competition level. Both belong in the pre-registered grid.
+- Observed 15' share of goals: s = 13.9 % (AUT1), 11.6 % (ENG1), 11.1 % (GER1) in 2025-26 — per-league baselines
+  are justified.
+- ROI at the minimum odds, validation: Under 0.5 +3.1 % with interval [−6.4 %, +12.1 %]; Draw +4.6 %
+  [−4.7 %, +13.3 %] — both include zero, as §6 of the research notes predicted.
+
 ---
 
 ## 4. Why Gate B cannot be decided yet

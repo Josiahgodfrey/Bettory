@@ -14,6 +14,13 @@ calibration:
 gate_b:
   min_qualified: 300           # qualified historical selections
 
+uncertainty:                   # confidence intervals (docs/RESEARCH-PHASE4-TUNING.md 3.4, 6)
+  bootstrap_samples: 2000      # resamples of whole SESSIONS (matches in one session are not independent)
+  confidence: 0.95
+  seed: 20261116               # fixed: the same run always gives the same intervals
+  min_sessions: 30             # fewer sessions: the interval is shown but marked unreliable (a bootstrap over a
+                               # handful of blocks is far too narrow)
+
 estimated_value:
   assumed_bookmaker_margin: 0.07   # bookmaker 15' price = Model C fair odds x (1 - margin), data doc 9
   stake: 1.0

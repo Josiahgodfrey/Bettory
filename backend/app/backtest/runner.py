@@ -32,7 +32,7 @@ from app.domain.params import Params
 from app.domain.registry import Registry
 from app.domain.sessions import SessionCalendar, SessionId, SessionKind
 from app.settlement.settle import Result15, result_15
-from app.storage.results import FixtureResult, fixtures_between
+from app.storage.results import FixtureResult, SeasonShare, fixtures_between, season_shares
 
 log = logging.getLogger(__name__)
 ASSUMED_BOOKMAKER = "ASSUMED (Model C fair x (1 - margin))"
@@ -90,6 +90,7 @@ class BacktestRun:
     competitions: tuple[str, ...]
     sessions: tuple[SessionRun, ...]
     rows: tuple[BacktestRow, ...]
+    season_shares: tuple[SeasonShare, ...] = ()  # observed 15' shares of the seasons in the run (descriptive)
 
 
 def _league(a: FixtureAnalysis | None, params: Params) -> tuple[float | None, float | None]:
@@ -174,5 +175,6 @@ def run_backtest(engine: Engine, params: Params, registry: Registry, config: Bac
             sessions.append(run)
             if progress is not None:
                 progress(run)
+        shares = season_shares(conn, sorted({(f.competition_code, f.season_label) for f in fixtures.values()}))
     return BacktestRun(params.params_version, params.formula_version, first, last, codes, tuple(sessions),
-                       tuple(rows))
+                       tuple(rows), tuple(shares))

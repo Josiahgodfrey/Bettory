@@ -25,6 +25,13 @@ class GateB(_Strict):
     min_qualified: int = Field(ge=1)
 
 
+class Uncertainty(_Strict):
+    bootstrap_samples: int = Field(ge=100)
+    confidence: float = Field(gt=0, lt=1)
+    seed: int
+    min_sessions: int = Field(ge=2)
+
+
 class EstimatedValue(_Strict):
     assumed_bookmaker_margin: float = Field(ge=0, lt=1)
     stake: float = Field(gt=0)
@@ -33,6 +40,7 @@ class EstimatedValue(_Strict):
 class BacktestConfig(_Strict):
     calibration: Calibration
     gate_b: GateB
+    uncertainty: Uncertainty
     estimated_value: EstimatedValue
 
 

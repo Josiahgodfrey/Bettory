@@ -108,9 +108,12 @@ Data: ENG1 / GER1 / AUT1, 2022-23 to 2025-26, as the daily backfill completes ([
   decomposition alongside. Never choose by ROI: ROI is far noisier (§6) and rewards luck.
 
 ### 3.3 Calibration tests
-- **Spiegelhalter z**: `z = Σ(o_i − p_i) / sqrt(Σ p_i(1 − p_i))`, approximately standard normal when calibrated;
-  bin-free, but tests *average* miscalibration only [B — formula standard, verify against Spiegelhalter 1986].
-  First-run check by hand: 485 priced fixtures, 72.4 % actual vs 72.1 % predicted → z ≈ 0.15 (no average bias).
+- **Calibration-in-the-large z**: `z = Σ(o_i − p_i) / sqrt(Σ p_i(1 − p_i))` — is the *average* right? (The vendor
+  page cited below calls this "Spiegelhalter z"; that is a mislabel.) First run by hand: 485 priced fixtures,
+  72.4 % actual vs 72.1 % predicted → z ≈ 0.15.
+- **Spiegelhalter z (1986)**, as implemented in standard validation software:
+  `z = Σ(o_i − p_i)(1 − 2p_i) / sqrt(Σ(1 − 2p_i)² p_i(1 − p_i))` — Brier-score based, bin-free. Both are in the
+  report since step 1 (2026-11-16).
 - Hosmer–Lemeshow is fragile to binning; bin-free "moderate calibration" tests (bridge test) and e-value
   versions exist [P].
 - **For BETTORY:** keep the 2-pt buckets with the noise-aware tolerance (owner decision 2026-11-16) for the gate,
