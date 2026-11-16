@@ -18,7 +18,7 @@ from app.core.settings import BACKEND_DIR, get_settings
 from app.domain.enums import FixtureStatus, RunStatus, SourceCode
 from app.domain.params import load_params
 from app.domain.registry import Registry, fdcouk_season_code, season_start_year
-from app.ingestion.api_football import ApiFootball
+from app.ingestion.api_football import BULK_IDS_MAX, ApiFootball
 from app.ingestion.base import Fetched
 from app.ingestion.football_data_co_uk import FootballDataCoUk
 from app.ingestion.football_data_org import FootballDataOrg
@@ -30,6 +30,7 @@ from app.normalisation.parsers import football_data_co_uk as p_uk
 from app.normalisation.parsers import football_data_org as p_fd
 from app.normalisation.parsers import openfootball as p_of
 from app.storage.raw_store import RawStore, object_path, sha256
+from app.storage.repositories import matches as matches_repo
 from app.storage.repositories import raw as raw_repo
 
 PARSER_VERSIONS = {
@@ -162,6 +163,45 @@ def api_football_day(engine: Engine, store: RawStore, registry: Registry, api_ke
         for m in upcoming[:max_odds_requests]:
             job.process(client.http.get("/odds", {"fixture": m.provider_match_key}),
                         lambda raw: p_af.parse_odds(raw, registry))
+
+    return _run(job, lambda: client.requests_used, body)
+
+
+def api_football_backfill(engine: Engine, store: RawStore, registry: Registry, api_key: str, comp_code: str,
+                          season: str, bulk: bool, max_requests: int, reparse: bool = False,
+                          run_id: UUID | None = None) -> Counter[str]:
+    """Season fixtures (1 request), then goal minutes for every finished fixture that has none from
+    API-Football yet: 20 fixtures per request with `bulk` (paid plans), otherwise 1 per request.
+
+    Resumable: fixtures that already have API-Football goal minutes are skipped, so repeated runs (e.g. one
+    per day on the free plan) continue where the last one stopped. Stops cleanly at `max_requests`."""
+    league = registry.get(comp_code).providers[SourceCode.API_FOOTBALL]
+    client = ApiFootball(api_key, max_requests=max_requests)
+    job = Job(engine, store, registry, SourceCode.API_FOOTBALL, f"api_football_backfill:{comp_code}:{season}",
+              reparse, run_id)
+
+    def body() -> None:
+        listing = client.fixtures_by_league_season(league, season_start_year(season))
+        parsed = p_af.parse_fixtures(listing.body, registry)  # parsed here too: needed even if the payload is old
+        job.process(listing, lambda raw: parsed)
+        finished = [m.provider_match_key for m in parsed.matches if m.status is FixtureStatus.FINISHED]
+        with engine.connect() as conn:
+            done = matches_repo.provider_keys_with_minutes(conn, SourceCode.API_FOOTBALL, finished)
+        todo = [k for k in finished if k not in done]
+        job.stats["finished_fixtures"] += len(finished)
+        job.stats["already_with_minutes"] += len(done)
+        size = BULK_IDS_MAX if bulk else 1
+        requested = 0
+        for i in range(0, len(todo), size):
+            if client.requests_used >= max_requests:
+                job.stats["stopped_at_request_budget"] = 1
+                break
+            chunk = todo[i:i + size]
+            fetched = client.fixtures_by_ids(chunk) if bulk else client.fixture_with_events(chunk[0])
+            job.process(fetched, lambda raw: p_af.parse_fixtures(raw, registry))
+            requested += len(chunk)
+        job.stats["fixtures_requested_for_minutes"] += requested
+        job.stats["fixtures_still_without_minutes"] += len(todo) - requested
 
     return _run(job, lambda: client.requests_used, body)
 

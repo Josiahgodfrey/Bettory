@@ -192,6 +192,16 @@ def insert_odds(conn: Connection, o: SourceOdds, match_id: UUID, bookmaker_id: U
          "st": o.snapshot_type.value, "c": o.captured_at})
 
 
+def provider_keys_with_minutes(conn: Connection, source: SourceCode, keys: list[str]) -> set[str]:
+    """Provider match keys for which `source` already delivered a goal list (backfill resumes after them)."""
+    if not keys:
+        return set()
+    return set(conn.execute(text(
+        "select distinct provider_match_key from core.match_source_records "
+        "where source_id = :s and has_goal_minutes and provider_match_key = any(:k)"),
+        {"s": SOURCE_IDS[source], "k": keys}).scalars())
+
+
 def season_match_ids(conn: Connection, competition_code: str, season_label: str) -> list[UUID]:
     """Matches of one competition-season that have at least one linked source record, by kick-off."""
     return list(conn.execute(text("""

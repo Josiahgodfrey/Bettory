@@ -5,6 +5,7 @@ Examples (from backend/, venv active):
   python -m app.cli ingest football-data-org --comp ENG1 --season 2025-26
   python -m app.cli ingest football-data-co-uk --comp ENG1 --season 2025-26
   python -m app.cli ingest api-football-season --comp ENG1 --season 2024-25
+  python -m app.cli ingest api-football-backfill --comp ENG1 --season 2024-25 --max-requests 50
   python -m app.cli ingest api-football-day --date 2026-11-14 --events 20 --odds 20
   python -m app.cli review list
   python -m app.cli review resolve <review_id> <team_id>
@@ -41,6 +42,12 @@ def main(argv: list[str] | None = None) -> int:
         p.add_argument("--reparse", action="store_true")
         if name == "openfootball":
             p.add_argument("--full", action="store_true", help="use the -full file (goal minutes)")
+    bf = ingest.add_parser("api-football-backfill", help="season fixtures + goal minutes (resumable)")
+    bf.add_argument("--comp", required=True)
+    bf.add_argument("--season", required=True)
+    bf.add_argument("--max-requests", type=int, default=None,
+                    help="request cap for this run (default and maximum: API_FOOTBALL_MAX_REQUESTS_PER_RUN)")
+    bf.add_argument("--reparse", action="store_true")
     day = ingest.add_parser("api-football-day")
     day.add_argument("--date", required=True, type=date.fromisoformat)
     day.add_argument("--events", type=int, default=20, help="max requests for goal minutes")
@@ -99,6 +106,11 @@ def main(argv: list[str] | None = None) -> int:
     elif args.source == "api-football-season":
         stats = pipeline.api_football_season(engine, store, registry, settings.api_football_key.get_secret_value(),
                                              args.comp, args.season, args.reparse)
+    elif args.source == "api-football-backfill":
+        cap = settings.api_football_max_requests_per_run
+        stats = pipeline.api_football_backfill(engine, store, registry, settings.api_football_key.get_secret_value(),
+                                               args.comp, args.season, settings.api_football_plan == "pro",
+                                               min(args.max_requests or cap, cap), args.reparse)
     else:
         stats = pipeline.api_football_day(engine, store, registry, settings.api_football_key.get_secret_value(),
                                           args.date, args.events, args.odds, args.reparse)

@@ -33,6 +33,11 @@ class OpenFootballIngest(SeasonIngest):
     full: bool = Field(True, description="Use the -full file, which has goal minutes (needed for 15')")
 
 
+class ApiFootballBackfill(SeasonIngest):
+    max_requests: int | None = Field(None, ge=1, description="Request cap for this run; at most "
+                                     "API_FOOTBALL_MAX_REQUESTS_PER_RUN (the default)")
+
+
 class ApiFootballDayIngest(Strict):
     date: dt.date = Field(examples=["2026-11-14"])
     max_event_requests: int = Field(20, ge=0, le=API_FOOTBALL_RUN_BUDGET - 1,

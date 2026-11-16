@@ -1,5 +1,8 @@
-"""API-Football v3 adapter. Free plan (Phase 0): 100 requests/day, seasons 2022-2024, dates
-yesterday..tomorrow, no bulk `ids`. Fetches only - parsing lives in normalisation/parsers."""
+"""API-Football v3 adapter. Fetches only - parsing lives in normalisation/parsers.
+
+Free plan (Phase 0): 100 requests/day, league seasons 2022-2024, dates yesterday..tomorrow, no bulk `ids`
+(1 request per match for goal minutes). Paid plans: all seasons, `ids` with up to 20 fixtures (incl. events)
+per request."""
 
 from __future__ import annotations
 
@@ -8,6 +11,7 @@ from datetime import date
 from app.ingestion.base import Fetched, HttpSource
 
 BASE_URL = "https://v3.football.api-sports.io"
+BULK_IDS_MAX = 20  # API-Football limit for the `ids` parameter
 
 
 class ApiFootball:
@@ -24,6 +28,12 @@ class ApiFootball:
     def fixture_with_events(self, fixture_id: str) -> Fetched:
         """Single fixture incl. events (goal minutes): 1 request per match."""
         return self.http.get("/fixtures", {"id": fixture_id, "timezone": "UTC"})
+
+    def fixtures_by_ids(self, fixture_ids: list[str]) -> Fetched:
+        """Up to 20 fixtures incl. events in ONE request (paid plans only; the free plan answers with an error)."""
+        if not 1 <= len(fixture_ids) <= BULK_IDS_MAX:
+            raise ValueError(f"ids takes 1-{BULK_IDS_MAX} fixtures, got {len(fixture_ids)}")
+        return self.http.get("/fixtures", {"ids": "-".join(fixture_ids), "timezone": "UTC"})
 
     def odds_by_date(self, day: date, page: int = 1) -> Fetched:
         return self.http.get("/odds", {"date": day.isoformat(), "page": page, "timezone": "UTC"})

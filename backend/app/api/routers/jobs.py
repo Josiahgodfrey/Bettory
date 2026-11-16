@@ -14,6 +14,7 @@ from fastapi import APIRouter, BackgroundTasks, HTTPException, Query, status
 
 from app.api.deps import EngineDep, OwnerDep, RawStoreFactoryDep, RegistryDep, SettingsDep
 from app.api.schemas import (
+    ApiFootballBackfill,
     ApiFootballDayIngest,
     CompetitionOut,
     JobAccepted,
@@ -125,6 +126,26 @@ def ingest_api_football_season(body: SeasonIngest, _: OwnerDep, background: Back
                   f"api:api_football_season:{body.competition}:{body.season}",
                   lambda run_id: pipeline.api_football_season(engine, store(), registry, key, body.competition,
                                                               body.season, body.reparse, run_id))
+
+
+@router.post("/ingest/api-football-backfill", status_code=status.HTTP_202_ACCEPTED, response_model=JobAccepted)
+def ingest_api_football_backfill(body: ApiFootballBackfill, _: OwnerDep, background: BackgroundTasks,
+                                 engine: EngineDep, registry: RegistryDep, store: RawStoreFactoryDep,
+                                 settings: SettingsDep) -> JobAccepted:
+    """Season fixtures, then goal minutes for finished fixtures that have none from API-Football yet.
+    API_FOOTBALL_PLAN=pro: 20 matches per request; free: 1 per request (and seasons 2022-2024 only).
+    Resumable: run it again to continue where the last run stopped."""
+    _competition(registry, body.competition, SourceCode.API_FOOTBALL, body.season)
+    key = _key(settings.api_football_key.get_secret_value(), "API_FOOTBALL_KEY")
+    cap = settings.api_football_max_requests_per_run
+    if body.max_requests is not None and body.max_requests > cap:
+        raise HTTPException(status.HTTP_422_UNPROCESSABLE_CONTENT,
+                            f"max_requests {body.max_requests} above API_FOOTBALL_MAX_REQUESTS_PER_RUN ({cap})")
+    limit, bulk = body.max_requests or cap, settings.api_football_plan == "pro"
+    return _start(engine, background, SourceCode.API_FOOTBALL,
+                  f"api:api_football_backfill:{body.competition}:{body.season}",
+                  lambda run_id: pipeline.api_football_backfill(engine, store(), registry, key, body.competition,
+                                                                body.season, bulk, limit, body.reparse, run_id))
 
 
 @router.post("/ingest/api-football-day", status_code=status.HTTP_202_ACCEPTED, response_model=JobAccepted)
