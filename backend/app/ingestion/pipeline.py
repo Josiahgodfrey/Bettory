@@ -57,6 +57,10 @@ class QuotaError(RuntimeError):
     """No API request left for this run today (after the configured reserve)."""
 
 
+class PlanError(RuntimeError):
+    """The run needs a paid API-Football plan but the key is on the free plan (checked before any counted request)."""
+
+
 class ConcurrentRunError(RuntimeError):
     """Another process is running a job of the same source (they would share one quota)."""
 
@@ -285,6 +289,10 @@ def api_football_backfill(engine: Engine, store: RawStore, registry: Registry, a
 
     def body() -> None:
         _plan_quota(client, job, max_requests, minimum=2)
+        actual = getattr(client, "subscription_plan", None)
+        if bulk and actual is not None and actual.strip().lower() == "free":
+            raise PlanError("API_FOOTBALL_PLAN=pro but the key is on the Free plan (/status): set "
+                            "API_FOOTBALL_PLAN=free, or finish the upgrade on the API-Football dashboard")
         budget = client.http.max_requests or 0
         listing = client.fixtures_by_league_season(league, season_start_year(season))
         parsed = p_af.parse_fixtures(listing.body, registry)  # parsed here too: needed even if the payload is old

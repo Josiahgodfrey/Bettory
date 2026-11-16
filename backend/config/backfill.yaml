@@ -8,18 +8,26 @@
 #               for these seasons, so the others would add nothing)
 #   crosscheck  fetch every finished fixture, also those already known: the minutes are a second goal-minute
 #               source for the 15'-vs-15' cross-check (e.g. 2025-26 next to openfootball)
+#   current     the season being played (needs API_FOOTBALL_PLAN=pro): like history, but never finished - every
+#               night picks up the matches finished since the last run
 #
 # Free plan: league seasons 2022-2024 only (2022-23 .. 2024-25). Later seasons need a paid plan.
-# Targets are meant for FINISHED seasons; the current season is collected by the daily session jobs (Phase 5).
+# Free plan: history / crosscheck targets only. Pro: also the current season (mode current).
 
 schedule:
   timezone: "UTC"
   time: "00:30"                # API-Football's daily quota resets at 00:00 UTC (to verify on your dashboard)
 
-daily_max_requests: 70         # upper bound per day; ~25 left for the paper-betting recorder (owner decision
-                               # 2026-11-17: backfill 70 / recorder 25 / reserve 5); the quota guard still applies
+daily_max_requests:            # upper bound per day, by API_FOOTBALL_PLAN; the quota guard still applies
+  free: 70                     # owner decision 2026-11-17: backfill 70 / paper-betting recorder 25 / reserve 5
+  pro: 2000                    # Pro: 7,500 a day (Phase 0); the whole backlog fits in one night
 
 targets:
+  # the season being played first: paper betting needs this season's goal minutes (Pro plan only;
+  # skipped on the free plan at no cost)
+  - { competition: ENG1, season: "2026-27", mode: current }
+  - { competition: GER1, season: "2026-27", mode: current }
+  - { competition: AUT1, season: "2026-27", mode: current }
   - { competition: ENG1, season: "2024-25", mode: history }
   - { competition: GER1, season: "2024-25", mode: history }
   - { competition: AUT1, season: "2024-25", mode: history }

@@ -88,7 +88,12 @@ def main(argv: list[str] | None = None) -> int:
     review.add_parser("list")
     res = review.add_parser("resolve")
     res.add_argument("review_id", type=UUID)
-    res.add_argument("team_id", type=UUID)
+    res.add_argument("team_id", type=UUID, nargs="?", help="the existing team this name refers to")
+    res.add_argument("--new-team", action="store_true",
+                     help="the name is a club new to the database (e.g. promoted): create it")
+    res.add_argument("--name", help="with --new-team: the team's name (default: the provider's name)")
+    res.add_argument("--not-similar", action="store_true",
+                     help="with --new-team: confirm it is a different club from the similar teams listed")
 
     cc = sub.add_parser("crosscheck", help="agreement between sources (FT, HT, 15')")
     cc.add_argument("--comp", required=True)
@@ -278,7 +283,9 @@ def main(argv: list[str] | None = None) -> int:
             print(json.dumps(outcome.as_dict(), indent=2))
             return 0
         sch = backfill_cfg.schedule
-        print(f"daily at {sch.time} {sch.timezone}, at most {backfill_cfg.daily_max_requests} requests")
+        print(f"daily at {sch.time} {sch.timezone}, at most "
+              f"{backfill_cfg.daily_max_requests.for_plan(settings.api_football_plan)} requests "
+              f"(plan setting: {settings.api_football_plan})")
         for st in plan(engine, backfill_cfg):
             left = "" if st.still_without_minutes is None else f", {st.still_without_minutes} still without minutes"
             print(f"  {st.target.competition} {st.target.season:<8} {st.target.mode.value:<10} {st.state.value}{left}")
@@ -289,13 +296,19 @@ def main(argv: list[str] | None = None) -> int:
             snap = snapshot(conn, args.runs)
         quota = None
         key = settings.api_football_key.get_secret_value()
+        actual_plan = None
         if args.quota and key:
-            quota = ApiFootball(key, max_requests=1, requests_per_minute=settings.api_football_requests_per_minute
-                                ).quota()
+            af = ApiFootball(key, max_requests=1, requests_per_minute=settings.api_football_requests_per_minute)
+            quota, actual_plan = af.quota(), af.subscription_plan
         if args.json:
-            print(json.dumps({**snap, "quota": quota}, indent=2, default=str))
+            print(json.dumps({**snap, "quota": quota, "api_football_plan": actual_plan}, indent=2, default=str))
         else:
             print(render_text(snap, quota))
+            if actual_plan is not None:
+                setting = settings.api_football_plan
+                mismatch = (actual_plan.strip().lower() == "free") != (setting == "free")
+                print(f"API-FOOTBALL PLAN: {actual_plan} (setting API_FOOTBALL_PLAN={setting})"
+                      + ("  <- MISMATCH: change the setting in .env" if mismatch else ""))
         return 0
 
     if args.cmd == "review":
@@ -303,6 +316,19 @@ def main(argv: list[str] | None = None) -> int:
             if args.action == "list":
                 for row in ref.open_reviews(conn):
                     print(f"{row['id']}  {row['source']:<20} {row['provider_name']:<35} {row['context']}")
+            elif args.new_team == (args.team_id is not None):
+                print("give either a team id or --new-team", file=sys.stderr)
+                return 2
+            elif args.new_team:
+                try:
+                    new_id = ref.resolve_review_new_team(conn, args.review_id, args.name, args.not_similar)
+                except ref.SimilarTeamsExist as e:
+                    print(f"{e}.\nIf it really is another club: add --not-similar", file=sys.stderr)
+                    return 2
+                except ValueError as e:
+                    print(e, file=sys.stderr)
+                    return 2
+                print(f"resolved: new team {new_id}. Link the waiting records with that source's ingest --reparse")
             else:
                 ref.resolve_review(conn, args.review_id, args.team_id)
                 print("resolved")

@@ -84,3 +84,29 @@ been loaded (the backfill covers finished seasons only).
   **already played** matches cannot be reached on the free plan; from now on the recorder can collect them day by
   day.
 - AUT1 is not on football-data.org's free tier; GER1 (`BL1`) is.
+
+## 4. Owner decision 2026-11-17: API-Football Pro
+
+To start paper betting with this season's data (the free plan cannot reach this season's played matches), the
+owner chose to upgrade API-Football to **Pro**. Prepared in the code:
+
+| Piece | What it does |
+|---|---|
+| `mode: current` in `config/backfill.yaml` | ENG1 / GER1 / AUT1 2026-27 first: the season listing (also the upcoming fixtures, incl. AUT1, which football-data.org does not cover) and the goal minutes of every finished match, 20 per request. Never "finished": every night picks up the new results. Skipped at no cost while the plan is free |
+| `daily_max_requests: {free: 70, pro: 2000}` | the backfill budget follows `API_FOOTBALL_PLAN` |
+| plan check | `/status` (not counted) reports the key's real plan: with `API_FOOTBALL_PLAN=pro` on a key that is still Free, a run stops before any counted request ("plan mismatch"); `health --quota` prints the plan and flags a mismatch |
+| team review | `python -m app.cli review resolve <review id> --new-team --name "Club"` (API: `POST /reviews/{id}/new-team`) creates a club new to the database, e.g. promoted; refused if the name already belongs to a team, and if existing teams share a distinctive word unless confirmed with `--not-similar`. Used for Coventry City and Hull City (ENG1 2026-27: all 380 fixtures linked) |
+
+### After paying (owner, about 5 minutes)
+
+1. Upgrade on the API-Football dashboard; the key normally stays the same. Note the plan's **requests per minute**.
+2. In `backend/.env` set:
+   ```
+   API_FOOTBALL_PLAN=pro
+   API_FOOTBALL_REQUESTS_PER_MINUTE=<the dashboard value, e.g. 300>
+   API_FOOTBALL_MAX_REQUESTS_PER_RUN=1000
+   ```
+3. `python -m app.cli health --quota` → `API-FOOTBALL PLAN: Pro`, no MISMATCH, daily limit 7,500.
+4. `python -m app.cli backfill-daily --run` once (instead of waiting for the night): this season's goal minutes
+   and the 2022-23 .. 2024-25 backlog.
+5. Then steps 0 and 2 – 5 of §1 continue (step 0 no longer competes with the backfill for the quota).

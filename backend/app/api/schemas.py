@@ -59,6 +59,12 @@ class ResolveReview(Strict):
     team_id: UUID = Field(description="The existing team this provider name refers to")
 
 
+class ResolveReviewNewTeam(Strict):
+    name: str | None = Field(default=None, min_length=2, max_length=80,
+                             description="The new team's name (default: the provider's name)")
+    allow_similar: bool = Field(default=False, description="Confirm it differs from the similar teams reported")
+
+
 # --- responses -------------------------------------------------------------------------------
 
 

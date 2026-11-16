@@ -127,6 +127,58 @@ def resolve_review(conn: Connection, review_id: UUID, team_id: UUID) -> None:
     )
 
 
+# Words shared by many unrelated clubs: a match on these alone is not a hint of a duplicate.
+_COMMON_WORDS = frozenset({"city", "united", "town", "county", "athletic", "albion", "rovers", "wanderers", "club",
+                           "sporting", "real", "hotspur", "borussia", "vfb", "vfl", "tsg", "sv", "rb", "and"})
+
+
+class SimilarTeamsExist(ValueError):
+    """Creating a new team was refused: existing teams share a distinctive word with the name."""
+
+    def __init__(self, name: str, similar: list[dict[str, Any]]) -> None:
+        self.similar = similar
+        listed = "; ".join(f"{t['name']} ({t['id']})" for t in similar)
+        super().__init__(f"{name!r} looks like an existing team: {listed}. Link the review to one of them, or "
+                         "confirm that it is a different club")
+
+
+def similar_teams(conn: Connection, name: str, country: str) -> list[dict[str, Any]]:
+    """Teams of the country with an alias containing a distinctive word (>= 4 letters) of `name`."""
+    words = [w for w in normalize_team_name(name).split() if len(w) >= 4 and w not in _COMMON_WORDS]
+    found: dict[UUID, dict[str, Any]] = {}
+    for w in words:
+        for t in search_teams(conn, w, country, 20):
+            found[t["id"]] = t
+    return sorted(found.values(), key=lambda t: t["name"])
+
+
+def resolve_review_new_team(conn: Connection, review_id: UUID, name: str | None = None,
+                            allow_similar: bool = False) -> UUID:
+    """Resolve a review by creating the team it names (a club new to the database, e.g. promoted).
+    Refused when the name already belongs to a team, or - unless allow_similar - when existing teams share a
+    distinctive word with it. Returns the new team's id."""
+    row = conn.execute(
+        text("select q.provider_name, q.context from core.entity_review_queue q "
+             "where q.id = :q and q.status = 'OPEN' and q.entity_type = 'TEAM'"), {"q": review_id},
+    ).mappings().one()
+    country = (row["context"] or {}).get("country")
+    if not country:
+        raise ValueError("the review has no country: link it to an existing team instead")
+    team_name = (name or row["provider_name"]).strip()
+    for candidate in {team_name, row["provider_name"]}:
+        existing = team_by_alias(conn, country, normalize_team_name(candidate))
+        if existing is not None:
+            raise ValueError(f"{candidate!r} is already a name of team {existing}: link the review to it")
+    similar = similar_teams(conn, team_name, country)
+    if similar and not allow_similar:
+        raise SimilarTeamsExist(team_name, similar)
+    source = conn.execute(text("select s.code from core.entity_review_queue q join core.sources s "
+                               "on s.id = q.source_id where q.id = :q"), {"q": review_id}).scalar_one()
+    team_id = create_team(conn, team_name, country, normalize_team_name(team_name), SourceCode(source))
+    resolve_review(conn, review_id, team_id)
+    return team_id
+
+
 def search_teams(conn: Connection, query: str | None, country: str | None, limit: int = 50) -> list[dict[str, Any]]:
     """Teams whose name or any alias contains `query` (normalised), for resolving reviews."""
     needle = normalize_team_name(query) if query and query.strip() else None
