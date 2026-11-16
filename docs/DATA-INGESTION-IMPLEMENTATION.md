@@ -383,7 +383,7 @@ The analysis builder priced the last 90 matches of each of the Premier League an
 | Item | Status |
 |---|---|
 | Goal minutes | Only 2025-26 (ENG1, GER1, AUT1) until the API-Football upgrade (§8.1) |
-| football-data.co.uk | Blocked by the network's Sophos TLS interception. Certificate checks are deliberately **not** disabled. The parser is tested on a synthetic CSV only |
+| football-data.co.uk | Blocked by the network's Sophos TLS interception. Certificate checks are deliberately **not** disabled. The parser is tested on a synthetic CSV only. Parked: full checklist for another network in [FOOTBALL-DATA-CO-UK-SETUP.md](FOOTBALL-DATA-CO-UK-SETUP.md) |
 | API-Football league ids | Only 39 (Premier League) is verified. 40/78/218/140/135/61/88/94 must be checked |
 | `fifteen_minute_market` flags | Assumed `true`; confirm per league with your bookmaker |
 | Migrations on Supabase | Applied to local Docker only. Applying them to the Supabase project changes the live database and needs the owner's go-ahead |

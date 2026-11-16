@@ -131,7 +131,7 @@ worthless. They are written down here **before** the next seasons are loaded, so
 | Missing | Effect | Remedy |
 |---|---|---|
 | Goal minutes before 2025-26 | One season; early-season fixtures INSUFFICIENT_DATA; 243 selections | API-Football Pro backfill: 3+ seasons × pilot leagues |
-| Main-market odds | No Model C → EV threshold 8 % instead of 5 %; ROI criterion not evaluable | football-data.co.uk Pinnacle closing odds (blocked on this network by TLS interception) or API-Football odds |
+| Main-market odds | No Model C → EV threshold 8 % instead of 5 %; ROI criterion not evaluable | football-data.co.uk Pinnacle **pre-match** odds (closing odds are invisible at report time) — blocked on this network; see [FOOTBALL-DATA-CO-UK-SETUP.md](FOOTBALL-DATA-CO-UK-SETUP.md) |
 | Real 15' bookmaker prices | Whether the bookmaker offers ≥ minimum odds is unknown | Paper betting in Phase 7 (live 15' quotes) |
 
 ---
