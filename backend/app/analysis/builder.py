@@ -244,14 +244,20 @@ class AnalysisContext:
             context_flags=context_flags, quotes=dict(quotes or {}), bookmaker=bookmaker,
         )
 
-    def verdict(self, match_id: UUID, quotes: Mapping[Bet, Mapping[str, float]] | None = None,
-                context_flags: tuple[str, ...] = (), bookmaker: str = "") -> Verdict:
-        """Analyse and verify. Fail closed: any failure while building the analysis -> ERROR verdict."""
+    def evaluate(self, match_id: UUID, quotes: Mapping[Bet, Mapping[str, float]] | None = None,
+                 context_flags: tuple[str, ...] = (), bookmaker: str = "") -> tuple[FixtureAnalysis | None, Verdict]:
+        """Analyse and verify, keeping the analysis (None when it could not be built).
+        Fail closed: any failure while building the analysis -> ERROR verdict."""
         try:
             analysis = self.analyse(match_id, quotes, context_flags, bookmaker)
         except Exception as exc:  # deliberately broad: a fixture that cannot be analysed is never a bet
             log.exception("analysis failed for fixture %s", match_id)
-            return Verdict(fixture_id=str(match_id), kickoff_utc=self.as_of, decision=Decision.ERROR,
-                           grade=Grade.SKIP, checks=(), params_version=self.params.params_version,
-                           error=f"{type(exc).__name__}: {exc}")
-        return verify(analysis, self.params)
+            return None, Verdict(fixture_id=str(match_id), kickoff_utc=self.as_of, decision=Decision.ERROR,
+                                 grade=Grade.SKIP, checks=(), params_version=self.params.params_version,
+                                 error=f"{type(exc).__name__}: {exc}")
+        return analysis, verify(analysis, self.params)
+
+    def verdict(self, match_id: UUID, quotes: Mapping[Bet, Mapping[str, float]] | None = None,
+                context_flags: tuple[str, ...] = (), bookmaker: str = "") -> Verdict:
+        """Analyse and verify. Fail closed: any failure while building the analysis -> ERROR verdict."""
+        return self.evaluate(match_id, quotes, context_flags, bookmaker)[1]

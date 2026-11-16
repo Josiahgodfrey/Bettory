@@ -1,0 +1,16 @@
+# BETTORY backtest settings (DEVELOPMENT-PLAN.md Phase 4 / Gate B, DATA-SOURCES-AND-MARKET-MODEL.md 9).
+# These decide how results are JUDGED, never how a fixture is priced: model parameters live only in
+# config/params_v*.yaml. Loaded and validated by app/backtest/config.py (unknown or missing keys are rejected).
+
+calibration:
+  bucket_width_pts: 2          # 70-72 %, 72-74 % ... (pricing doc 15)
+  tolerance_pts: 3             # Gate B: |actual - predicted| <= 3 pts in each populated bucket
+  min_bucket_matches: 50       # "populated": fewer predictions are shown but not judged (at n = 50 and
+                               # p = 0.73 the standard error alone is 6.3 pts)
+
+gate_b:
+  min_qualified: 300           # qualified historical selections
+
+estimated_value:
+  assumed_bookmaker_margin: 0.07   # bookmaker 15' price = Model C fair odds x (1 - margin), data doc 9
+  stake: 1.0

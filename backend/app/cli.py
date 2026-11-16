@@ -10,15 +10,21 @@ Examples (from backend/, venv active):
   python -m app.cli review list
   python -m app.cli review resolve <review_id> <team_id>
   python -m app.cli crosscheck --comp ENG1 --season 2025-26 --show 10
+  python -m app.cli backtest --from 2025-09-01 --to 2026-05-31 --comp ENG1 --comp GER1 --split 2026-02-01
 """
 
 from __future__ import annotations
 
 import argparse
+import json
 import sys
-from datetime import date
+from datetime import UTC, date, datetime
+from pathlib import Path
 from uuid import UUID
 
+from app.backtest.config import load_backtest_config
+from app.backtest.report import render_markdown, rows_csv, summarise, summary_json
+from app.backtest.runner import SessionRun, run_backtest
 from app.core.settings import BACKEND_DIR, get_settings
 from app.domain.params import load_params
 from app.domain.registry import load_registry
@@ -65,8 +71,36 @@ def main(argv: list[str] | None = None) -> int:
     cc.add_argument("--season", required=True)
     cc.add_argument("--show", type=int, default=10, help="disagreements to list")
 
+    bt = sub.add_parser("backtest", help="replay sessions point in time and report calibration / Gate B")
+    bt.add_argument("--from", dest="first", required=True, type=date.fromisoformat, help="first session date")
+    bt.add_argument("--to", dest="last", required=True, type=date.fromisoformat, help="last session date")
+    bt.add_argument("--comp", action="append", help="competition code (repeatable; default: all registered)")
+    bt.add_argument("--split", type=date.fromisoformat, default=None,
+                    help="validation period starts on this session date (Gate B: unseen period)")
+    bt.add_argument("--out", type=Path, default=None, help="output folder (default: backtests/<params>_<dates>)")
+
     args = parser.parse_args(argv)
     settings, engine, registry = get_settings(), get_engine(), load_registry()
+
+    if args.cmd == "backtest":
+        params, cfg = load_params(BACKEND_DIR / settings.params_file), load_backtest_config()
+
+        def progress(s: SessionRun) -> None:
+            print(f"  {s.id}  as_of {s.as_of:%Y-%m-%d %H:%M}Z  fixtures {s.fixtures:>3}  qualified {s.qualified:>3}",
+                  file=sys.stderr)
+
+        run = run_backtest(engine, params, registry, cfg, args.first, args.last, args.comp, progress)
+        summary = summarise(run, cfg, args.split)
+        stamp = datetime.now(UTC).strftime("%Y%m%dT%H%M%SZ")
+        out = args.out or BACKEND_DIR / "backtests" / f"v{run.params_version}_{args.first}_{args.last}_{stamp}"
+        out.mkdir(parents=True, exist_ok=True)
+        text_report = render_markdown(summary, cfg)
+        (out / "report.md").write_text(text_report, encoding="utf-8")
+        (out / "rows.csv").write_text(rows_csv(run.rows), encoding="utf-8")
+        (out / "summary.json").write_text(json.dumps(summary_json(summary), indent=2), encoding="utf-8")
+        print(text_report)
+        print(f"written to {out}")
+        return 0
 
     if args.cmd == "crosscheck":
         cutoff = load_params(BACKEND_DIR / settings.params_file).settlement.cutoff_label_minute
