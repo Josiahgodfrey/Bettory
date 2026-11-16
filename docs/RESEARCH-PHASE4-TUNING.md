@@ -259,10 +259,15 @@ At BETTORY's typical **odds 1.46, hit rate 72 %**: **SD ≈ 0.656 per unit stake
 
 ## 9. Open questions for the owner
 
-1. Decision 2 (Gate B profit criterion): option (a) or (b) of §6? Recommendation: **(a) + (b)**.
-2. Agree the variation grid in §8.2 (or narrow it) — it must be fixed *before* the run.
-3. Should Grade B stay in the product if the new seasons confirm it under-performs? (Removing it is a decision
-   setting, not a model change, and can be evaluated without retuning probabilities.)
+**All three decided by the owner on 2026-11-16 ("yes to all")** and fixed in
+[config/tuning_v1.yaml](../backend/config/tuning_v1.yaml):
+
+1. Gate B profit: **(a) + (b)** — paired improvement over the competition-only baseline (interval excludes 0) as the
+   historical criterion; profit proven in paper betting.
+2. Variation grid: the stronger-shrinkage version after the step 1 finding (calibration slope 0.38): rating
+   shrinkage 20 / 40 / 80 / 160, index trust 0 / 0.25 / 0.5, team weight 1.0 / 0.5 / 0.25 — 36 variations.
+   Recalibration of P is left for a later, separately registered plan.
+3. Grade B: dropped from reports if hypothesis H1 is confirmed.
 
 ---
 

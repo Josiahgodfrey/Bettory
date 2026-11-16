@@ -15,6 +15,7 @@ Examples (from backend/, venv active):
   python -m app.cli backfill-daily              # where every target stands (no request)
   python -m app.cli backfill-daily --run        # run today's backfill now
   python -m app.cli worker                      # start the scheduler (foreground)
+  python -m app.cli tuning-plan                 # the pre-registered tuning plan (config/tuning_v1.yaml)
   python -m app.cli backtest --from 2025-09-01 --to 2026-05-31 --comp ENG1 --comp GER1 --split 2026-02-01
 """
 
@@ -31,6 +32,7 @@ from uuid import UUID
 from app.backtest.config import load_backtest_config
 from app.backtest.report import render_markdown, rows_csv, summarise, summary_json
 from app.backtest.runner import SessionRun, run_backtest
+from app.backtest.tuning_plan import check_unchanged, load_plan, sha256_of, variations
 from app.core.settings import BACKEND_DIR, get_settings
 from app.domain.params import load_params
 from app.domain.quality_config import load_quality_config
@@ -95,6 +97,8 @@ def main(argv: list[str] | None = None) -> int:
     bd = sub.add_parser("backfill-daily", help="automatic API-Football backfill (config/backfill.yaml)")
     bd.add_argument("--run", action="store_true", help="run today's backfill now (otherwise: show the plan)")
     sub.add_parser("worker", help="start the scheduler in the foreground (Ctrl+C to stop)")
+    tp = sub.add_parser("tuning-plan", help="show and validate a pre-registered tuning plan")
+    tp.add_argument("--plan", type=Path, default=None, help="plan file (default: config/tuning_v1.yaml)")
 
     bt = sub.add_parser("backtest", help="replay sessions point in time and report calibration / Gate B")
     bt.add_argument("--from", dest="first", required=True, type=date.fromisoformat, help="first session date")
@@ -158,6 +162,35 @@ def main(argv: list[str] | None = None) -> int:
         with engine.begin() as conn:
             health_repo.accept_crosscheck(conn, args.crosscheck_id, args.note)
         print("accepted")
+        return 0
+
+    if args.cmd == "tuning-plan":
+        path = args.plan or BACKEND_DIR / "config" / "tuning_v1.yaml"
+        tplan = load_plan(path)
+        tplan.check_registry(registry)
+        used = check_unchanged(path)
+        base = load_params(BACKEND_DIR / "config" / f"params_v{tplan.base_params}.yaml")
+        vs = variations(tplan, base)
+        (base_v,) = [v for v in vs if v.is_base]
+        print(f"{path.name}  plan {tplan.plan_version}, "
+              f"registered {tplan.registered_on}, sha256 {sha256_of(path)[:16]}")
+        print("  status: " + (f"LOCKED - used by a real run at {used}" if used else "not used yet (editable)"))
+        print(f"  base params {tplan.base_params} = {base_v.id} ({base_v.name}); competitions "
+              f"{', '.join(tplan.competitions)}")
+        pr = tplan.periods
+        print(f"  tuning {pr.tuning.first} .. {pr.tuning.last}; holdout {pr.holdout.first} .. {pr.holdout.last} "
+              "(touched once)")
+        sel = tplan.selection
+        print(f"  selection: lowest {sel.metric.value} of {sel.market.value}; ties within {sel.tie_tolerance} -> "
+              "fewest changes from the base")
+        for dim in tplan.grid:
+            print(f"  {dim.name}: " + ", ".join(o.label for o in dim.options))
+        print(f"  {len(vs)} variations")
+        for h in tplan.hypotheses:
+            print(f"  {h.id}: {h.statement}")
+        g = tplan.gate_b
+        print(f"  Gate B (holdout): >= {g.min_qualified} listed; calibration {g.calibration}; baseline "
+              f"{g.beats_baseline}; profit {g.profit}")
         return 0
 
     if args.cmd in ("backfill-daily", "worker"):

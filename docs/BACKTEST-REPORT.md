@@ -167,10 +167,25 @@ What this says:
 
 ---
 
-## 5. Decisions needed (owner)
+## 5. Owner decisions
 
-1. ~~**Calibration criterion**~~ — **decided 2026-11-16:** |gap| ≤ max(3 pts, 2 × SE) per populated bucket (§3.2).
-2. **ROI criterion** — since the data-doc estimate cannot produce bets under v1.4, accept "ROI at the minimum odds on
-   the unseen period" as the historical criterion, with real profit measured in paper betting (Phase 7).
-3. **Next run** — after the Pro backfill: tune on 2022-23 to 2024-25, validate on 2025-26, and test the two
-   hypotheses of §2.5 there.
+All decided on 2026-11-16 and fixed in the pre-registered plan
+[config/tuning_v1.yaml](../backend/config/tuning_v1.yaml) (`python -m app.cli tuning-plan`):
+
+1. **Calibration criterion:** |gap| ≤ max(3 pts, 2 × SE) per populated bucket (§3).
+2. **Beating the baseline:** the paired Brier difference with the competition-only baseline must have the upper end
+   of its 95 % interval (sessions resampled) below 0 — a lower average alone is not enough (§3.1).
+3. **Profit:** no historical profit criterion. ROI at the minimum odds is reported with its interval as a
+   consistency check; profit is proven in paper betting (Phase 7) with sequential e-values
+   ([RESEARCH-PHASE4-TUNING.md](RESEARCH-PHASE4-TUNING.md) §3.6, §6).
+4. **Variation grid:** rating shrinkage 20 / 40 / 80 / 160 prior matches × early-goal index trust 0 / 0.25 / 0.5 ×
+   team weight 1.0 / 0.5 / 0.25 = 36 variations; selection by lowest log loss of P(Under 0.5) on 2022-23 – 2024-25;
+   2025-26 is the holdout, evaluated once by the selected variation and by params 1.5 (= variation v08).
+5. **Grade B:** if hypothesis H1 is confirmed, Grade B fixtures are no longer listed in reports (a decision
+   setting; probabilities are not retuned for it).
+
+## 6. Pre-registration
+
+The plan above was written and committed **before** the tuning seasons were loaded. Once a real tuning run uses it,
+its SHA-256 is recorded in `config/tuning_lock.yaml` and the tool refuses any later edit; a changed plan must be a
+new file (`tuning_v2.yaml`), and the report must list every plan and every variation that was run.
