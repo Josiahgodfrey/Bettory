@@ -130,6 +130,7 @@ def main(argv: list[str] | None = None) -> int:
         return 0
 
     store = store_from_settings(settings)
+    rpm = settings.api_football_requests_per_minute
     if args.source == "openfootball":
         stats = pipeline.openfootball(engine, store, registry, args.comp, args.season, args.full, args.reparse)
     elif args.source == "football-data-org":
@@ -139,15 +140,16 @@ def main(argv: list[str] | None = None) -> int:
         stats = pipeline.football_data_co_uk(engine, store, registry, args.comp, args.season, args.reparse)
     elif args.source == "api-football-season":
         stats = pipeline.api_football_season(engine, store, registry, settings.api_football_key.get_secret_value(),
-                                             args.comp, args.season, args.reparse)
+                                             args.comp, args.season, args.reparse, requests_per_minute=rpm)
     elif args.source == "api-football-backfill":
         cap = settings.api_football_max_requests_per_run
         stats = pipeline.api_football_backfill(engine, store, registry, settings.api_football_key.get_secret_value(),
                                                args.comp, args.season, settings.api_football_plan == "pro",
-                                               min(args.max_requests or cap, cap), args.reparse)
+                                               min(args.max_requests or cap, cap), args.reparse,
+                                               requests_per_minute=rpm)
     else:
         stats = pipeline.api_football_day(engine, store, registry, settings.api_football_key.get_secret_value(),
-                                          args.date, args.events, args.odds, args.reparse)
+                                          args.date, args.events, args.odds, args.reparse, requests_per_minute=rpm)
     print(pipeline.format_stats(stats))
     return 0
 

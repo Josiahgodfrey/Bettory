@@ -334,7 +334,7 @@ Every 15' value needs **goal minutes**. Coverage of the free sources:
 | Source | Seasons with goal minutes | Notes |
 |---|---|---|
 | openfootball (`-full` JSON and the source `.txt` repositories) | **2025-26 only**, England 1, Germany 1, Austria 1 | 2026-27 and all older seasons: FT/HT only |
-| API-Football free | league seasons 2022–2024, or any match by id | 1 request per match, 100 per day; 2026-27 history cannot be listed (dates ±1 day) |
+| API-Football free | league seasons 2022–2024, or any match by id | 1 request per match, 100 per day and **10 per minute** (answered as HTTP 200 with a `rateLimit` error); 2026-27 history cannot be listed (dates ±1 day) |
 | API-Football Pro | all seasons | 20 matches per request (`ids`), 7,500 requests per day |
 
 Consequence: without a paid API-Football plan, current-season team windows stay `INSUFFICIENT_DATA` until enough new matches with minutes are collected (months), and the backtest has one season only.
@@ -359,7 +359,7 @@ python -m app.cli ingest api-football-backfill --comp ENG1 --season 2024-25 --ma
 
 API: `POST /jobs/ingest/api-football-backfill` with `{competition, season, max_requests?}`.
 
-Settings (`.env`): `API_FOOTBALL_PLAN=free|pro` (bulk `ids` only on `pro`), `API_FOOTBALL_MAX_REQUESTS_PER_RUN` (default 90, the hard cap of one run).
+Settings (`.env`): `API_FOOTBALL_PLAN=free|pro` (bulk `ids` only on `pro`), `API_FOOTBALL_MAX_REQUESTS_PER_RUN` (default 90, the hard cap of one run), `API_FOOTBALL_REQUESTS_PER_MINUTE` (default 10, the free plan: requests are spaced 6 s apart; a rate-limit answer is retried after 61 s, at most 3 times, within the run cap).
 
 New configuration: `fifteen_minute_market` per competition in [competitions.yaml](../backend/config/competitions.yaml) — set to `true` for the 9 leagues as an **assumption to confirm with your bookmaker**; and `model_c.bookmaker_priority` in the params file.
 
@@ -384,7 +384,7 @@ The analysis builder priced the last 90 matches of each of the Premier League an
 |---|---|
 | Goal minutes | Only 2025-26 (ENG1, GER1, AUT1) until the API-Football upgrade (§8.1) |
 | football-data.co.uk | Blocked by the network's Sophos TLS interception. Certificate checks are deliberately **not** disabled. The parser is tested on a synthetic CSV only. Parked: full checklist for another network in [FOOTBALL-DATA-CO-UK-SETUP.md](FOOTBALL-DATA-CO-UK-SETUP.md) |
-| API-Football league ids | Only 39 (Premier League) is verified. 40/78/218/140/135/61/88/94 must be checked |
+| API-Football league ids | ✅ All 9 verified 2026-11-16 with one `/leagues` request (39, 40, 78, 218, 140, 135, 61, 88, 94: names and countries match; goal-event coverage for 2022-2025 in every league) |
 | `fifteen_minute_market` flags | Assumed `true`; confirm per league with your bookmaker |
 | Migrations on Supabase | Applied to local Docker only. Applying them to the Supabase project changes the live database and needs the owner's go-ahead |
 | DB password | It was in git history. **Rotate it** in Supabase |

@@ -91,12 +91,12 @@ def engine(fresh_db_url: str) -> Iterator[Engine]:
 
 
 def install(monkeypatch: pytest.MonkeyPatch, fake: FakeApi) -> None:
-    monkeypatch.setattr(pipeline, "ApiFootball", lambda key, max_requests: fake)
+    monkeypatch.setattr(pipeline, "ApiFootball", lambda key, max_requests, requests_per_minute: fake)
 
 
 def run(engine: Engine, tmp_path: Path, bulk: bool, max_requests: int) -> Any:
     return pipeline.api_football_backfill(engine, LocalRawStore(tmp_path), REG, "key", "TST1", "2024-25",
-                                          bulk, max_requests)
+                                          bulk, max_requests, requests_per_minute=10)
 
 
 def minutes(engine: Engine) -> int:
@@ -142,7 +142,7 @@ def test_bulk_on_the_free_plan_fails_visibly(engine: Engine, tmp_path: Path, mon
 
 
 def test_real_client_guards() -> None:
-    client = ApiFootball("key", max_requests=1)
+    client = ApiFootball("key", max_requests=1, requests_per_minute=10)
     with pytest.raises(ValueError):
         client.fixtures_by_ids([str(i) for i in range(21)])
     client.http.requests_used = 1

@@ -122,10 +122,12 @@ def ingest_api_football_season(body: SeasonIngest, _: OwnerDep, background: Back
     """API-Football league season (1 request). Free plan: seasons 2022-2024 only."""
     _competition(registry, body.competition, SourceCode.API_FOOTBALL, body.season)
     key = _key(settings.api_football_key.get_secret_value(), "API_FOOTBALL_KEY")
+    rpm = settings.api_football_requests_per_minute
     return _start(engine, background, SourceCode.API_FOOTBALL,
                   f"api:api_football_season:{body.competition}:{body.season}",
                   lambda run_id: pipeline.api_football_season(engine, store(), registry, key, body.competition,
-                                                              body.season, body.reparse, run_id))
+                                                              body.season, body.reparse, run_id,
+                                                              requests_per_minute=rpm))
 
 
 @router.post("/ingest/api-football-backfill", status_code=status.HTTP_202_ACCEPTED, response_model=JobAccepted)
@@ -137,6 +139,7 @@ def ingest_api_football_backfill(body: ApiFootballBackfill, _: OwnerDep, backgro
     Resumable: run it again to continue where the last run stopped."""
     _competition(registry, body.competition, SourceCode.API_FOOTBALL, body.season)
     key = _key(settings.api_football_key.get_secret_value(), "API_FOOTBALL_KEY")
+    rpm = settings.api_football_requests_per_minute
     cap = settings.api_football_max_requests_per_run
     if body.max_requests is not None and body.max_requests > cap:
         raise HTTPException(status.HTTP_422_UNPROCESSABLE_CONTENT,
@@ -145,7 +148,8 @@ def ingest_api_football_backfill(body: ApiFootballBackfill, _: OwnerDep, backgro
     return _start(engine, background, SourceCode.API_FOOTBALL,
                   f"api:api_football_backfill:{body.competition}:{body.season}",
                   lambda run_id: pipeline.api_football_backfill(engine, store(), registry, key, body.competition,
-                                                                body.season, bulk, limit, body.reparse, run_id))
+                                                                body.season, bulk, limit, body.reparse, run_id,
+                                                                requests_per_minute=rpm))
 
 
 @router.post("/ingest/api-football-day", status_code=status.HTTP_202_ACCEPTED, response_model=JobAccepted)
@@ -156,10 +160,11 @@ def ingest_api_football_day(body: ApiFootballDayIngest, _: OwnerDep, background:
     odds (incl. the 15' markets) for upcoming ones, each within its request budget.
     Free plan: only yesterday, today and tomorrow."""
     key = _key(settings.api_football_key.get_secret_value(), "API_FOOTBALL_KEY")
+    rpm = settings.api_football_requests_per_minute
     return _start(engine, background, SourceCode.API_FOOTBALL, f"api:api_football_day:{body.date.isoformat()}",
                   lambda run_id: pipeline.api_football_day(engine, store(), registry, key, body.date,
                                                            body.max_event_requests, body.max_odds_requests,
-                                                           body.reparse, run_id))
+                                                           body.reparse, run_id, requests_per_minute=rpm))
 
 
 # --- run status --------------------------------------------------------------------------------

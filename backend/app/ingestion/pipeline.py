@@ -130,9 +130,10 @@ def football_data_co_uk(engine: Engine, store: RawStore, registry: Registry, com
 
 
 def api_football_season(engine: Engine, store: RawStore, registry: Registry, api_key: str, comp_code: str,
-                        season: str, reparse: bool = False, run_id: UUID | None = None) -> Counter[str]:
+                        season: str, reparse: bool = False, run_id: UUID | None = None, *,
+                        requests_per_minute: int) -> Counter[str]:
     league = registry.get(comp_code).providers[SourceCode.API_FOOTBALL]
-    client = ApiFootball(api_key)
+    client = ApiFootball(api_key, max_requests=1, requests_per_minute=requests_per_minute)
     job = Job(engine, store, registry, SourceCode.API_FOOTBALL, f"api_football_season:{comp_code}:{season}",
               reparse, run_id)
     return _run(job, lambda: client.requests_used, lambda: job.process(
@@ -142,10 +143,12 @@ def api_football_season(engine: Engine, store: RawStore, registry: Registry, api
 
 def api_football_day(engine: Engine, store: RawStore, registry: Registry, api_key: str, day: date,
                      max_event_requests: int = 20, max_odds_requests: int = 20,
-                     reparse: bool = False, run_id: UUID | None = None) -> Counter[str]:
+                     reparse: bool = False, run_id: UUID | None = None, *,
+                     requests_per_minute: int) -> Counter[str]:
     """Fixtures of the day (all registered competitions), then goal minutes for finished registered
     matches and odds (incl. 15' markets) for upcoming ones - each within its request budget."""
-    client = ApiFootball(api_key)
+    client = ApiFootball(api_key, max_requests=1 + max_event_requests + max_odds_requests,
+                         requests_per_minute=requests_per_minute)
     job = Job(engine, store, registry, SourceCode.API_FOOTBALL, f"api_football_day:{day.isoformat()}",
               reparse, run_id)
 
@@ -161,7 +164,7 @@ def api_football_day(engine: Engine, store: RawStore, registry: Registry, api_ke
             job.process(client.fixture_with_events(m.provider_match_key),
                         lambda raw: p_af.parse_fixtures(raw, registry))
         for m in upcoming[:max_odds_requests]:
-            job.process(client.http.get("/odds", {"fixture": m.provider_match_key}),
+            job.process(client.odds_for_fixture(m.provider_match_key),
                         lambda raw: p_af.parse_odds(raw, registry))
 
     return _run(job, lambda: client.requests_used, body)
@@ -169,14 +172,14 @@ def api_football_day(engine: Engine, store: RawStore, registry: Registry, api_ke
 
 def api_football_backfill(engine: Engine, store: RawStore, registry: Registry, api_key: str, comp_code: str,
                           season: str, bulk: bool, max_requests: int, reparse: bool = False,
-                          run_id: UUID | None = None) -> Counter[str]:
+                          run_id: UUID | None = None, *, requests_per_minute: int) -> Counter[str]:
     """Season fixtures (1 request), then goal minutes for every finished fixture that has none from
     API-Football yet: 20 fixtures per request with `bulk` (paid plans), otherwise 1 per request.
 
     Resumable: fixtures that already have API-Football goal minutes are skipped, so repeated runs (e.g. one
     per day on the free plan) continue where the last one stopped. Stops cleanly at `max_requests`."""
     league = registry.get(comp_code).providers[SourceCode.API_FOOTBALL]
-    client = ApiFootball(api_key, max_requests=max_requests)
+    client = ApiFootball(api_key, max_requests=max_requests, requests_per_minute=requests_per_minute)
     job = Job(engine, store, registry, SourceCode.API_FOOTBALL, f"api_football_backfill:{comp_code}:{season}",
               reparse, run_id)
 
