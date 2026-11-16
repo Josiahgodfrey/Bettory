@@ -1,6 +1,6 @@
 # BETTORY — Calculation Engine: What Was Built
 
-**Status:** Phase 2 (calculation engine) implemented on branch `value-calculation`, decision layer pending
+**Status:** Phase 2 (calculation engine and decision layer) implemented on branch `value-calculation`
 **Date:** 2026-11-15 · **Formula** v1.4 (μ-level blend) · **Parameters** `params_v1.5.yaml`
 **Related:** [FIFTEEN-MINUTE-ODDS-CALCULATION.md](FIFTEEN-MINUTE-ODDS-CALCULATION.md) (pricing spec), [DATA-SOURCES-AND-MARKET-MODEL.md](DATA-SOURCES-AND-MARKET-MODEL.md) (Models L, B v2, C), [SYSTEM-DOCUMENTATION.md](SYSTEM-DOCUMENTATION.md) (Model A), [DATA-MODEL.md](DATA-MODEL.md) (data statuses, selection-bias rule), [DATA-INGESTION-IMPLEMENTATION.md](DATA-INGESTION-IMPLEMENTATION.md)
 
@@ -81,6 +81,31 @@ All paths under `backend/app/calculation/`.
 | [pricing.py](../backend/app/calculation/pricing.py) | v1.4 engine: μ blend → λ15 = s × μ × I → grid → probabilities, fair and minimum odds; also P_team and P_market | Pricing 3–8 |
 | [ev.py](../backend/app/calculation/ev.py) | EV, minimum odds, expected price; evaluates a bookmaker's 15' quote ("Goal in 1-15 minutes" NO, "1x2 - 15 minutes" DRAW) | Pricing 8–10 |
 
+### 4.1 Decision layer
+
+All paths under `backend/app/decision/`. It turns one fixture's results into a verdict, and a session's verdicts into a report.
+
+| File | Does |
+|---|---|
+| [layers.py](../backend/app/decision/layers.py) | `verify(FixtureAnalysis, params)` runs layers 0–5 and returns a `Verdict`: decision, grade, every check, probabilities, fair odds, **minimum odds**, and the selected market. Any unexpected error → `ERROR` |
+| [grading.py](../backend/app/decision/grading.py) | Model spread across the available models (P_A, P_B, P_C) → grade A / B / SKIP |
+| [ranking.py](../backend/app/decision/ranking.py) | `rank_and_cap` (at most `sessions.max_matches_per_session`, never filled up) and `recheck` (one-way: QUALIFIED → WITHDRAWN only) |
+| [reasons.py](../backend/app/decision/reasons.py) | `Check`: layer, code, value, rule, detail; printable as `[FAIL] L2 MODEL_GAP_A_B: 11.8 pts (rule <= 10 pts)` |
+
+| Layer | Checks | Fails as |
+|---|---|---|
+| L0 Screen | baseline plausible (not REVIEW); league Model L P(0-0) ≥ `screen.league_p00_min`; 15' markets offered | SKIP |
+| L1 Data | baseline 15' values; four full windows (10 matches, no INCOMPLETE); Models A, B v2 and the price available | INSUFFICIENT_DATA |
+| L2 Models | \|P_A − P_B\| ≤ 10 pts; \|P_team − P_market\| ≤ 10 pts when Model C is usable | SKIP |
+| L3 Value | minimum odds = max((1 + EV_req)/P, Model C fair odds), EV_req 5% with a market check, 8% without. With bookmaker 15' quotes: offered ≥ minimum and ≤ 10 pts from the bookmaker's de-vigged view; the higher-EV market is selected (never both) | SKIP |
+| L4 Grade | A: models within 5 pts and full samples; B: within 10 pts | SKIP |
+| L5 Red flags | favourite odds < 1.50 (or the win-rate proxy when odds are missing); goal before 15' in ≥ 3 of the last 5 (either team); H2H ≥ 4 meetings with early goals in ≥ 50%; context flags (must-score, lineups, odds movement) | SKIP |
+
+- **Every check is evaluated** when its inputs exist; the first failing layer decides.
+- **One quoted market failing** (e.g. Draw below its minimum while Under 0.5 qualifies) does not block the fixture: such checks are non-blocking (`MISS`), and only "no quoted market qualifies" blocks.
+- **Report mode (A14):** without bookmaker 15' quotes, a fixture qualifies with minimum odds. You bet only at or above them, on the one market where offered ÷ minimum is higher.
+- **Ranking:** grade → checked EV first (by EV), then by P(Under 0.5) → smaller model spread → larger complete sample → fixture id.
+
 ---
 
 ## 5. Findings from real data
@@ -135,4 +160,4 @@ before forming each rating. It removes extreme predictions and the "team never s
 | Unit | Every rejection path: bad odds, one-sided markets, INCOMPLETE windows, point-in-time breaches, invalid parameters |
 | Guard | No parameter copies in calculation code; params file name = version; import boundaries |
 
-All checks are green: ruff, mypy (strict), import-linter, 258 tests.
+All checks are green: ruff, mypy (strict), import-linter, 274 unit, golden and property tests (98% coverage of `calculation` and `decision`) plus the database integration tests.
