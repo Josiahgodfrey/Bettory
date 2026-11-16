@@ -37,6 +37,10 @@ class Sessions(Strict):
     max_matches_per_session: int = Field(ge=1)
 
 
+class Screen(Strict):
+    league_p00_min: float = Fraction
+
+
 class DataGate(Strict):
     history_matches: int = Field(ge=1)
 
@@ -132,6 +136,7 @@ class RedFlags(Strict):
     recent_early_goals_last5: int = Field(ge=1)
     h2h_min_meetings: int = Field(ge=1)
     h2h_early_goal_rate: float = Fraction
+    h2h_bonus_zero_zero_rate: float = Fraction
 
 
 class H2H(Strict):
@@ -151,6 +156,7 @@ class Params(Strict):
     params_version: str = Field(pattern=r"^\d+\.\d+$")
     formula_version: str
     sessions: Sessions
+    screen: Screen
     data_gate: DataGate
     blend: Blend
     shrinkage: Shrinkage

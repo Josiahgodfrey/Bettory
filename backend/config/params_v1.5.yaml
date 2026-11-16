@@ -7,7 +7,8 @@
 # Changes from 1.4:
 #   + model_a.ft_weight (was fixed in code), model_a.rating_prior_matches (new: shrinkage of attack/defence
 #     ratings toward the league average; derived below), model_c.input_lines (was fixed in code),
-#     h2h.* (was fixed in code / SQL), red_flags.recent_window, value.overround_min
+#     h2h.* (was fixed in code / SQL), red_flags.recent_window, value.overround_min,
+#     screen.league_p00_min (data doc 14.5, was only in the docs), red_flags.h2h_bonus_zero_zero_rate (data doc 11.2)
 #   - data_gate.min_complete_per_view (superseded by the selection-bias rule, DATA-MODEL.md 7.1)
 #
 # rating_prior_matches derivation (2026-11-15, ENG1 + GER1 2025-26): empirical-Bayes m = within-team
@@ -27,6 +28,9 @@ sessions:
   lead_time_hours: 2                  # ready_by = min(deadline, first_ko - 2h)
   run_buffer_minutes: 45
   max_matches_per_session: 50         # maximum, never a target
+
+screen:
+  league_p00_min: 0.70                # Layer 0: competition Model L P(0-0 at 15') (data doc 14.5)
 
 data_gate:
   history_matches: 10                 # matches per view (GENERAL / HOME / AWAY)
@@ -81,6 +85,7 @@ red_flags:
   recent_early_goals_last5: 3
   h2h_min_meetings: 4
   h2h_early_goal_rate: 0.50
+  h2h_bonus_zero_zero_rate: 0.80      # supporting note only, no effect on P (data doc 11.2)
 
 h2h:
   max_meetings: 10
