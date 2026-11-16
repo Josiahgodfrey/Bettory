@@ -60,6 +60,12 @@ Found in Phase 0 ([PHASE-0-FINDINGS.md](PHASE-0-FINDINGS.md) §4, 2026-11-14) an
 - **Certificate verification must stay ON.** Turning it off would hide the interception, and the same setting would
   then expose API keys and database traffic to anything in the middle. This is a project rule, not a workaround to
   try.
+- **Second, independent problem (found 2026-11-16):** fetching `https://www.football-data.co.uk/notes.txt` from
+  Anthropic's servers — not this network — also failed with "unable to verify the first certificate". The site most
+  likely sends an **incomplete certificate chain** (browsers often cope by caching intermediates; Python does not).
+  On a clean network: diagnose with `openssl s_client -connect www.football-data.co.uk:443 -showcerts`; if the
+  intermediate is missing, add that intermediate certificate to a trust bundle used **only** for this source
+  (`HttpSource(..., verify=<bundle>)`), still verifying the chain — never `verify=False`.
 
 ---
 
@@ -83,10 +89,16 @@ This is the no-look-ahead rule working as intended: live, closing odds are never
 | `P>2.5`, `P<2.5` | FT O/U 2.5 |
 
 `captured_at` must be **no earlier than when the odds were really collected**; a later time only makes the odds
-invisible for some sessions, an earlier one would be look-ahead. From memory, `notes.txt` says pre-match odds are
-collected on **Friday afternoons for weekend matches and Tuesday afternoons for midweek matches** — **unverified**:
-the real `notes.txt` decides the rule. If the collection time cannot be pinned down, the fallback rule is
-"captured_at = the day before kick-off, 23:59 UK time", **only** if the notes guarantee collection before that.
+invisible for some sessions, an earlier one would be look-ahead.
+
+**Verified 2026-11-16** (mirror of `notes.txt`, [RESEARCH-PHASE4-TUNING.md](RESEARCH-PHASE4-TUNING.md) §7):
+"Betting odds for weekend games are collected Friday afternoons, and on Tuesday afternoons for midweek games."
+Closing odds are "last odds before match starts", marked with a **C** after the bookmaker code
+(`PSCH/PSCD/PSCA`, `PC>2.5/PC<2.5`) — exactly the columns the parser reads. "Afternoon" has no exact hour and no
+time zone, so the conservative rule is: `captured_at` = **the collection day (Friday or Tuesday before the match)
+at 23:59 UK time**; a match on the collection day itself or the day after must be checked against the session
+`run_start` (if the rule would place collection after `run_start`, the odds are simply not used for that
+session). Confirm on the real file that the pre-match columns are filled for the seasons we load.
 
 Closing odds stay loaded as `CLOSING` (for the closing-line-value and "BETTORY vs market" comparisons), never as
 analysis input.
