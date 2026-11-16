@@ -35,7 +35,7 @@ from app.backtest.config import load_backtest_config
 from app.backtest.report import render_markdown, rows_csv, summarise, summary_json
 from app.backtest.runner import SessionRun, run_backtest
 from app.backtest.tuning import period_of, run_tuning
-from app.backtest.tuning_plan import check_unchanged, load_plan, sha256_of, variations
+from app.backtest.tuning_plan import check_unchanged, current_plan_path, lineage, load_plan, sha256_of, variations
 from app.backtest.tuning_report import render_tuning, tuning_json, variations_csv
 from app.core.settings import BACKEND_DIR, get_settings
 from app.domain.params import load_params
@@ -102,7 +102,7 @@ def main(argv: list[str] | None = None) -> int:
     bd.add_argument("--run", action="store_true", help="run today's backfill now (otherwise: show the plan)")
     sub.add_parser("worker", help="start the scheduler in the foreground (Ctrl+C to stop)")
     tn = sub.add_parser("tune", help="run a pre-registered tuning plan (dry run unless --real)")
-    tn.add_argument("--plan", type=Path, default=None, help="plan file (default: config/tuning_v1.yaml)")
+    tn.add_argument("--plan", type=Path, default=None, help="plan file (default: the newest registered plan)")
     tn.add_argument("--real", action="store_true",
                     help="the real run: locks the plan for good and may write a new params file")
     tn.add_argument("--tuning", nargs=2, type=date.fromisoformat, metavar=("FIRST", "LAST"),
@@ -111,7 +111,7 @@ def main(argv: list[str] | None = None) -> int:
                     help="dry run only: override the holdout period")
     tn.add_argument("--out", type=Path, default=None, help="output folder (default: backtests/tuning_...)")
     tp = sub.add_parser("tuning-plan", help="show and validate a pre-registered tuning plan")
-    tp.add_argument("--plan", type=Path, default=None, help="plan file (default: config/tuning_v1.yaml)")
+    tp.add_argument("--plan", type=Path, default=None, help="plan file (default: the newest registered plan)")
 
     bt = sub.add_parser("backtest", help="replay sessions point in time and report calibration / Gate B")
     bt.add_argument("--from", dest="first", required=True, type=date.fromisoformat, help="first session date")
@@ -181,7 +181,7 @@ def main(argv: list[str] | None = None) -> int:
         if args.real and (args.tuning or args.holdout):
             print("a real run uses the registered periods: --tuning / --holdout are for dry runs", file=sys.stderr)
             return 2
-        plan_path = args.plan or BACKEND_DIR / "config" / "tuning_v1.yaml"
+        plan_path = args.plan or current_plan_path()
         result = run_tuning(
             engine, registry, load_backtest_config(), plan_path, dry_run=not args.real,
             tuning_override=period_of(*args.tuning) if args.tuning else None,
@@ -204,7 +204,7 @@ def main(argv: list[str] | None = None) -> int:
         return 0
 
     if args.cmd == "tuning-plan":
-        path = args.plan or BACKEND_DIR / "config" / "tuning_v1.yaml"
+        path = args.plan or current_plan_path()
         tplan = load_plan(path)
         tplan.check_registry(registry)
         used = check_unchanged(path)
@@ -216,9 +216,13 @@ def main(argv: list[str] | None = None) -> int:
         print("  status: " + (f"LOCKED - used by a real run at {used}" if used else "not used yet (editable)"))
         print(f"  base params {tplan.base_params} = {base_v.id} ({base_v.name}); competitions "
               f"{', '.join(tplan.competitions)}")
+        for name, older in lineage(path)[1:]:
+            print(f"  supersedes {name} (v{older.plan_version}, {older.registered_on}): {tplan.change_reason}")
         pr = tplan.periods
         print(f"  tuning {pr.tuning.first} .. {pr.tuning.last}; holdout {pr.holdout.first} .. {pr.holdout.last} "
-              "(touched once)")
+              f"(touched once; {tplan.holdout_status.value})")
+        if pr.prospective is not None:
+            print(f"  prospective {pr.prospective.first} .. {pr.prospective.last} (not yet played at registration)")
         sel = tplan.selection
         print(f"  selection: lowest {sel.metric.value} of {sel.market.value}; ties within {sel.tie_tolerance} -> "
               "fewest changes from the base")

@@ -186,9 +186,12 @@ All decided on 2026-11-16 and fixed in the pre-registered plan
 
 ## 6. Pre-registration
 
-The plan above was written and committed **before** the tuning seasons were loaded. Once a real tuning run uses it,
-its SHA-256 is recorded in `config/tuning_lock.yaml` and the tool refuses any later edit; a changed plan must be a
-new file (`tuning_v2.yaml`), and the report must list every plan and every variation that was run.
+The plan was written and committed **before any model result on the tuning seasons (2022-23 to 2024-25) was
+computed**. *Correction (2026-11-17):* an earlier version of this sentence, and tuning_v1's header, said "before the
+tuning seasons were loaded"; in fact part of ENG1 2024-25 was already in the database through the goal-minute
+backfill (only coverage counts had been looked at). Once a real tuning run uses a plan, its SHA-256 is recorded in
+`config/tuning_lock.yaml` and the tool refuses any later edit; a changed plan must be a new file that supersedes it,
+and every report lists every plan and every variation that was run.
 
 ## 7. The tuning tool and its dry run (2026-11-17)
 
@@ -218,3 +221,29 @@ evidence; 55 s for 36 variations):
 
 Two points for the owner (see the session notes): the 2025-26 "holdout" has already been examined (first backtest,
 step 1, this dry run), and the early-goal index trust is best at the edge of the registered grid.
+
+## 8. Plan v2: the validation protocol (2026-11-17)
+
+Owner decisions of 2026-11-17 ("yes to both recommendations"):
+[config/tuning_v2.yaml](../backend/config/tuning_v2.yaml) supersedes v1 (never used by a real run). The tools use
+the newest registered plan by default (`python -m app.cli tuning-plan`).
+
+| Element | What it guarantees |
+|---|---|
+| **Plan history** | `supersedes` + `change_reason` are validated (the old plan must exist, have a lower version and an earlier or equal registration) and every tuning report prints the full history: nobody can quietly replace a plan |
+| **Wider grid** | early-goal index trust 0 / 0.25 / 0.5 / **0.75 / 1.0** (60 variations): the v1 dry run had found the best value at the edge of its grid |
+| **Honest holdout** | `holdout_status: examined_before_registration` with the note of what was examined; every report shows it as a banner and Gate B carries a **NOTE** (it never blocks, never hides) |
+| **Prospective period** | 2026-11-18 → 2027-06-30, starting **after** the registration date (validated): fixtures not yet played when the plan was fixed, the truly unseen test. Every later run evaluates it automatically (selected and base params, beats-the-baseline rule) as matches are played and loaded; until then it shows PENDING |
+| **One rule set** | the normal backtest report now uses the same Gate B rules as the tuning report (paired interval vs the competition-only baseline; profit = PAPER BETTING, never a historical number) |
+
+Dry run of v2 on the data at hand (tuning Aug 2025 – Jan 2026, holdout Feb – May 2026 — a test of the tool, not
+evidence; 83 s for 60 variations):
+
+| Result | Value |
+|---|---|
+| Effective trials | 20 of 60 (`team_vs_market` not testable without main-market odds) |
+| Selected | **v14 (m20 / wI1.0 / team0.5)**: log loss −0.0022 vs the base on the tuning months — the best value is again at the edge, but 1.0 (full trust in the index) is the natural maximum of the parameter |
+| Holdout | paired Brier vs competition-only +0.0011 [−0.0040, +0.0069] → FAIL; calibration PASS (1 bucket judged) |
+| Prospective | PENDING — starts 2026-11-18 |
+
+Read with care: the tuning window here is five months of one season; the real run tunes on three seasons.

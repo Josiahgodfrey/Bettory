@@ -7,8 +7,9 @@ import io
 from typing import Any
 
 from app.backtest.config import BacktestConfig
-from app.backtest.report import PASS, Summary
-from app.backtest.tuning import PAPER_BETTING, TuningResult
+from app.backtest.report import PAPER_BETTING, PASS, Summary
+from app.backtest.tuning import TuningResult
+from app.backtest.tuning_plan import HoldoutStatus
 from app.settlement.statistics import Interval
 
 
@@ -35,7 +36,16 @@ def render_tuning(t: TuningResult, cfg: BacktestConfig) -> str:
     out = [f"# {title}Tuning run: {t.plan_name}", "",
            f"Plan {plan.plan_version} registered {plan.registered_on}, sha256 `{t.plan_sha256[:16]}`; base params "
            f"{plan.base_params} = {t.base.id} ({t.base.name}); competitions {', '.join(plan.competitions)}.", "",
-           f"Tuning {t.tuning.first} .. {t.tuning.last}; holdout {t.holdout.first} .. {t.holdout.last} (touched once)."]
+           f"Tuning {t.tuning.first} .. {t.tuning.last}; holdout {t.holdout.first} .. {t.holdout.last} (touched once)"
+           + (f"; prospective from {plan.periods.prospective.first} (registered as not yet played)."
+              if plan.periods.prospective else ".")]
+    if len(t.lineage) > 1:
+        out += ["", "**Plan history** (newest first; every plan that was registered for this question):", ""]
+        out += [f"- `{name}` v{version}, registered {registered}"
+                + (f" — replaced the plan below because: {reason}" if reason else " — the original plan")
+                for name, version, registered, reason in t.lineage]
+    if plan.holdout_status is HoldoutStatus.EXAMINED:
+        out += ["", f"> **Holdout examined before registration (weaker evidence).** {plan.holdout_note}"]
     if t.dry_run:
         out += ["", "**Dry run**: the plan was not locked and no params file was written. Results on overridden or "
                 "incomplete periods are a test of the tool, not evidence."]
@@ -75,6 +85,23 @@ def render_tuning(t: TuningResult, cfg: BacktestConfig) -> str:
     for h in t.hypotheses:
         out.append(f"| {h.hypothesis.id} | {h.period} | {h.n} | {_ci(h.gap, '+.3f')} | **{h.status}** | "
                    f"{h.hypothesis.action_if_confirmed} |")
+    pr = t.prospective
+    if pr is not None:
+        span = f"starts {pr.first}" if pr.last < pr.first else f"{pr.first} .. {pr.last}"
+        out += ["", "## Prospective period (truly unseen: not yet played at registration)", "",
+                f"{span}: **{pr.status}**."]
+        if pr.selected is not None:
+            out += ["", "| Params | n | Mean predicted | Actual | Brier | Log loss | Calibration slope |",
+                    "|---|---|---|---|---|---|---|", f"| selected {t.selected.id} | {_holdout_cells(pr.selected)} |"]
+            if pr.base is not None:
+                out.append(f"| base {t.base.id} | {_holdout_cells(pr.base)} |")
+            if pr.baseline is not None:
+                out += ["", f"Beats competition-only baseline: **{pr.baseline.status}** — {pr.baseline.detail}"]
+            if pr.selected_minus_base is not None:
+                pa, pb, pn = pr.selected_minus_base
+                out += ["", f"Selected minus base, {pn} fixtures: Brier {_ci(pa)}; log loss {_ci(pb)}."]
+        else:
+            out += ["", "It is evaluated automatically by every later run as matches are played and loaded."]
     out += ["", "## Output", "",
             f"New params file: `{t.params_file.name}` (adopting it is a separate decision)." if t.params_file else
             ("None (dry run)." if t.dry_run else "None: the base parameters were selected."), ""]
@@ -101,6 +128,13 @@ def tuning_json(t: TuningResult) -> dict[str, Any]:
         "hypotheses": [{"id": h.hypothesis.id, "period": h.period, "n": h.n, "gap": iv(h.gap), "status": h.status}
                        for h in t.hypotheses],
         "params_file": t.params_file.name if t.params_file else None,
+        "holdout_status": t.plan.holdout_status.value,
+        "lineage": [{"plan": n, "version": v, "registered_on": r, "change_reason": c} for n, v, r, c in t.lineage],
+        "prospective": None if t.prospective is None else {
+            "first": t.prospective.first.isoformat(), "last": t.prospective.last.isoformat(),
+            "status": t.prospective.status,
+            "baseline": None if t.prospective.baseline is None else {
+                "status": t.prospective.baseline.status, "detail": t.prospective.baseline.detail}},
     }
 
 

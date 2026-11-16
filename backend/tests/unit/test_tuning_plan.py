@@ -101,3 +101,41 @@ def test_fingerprint_ignores_line_endings(tmp_path: Path) -> None:
     assert sha256_of(lf) == sha256_of(crlf)
     crlf.write_bytes(crlf_end.join([b"plan_version: 1", b"x: 3", b""]))
     assert sha256_of(lf) != sha256_of(crlf)                                 # a real edit still shows
+
+
+V2 = CONFIG_DIR / "tuning_v2.yaml"
+RAW2: dict[str, Any] = yaml.safe_load(V2.read_text(encoding="utf-8"))
+
+
+def test_shipped_v2_supersedes_v1() -> None:
+    from app.backtest.tuning_plan import HoldoutStatus, current_plan_path, lineage
+
+    assert current_plan_path() == V2
+    plan = load_plan(V2)
+    assert [name for name, _ in lineage(V2)] == ["tuning_v2.yaml", "tuning_v1.yaml"]
+    assert len(variations(plan, load_params(params_path(plan.base_params)))) == 4 * 5 * 3
+    assert plan.holdout_status is HoldoutStatus.EXAMINED and plan.holdout_note is not None
+    prospective = plan.periods.prospective
+    assert prospective is not None and prospective.first > plan.registered_on
+
+
+def v2_with(tmp_path: Path, **changes: Any) -> Path:
+    data = copy.deepcopy(RAW2)
+    data.update(changes)
+    (tmp_path / "tuning_v1.yaml").write_text(PLAN.read_text(encoding="utf-8"), encoding="utf-8")
+    return write(tmp_path, data, "tuning_v2.yaml")
+
+
+@pytest.mark.parametrize(("changes", "message"), [
+    ({"change_reason": None}, "supersedes and change_reason go together"),
+    ({"holdout_note": None}, "examined holdout needs a holdout_note"),
+    ({"periods": {**RAW2["periods"], "prospective": {"first": "2026-11-17", "last": "2027-06-30"}}},
+     "after the registration date"),
+    ({"periods": {**RAW2["periods"], "prospective": {"first": "2026-06-01", "last": "2027-06-30"}}},
+     "after the holdout ends"),
+    ({"supersedes": "tuning_v9.yaml"}, "does not exist"),
+    ({"plan_version": 1}, "higher plan_version"),
+])
+def test_protocol_rules(tmp_path: Path, changes: dict[str, Any], message: str) -> None:
+    with pytest.raises((ValidationError, ValueError), match=message):
+        load_plan(v2_with(tmp_path, **changes))

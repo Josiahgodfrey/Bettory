@@ -23,23 +23,25 @@ import math
 from collections import defaultdict
 from collections.abc import Callable, Sequence
 from dataclasses import dataclass
-from datetime import date
+from datetime import UTC, date, datetime
 from pathlib import Path
 
 import yaml
 from sqlalchemy import Engine
 
 from app.backtest.config import BacktestConfig
-from app.backtest.report import FAIL, NOT_EVALUABLE, PASS, Criterion, Summary, summarise
+from app.backtest.report import FAIL, NOTE, PAPER_BETTING, PASS, Criterion, Summary, summarise
 from app.backtest.runner import BacktestRow, BacktestRun, run_backtest
 from app.backtest.tuning_plan import (
     LOCK_FILE,
+    HoldoutStatus,
     Hypothesis,
     Metric,
     Period,
     TuningPlan,
     Variation,
     check_unchanged,
+    lineage,
     load_plan,
     register_use,
     sha256_of,
@@ -55,7 +57,6 @@ from app.storage.point_in_time import ReadCache
 
 log = logging.getLogger(__name__)
 CONFIRMED, NOT_CONFIRMED, TOO_FEW = "CONFIRMED", "NOT CONFIRMED", "TOO FEW SESSIONS"
-PAPER_BETTING = "PAPER BETTING"
 _CLIP = 1e-12
 
 
@@ -113,10 +114,12 @@ class TuningResult:
     gate: list[Criterion]
     hypotheses: list[HypothesisResult]
     params_file: Path | None
+    prospective: Prospective | None = None
+    lineage: tuple[tuple[str, int, str, str | None], ...] = ()  # (file, version, registered, change reason)
 
     @property
     def gate_passed(self) -> bool:
-        return all(c.status == PASS for c in self.gate if c.status != PAPER_BETTING)
+        return all(c.status == PASS for c in self.gate if c.status not in (PAPER_BETTING, NOTE))
 
     def selection_text(self) -> str:
         sel = self.plan.selection
@@ -198,31 +201,55 @@ def _paired_selected_base(sel: BacktestRun, base: BacktestRun, bet: Bet,
             block_bootstrap(list(loss.values()), u.bootstrap_samples, u.confidence, u.seed), n)
 
 
-def plan_gate(plan: TuningPlan, holdout: Summary, cfg: BacktestConfig) -> list[Criterion]:
-    """Gate B by the plan's rules, on the holdout summary of the selected variation."""
-    g, u = plan.gate_b, cfg.uncertainty
-    rows = holdout.run.rows
-    known = sum(r.decision is Decision.QUALIFIED and _y(r, Bet.UNDER05) is not None for r in rows)
+def plan_gate(plan: TuningPlan, holdout: Summary) -> list[Criterion]:
+    """Gate B by the plan's rules on the holdout summary of the selected variation: the summary already applies the
+    shared rules (report.py); the plan sets the minimum number of selections and the holdout's honesty note."""
+    g = plan.gate_b
+    known = sum(r.decision is Decision.QUALIFIED and _y(r, Bet.UNDER05) is not None for r in holdout.run.rows)
     out = [Criterion("Qualified selections", PASS if known >= g.min_qualified else FAIL,
                      f"{known} (need >= {g.min_qualified})")]
-    out += [c for c in holdout.gate if c.name == "Calibration"]               # noise-aware rule (backtest.yaml)
-    paired = next((p for p in holdout.paired if p.market == "UNDER05" and p.name.startswith("Final price")), None)
-    ci = paired.brier if paired is not None else None
-    if ci is None or ci.blocks < u.min_sessions:
-        out.append(Criterion("Beats competition-only baseline", NOT_EVALUABLE,
-                             "no paired interval" if ci is None else f"only {ci.blocks} sessions"))
-    else:
-        out.append(Criterion("Beats competition-only baseline", PASS if ci.high < 0 else FAIL,
-                             f"paired Brier difference {ci.estimate:+.4f} [{ci.low:+.4f}, {ci.high:+.4f}]; "
-                             "PASS needs the whole interval below 0"))
-    roi = holdout.min_odds_roi["all"]["UNDER05"]
-    roi_ci = holdout.roi_interval["all"]["UNDER05"]
-    detail = "no listed bets" if roi.roi is None else (
-        f"ROI at the minimum odds {roi.roi:+.1%} over {roi.bets} bets"
-        + ("" if roi_ci is None else f", interval [{roi_ci.low:+.1%}, {roi_ci.high:+.1%}]")
-        + " - consistency check only; profit is proven in paper betting")
-    out.append(Criterion("Profit", PAPER_BETTING, detail))
+    out += [c for c in holdout.gate if c.name != "Qualified selections"]
+    if plan.holdout_status is HoldoutStatus.EXAMINED:
+        out.append(Criterion("Holdout status", NOTE, "examined before registration - weaker evidence; the decisive "
+                             "unseen tests are the prospective period and paper betting"))
     return out
+
+
+@dataclass(frozen=True)
+class Prospective:
+    """The period registered as not yet played: evaluated with whatever has been played and loaded so far."""
+
+    first: date
+    last: date  # last session date evaluated (min(registered last, today))
+    status: str  # PENDING (nothing to evaluate yet) / EVALUATED
+    selected: Summary | None
+    base: Summary | None
+    selected_minus_base: tuple[Interval | None, Interval | None, int] | None
+    baseline: Criterion | None  # beats competition-only on the prospective fixtures (selected params)
+
+
+def _prospective(plan: TuningPlan, selected: Variation, base: Variation, engine: Engine, registry: Registry,
+                 cfg: BacktestConfig, today: date) -> Prospective | None:
+    period = plan.periods.prospective
+    if period is None:
+        return None
+    last = min(period.last, today)
+    if last < period.first:
+        return Prospective(period.first, last, "PENDING - the period has not started", None, None, None, None)
+    cache = ReadCache()
+    sel = run_backtest(engine, selected.params, registry, cfg, period.first, last, plan.competitions, cache=cache)
+    priced = [r for r in sel.rows if r.p_under05 is not None and _y(r, Bet.UNDER05) is not None]
+    if not priced:
+        return Prospective(period.first, last, "PENDING - no priced fixture with a known result yet", None, None,
+                           None, None)
+    bas = sel if selected.is_base else run_backtest(engine, base.params, registry, cfg, period.first, last,
+                                                    plan.competitions, cache=cache)
+    sel_summary = summarise(sel, cfg)
+    baseline = next(c for c in sel_summary.gate if c.name == "Beats competition-only baseline")
+    return Prospective(period.first, last, f"EVALUATED - {len(priced)} fixtures so far", sel_summary,
+                       None if selected.is_base else summarise(bas, cfg),
+                       None if selected.is_base else _paired_selected_base(sel, bas, plan.selection.market, cfg),
+                       baseline)
 
 
 def _subset(rows: Sequence[BacktestRow], h: Hypothesis) -> list[BacktestRow]:
@@ -292,7 +319,7 @@ def write_params(selected: Variation, base_version: str, plan_name: str, plan_sh
 def run_tuning(engine: Engine, registry: Registry, cfg: BacktestConfig, plan_path: Path, *, dry_run: bool,
                tuning_override: Period | None = None, holdout_override: Period | None = None,
                lock: Path = LOCK_FILE, params_dir: Path = CONFIG_DIR,
-               progress: Callable[[str], None] | None = None) -> TuningResult:
+               progress: Callable[[str], None] | None = None, today: date | None = None) -> TuningResult:
     if (tuning_override or holdout_override) and not dry_run:
         raise ValueError("periods can only be overridden in a dry run: a real run uses the registered periods")
     say = progress or (lambda _m: None)
@@ -340,8 +367,11 @@ def run_tuning(engine: Engine, registry: Registry, cfg: BacktestConfig, plan_pat
         plan=plan, plan_name=plan_path.name, plan_sha256=sha, dry_run=dry_run, tuning=tuning, holdout=holdout,
         base=base, scores=scores, effective_trials=len({s.group for s in scores}),
         untestable=_untestable(plan, scores), selected=selected, tied=tied, holdout_selected=sel_summary,
-        holdout_base=base_summary, selected_minus_base=paired, gate=plan_gate(plan, sel_summary, cfg),
+        holdout_base=base_summary, selected_minus_base=paired, gate=plan_gate(plan, sel_summary),
         hypotheses=hypotheses, params_file=params_file,
+        prospective=_prospective(plan, selected, base, engine, registry, cfg, today or datetime.now(UTC).date()),
+        lineage=tuple((name, pl.plan_version, pl.registered_on.isoformat(), pl.change_reason)
+                      for name, pl in lineage(plan_path)),
     )
 
 

@@ -9,7 +9,9 @@
         register_use(path, note)  records the SHA-256 when a REAL run starts (dry runs never do)
 
 A plan is evidence only if it was fixed before the data was seen; the lock makes a later edit visible and
-refused instead of silent.
+refused instead of silent. A plan may supersede an earlier, never-used plan (`supersedes` + `change_reason`): the
+lineage is validated and printed in every report. The holdout's status says honestly whether it was examined before
+registration; a `prospective` period - starting after the registration date - is the truly unseen test.
 """
 
 from __future__ import annotations
@@ -51,12 +53,20 @@ class Period(_Strict):
 class Periods(_Strict):
     tuning: Period
     holdout: Period
+    prospective: Period | None = None  # fixtures not yet played at registration: the truly unseen test
 
     @model_validator(mode="after")
     def _disjoint(self) -> Self:
         if self.holdout.first <= self.tuning.last:
             raise ValueError("the holdout must start after the tuning period ends (it is the unseen future)")
+        if self.prospective is not None and self.prospective.first <= self.holdout.last:
+            raise ValueError("the prospective period must start after the holdout ends")
         return self
+
+
+class HoldoutStatus(StrEnum):
+    UNSEEN = "unseen"
+    EXAMINED = "examined_before_registration"  # its data shaped the plan: weaker evidence, said in every report
 
 
 class Metric(StrEnum):
@@ -113,9 +123,13 @@ class GateB(_Strict):
 class TuningPlan(_Strict):
     plan_version: int = Field(ge=1)
     registered_on: date
+    supersedes: str | None = Field(default=None, pattern=r"^tuning_v\d+\.yaml$")
+    change_reason: str | None = Field(default=None, min_length=20)
     base_params: str = Field(pattern=r"^\d+\.\d+$")
     competitions: list[str] = Field(min_length=1)
     periods: Periods
+    holdout_status: HoldoutStatus = HoldoutStatus.UNSEEN
+    holdout_note: str | None = Field(default=None, min_length=20)
     selection: Selection
     grid: list[Dimension] = Field(min_length=1)
     hypotheses: list[Hypothesis]
@@ -127,6 +141,17 @@ class TuningPlan(_Strict):
         if len(v) != len(set(v)):
             raise ValueError("a competition is listed twice")
         return v
+
+    @model_validator(mode="after")
+    def _protocol(self) -> Self:
+        if (self.supersedes is None) != (self.change_reason is None):
+            raise ValueError("supersedes and change_reason go together: a replaced plan needs the reason")
+        if self.holdout_status is HoldoutStatus.EXAMINED and self.holdout_note is None:
+            raise ValueError("an examined holdout needs a holdout_note saying what was examined")
+        p = self.periods.prospective
+        if p is not None and p.first <= self.registered_on:
+            raise ValueError("the prospective period must start after the registration date (truly unseen)")
+        return self
 
     @model_validator(mode="after")
     def _grid(self) -> Self:
@@ -168,6 +193,14 @@ class Variation:
 
 def load_plan(path: Path) -> TuningPlan:
     plan = TuningPlan.model_validate(yaml.safe_load(path.read_text(encoding="utf-8")))
+    if plan.supersedes is not None:
+        old_path = path.parent / plan.supersedes
+        if not old_path.exists():
+            raise ValueError(f"{path.name} supersedes {plan.supersedes}, which does not exist")
+        old = load_plan(old_path)
+        if old.plan_version >= plan.plan_version or old.registered_on > plan.registered_on:
+            raise ValueError(f"{path.name} must have a higher plan_version and a later or equal registration date "
+                             f"than {plan.supersedes}")
     base = load_params(params_path(plan.base_params))
     vs = variations(plan, base)  # every combination must build a valid Params
     if not any(v.is_base for v in vs):
@@ -189,6 +222,23 @@ def variations(plan: TuningPlan, base: Params) -> list[Variation]:
         out.append(Variation(f"v{i:02d}", tuple(o.label for o in combo), changes, params,
                              params.model_dump() == base.model_dump()))
     return out
+
+
+def lineage(path: Path) -> list[tuple[str, TuningPlan]]:
+    """This plan and every plan it supersedes, newest first."""
+    out = [(path.name, load_plan(path))]
+    while out[-1][1].supersedes is not None:
+        older = path.parent / str(out[-1][1].supersedes)
+        out.append((older.name, load_plan(older)))
+    return out
+
+
+def current_plan_path(directory: Path = CONFIG_DIR) -> Path:
+    """The registered plan with the highest plan_version (the default for the tools)."""
+    plans = sorted(directory.glob("tuning_v*.yaml"))
+    if not plans:
+        raise FileNotFoundError(f"no tuning plan in {directory}")
+    return max(plans, key=lambda p: int(yaml.safe_load(p.read_text(encoding="utf-8"))["plan_version"]))
 
 
 # --- lock -----------------------------------------------------------------------------------------------------

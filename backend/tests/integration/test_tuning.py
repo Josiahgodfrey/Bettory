@@ -125,3 +125,33 @@ def test_selection_rule_and_params_writer(tmp_path: Path) -> None:
     assert "tuning_v1.yaml" in path.read_text(encoding="utf-8").splitlines()[1]
     with pytest.raises(FileExistsError):
         write_params(vs[near], "1.5", "tuning_v1.yaml", "abc" * 22, tmp_path)
+
+
+def protocol_plan(tmp_path: Path) -> Path:
+    """The synthetic league with an examined holdout and a prospective period after the registration date."""
+    path = small_plan(tmp_path)
+    data = yaml.safe_load(path.read_text(encoding="utf-8"))
+    data.update({"registered_on": "2025-08-01", "holdout_status": "examined_before_registration",
+                 "holdout_note": "examined in the test before registration, on purpose"})
+    data["periods"] = {"tuning": {"first": "2025-08-20", "last": "2025-09-05"},
+                       "holdout": {"first": "2025-09-06", "last": "2025-09-20"},
+                       "prospective": {"first": "2025-09-21", "last": "2025-10-05"}}
+    path.write_text(yaml.safe_dump(data, sort_keys=False), encoding="utf-8")
+    return path
+
+
+def test_prospective_period_and_honest_holdout(league: Any, tmp_path: Path) -> None:  # noqa: F811
+    from app.backtest.report import NOTE
+
+    engine, _, _ = league
+    plan = protocol_plan(tmp_path)
+    t = run_tuning(engine, REGISTRY, CFG, plan, dry_run=True, lock=tmp_path / "l.yaml", today=date(2026, 1, 1))
+    assert t.prospective is not None and t.prospective.status.startswith("EVALUATED")
+    assert t.prospective.selected is not None and t.prospective.baseline is not None
+    note = next(c for c in t.gate if c.name == "Holdout status")
+    assert note.status == NOTE and t.gate_passed == all(c.status == "PASS" for c in t.gate[:3])
+    md = render_tuning(t, CFG)
+    assert "Holdout examined before registration" in md and "## Prospective period" in md
+    early = run_tuning(engine, REGISTRY, CFG, plan, dry_run=True, lock=tmp_path / "l.yaml", today=date(2025, 9, 1))
+    assert early.prospective is not None and early.prospective.status.startswith("PENDING")
+    assert tuning_json(early)["prospective"]["status"].startswith("PENDING")
