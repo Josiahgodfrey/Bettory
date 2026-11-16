@@ -256,7 +256,7 @@ Phase 7  Deployment → paper betting → small real stakes
 ### Gate B — exit criteria
 
 - ✅ ≥ 300 qualified historical selections.
-- ✅ Calibration: predicted and actual 0-0 rates within ±3 pts in each populated bucket.
+- ✅ Calibration: predicted and actual 0-0 rates within max(±3 pts, 2 × standard error) in each populated bucket (≥ 50 fixtures). *(Owner decision 2026-11-16; a flat ±3 pts is below the noise for buckets under ~900 fixtures.)*
 - ✅ Model beats the competition-average baseline (lower Brier score).
 - ✅ Estimated ROI positive on the **unseen validation period**.
 - If not met → adjust formula/parameters (new version), re-run; **do not start Phase 5** until passed.
@@ -385,11 +385,11 @@ A task is done when:
 
 | Phase | Status | Started | Finished | Notes |
 |---|---|---|---|---|
-| 0 — Verify assumptions | ⬜ Not started | | | |
-| 1 — Foundation | ⬜ Not started | | | |
-| 2 — Calculation engine | ⬜ Not started | | | |
-| 3 — Data pipeline | ⬜ Not started | | | |
-| 4 — Backtest (Gate B) | ⬜ Not started | | | |
+| 0 — Verify assumptions | 🟡 In progress | | | Open: your bookmaker's 15' rules (V6), 15' market per league |
+| 1 — Foundation | ✅ Done | | | |
+| 2 — Calculation engine | ✅ Done | | | Models L, A, B v2, C, pricing, decision layer; params v1.5 |
+| 3 — Data pipeline | 🟡 In progress | | | Infrastructure done; 15'-vs-15' cross-check and multi-season goal minutes wait for API-Football Pro |
+| 4 — Backtest (Gate B) | 🟡 In progress | 2026-11-16 | | Runner done; first run on one season: Gate B not passed (see BACKTEST-REPORT.md) |
 | 5 — Session pipeline + API | ⬜ Not started | | | |
 | 6 — Frontend | ⬜ Not started | | | |
 | 7 — Deployment + go-live | ⬜ Not started | | | |

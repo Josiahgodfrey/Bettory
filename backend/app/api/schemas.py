@@ -33,6 +33,11 @@ class OpenFootballIngest(SeasonIngest):
     full: bool = Field(True, description="Use the -full file, which has goal minutes (needed for 15')")
 
 
+class ApiFootballBackfill(SeasonIngest):
+    max_requests: int | None = Field(None, ge=1, description="Request cap for this run; at most "
+                                     "API_FOOTBALL_MAX_REQUESTS_PER_RUN (the default)")
+
+
 class ApiFootballDayIngest(Strict):
     date: dt.date = Field(examples=["2026-11-14"])
     max_event_requests: int = Field(20, ge=0, le=API_FOOTBALL_RUN_BUDGET - 1,
@@ -99,3 +104,12 @@ class TeamOut(Strict):
     id: UUID
     name: str
     country: str
+
+
+class CrossCheckRequest(Strict):
+    competition: str = Field(min_length=1, description="competition code, e.g. ENG1")
+    season: str = Field(pattern=r"^\d{4}(-\d{2})?$", description="season label, e.g. 2025-26")
+
+
+class AcceptCrossCheck(Strict):
+    note: str = Field(min_length=3, max_length=2000, description="what was reviewed and why the data is accepted")

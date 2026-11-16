@@ -27,6 +27,7 @@ from app.storage.repositories import reference as ref
 @dataclass
 class LoadStats:
     counts: Counter[str] = field(default_factory=Counter)
+    seasons: set[UUID] = field(default_factory=set)  # competition-seasons whose matches were written
 
     def add(self, key: str, n: int = 1) -> None:
         self.counts[key] += n
@@ -94,6 +95,8 @@ class Loader:
         away = self.team_id(m.source, comp, m.away_name, m.away_key, stats, ctx)
         record = mrepo.insert_source_record(self.conn, m, payload_id, parser_version, home, away)
         stats.add("source_records")
+        if m.has_goal_minutes:
+            stats.add("records_with_goal_minutes")
         if home is None or away is None:
             stats.add("records_waiting_for_team_review")
             return
@@ -106,6 +109,7 @@ class Loader:
             match_id = mrepo.create_match(self.conn, season, m, home, away)
             stats.add("matches_created")
         mrepo.link_source_record(self.conn, record, match_id)
+        stats.seasons.add(season)
 
         trusted = reconcile(mrepo.latest_records(self.conn, match_id), self.cutoff)
         if mrepo.apply_trusted(self.conn, match_id, trusted, home, away):

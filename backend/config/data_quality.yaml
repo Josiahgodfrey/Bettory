@@ -1,0 +1,14 @@
+# BETTORY data-health settings (docs/DATA-HEALTH.md). How loaded data is checked, never how a fixture is
+# priced. Loaded and validated by app/domain/quality_config.py (unknown or missing keys are rejected).
+
+crosscheck:
+  min_agreement: 0.98          # per compared value (FT, HT, 15', 15' vs HT): DEVELOPMENT-PLAN 3, exit criterion
+  min_compared: 20             # a value compared on fewer matches is shown but not judged (one disagreement
+                               # in 20 is already 95 %)
+  max_disagreements_stored: 200
+
+run_audit:
+  max_skipped_share: 0.02      # skipped / parsed records above this -> WARNING
+
+api_quota:
+  reserve_requests: 5          # never plan a run into the last N requests of the day (API-Football)

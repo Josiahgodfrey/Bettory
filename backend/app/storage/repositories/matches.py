@@ -190,3 +190,36 @@ def insert_odds(conn: Connection, o: SourceOdds, match_id: UUID, bookmaker_id: U
         {"m": match_id, "b": bookmaker_id, "s": SOURCE_IDS[o.source], "p": payload_id, "mk": o.market.value,
          "pm": o.provider_market_name, "sel": o.selection, "l": o.line, "o": o.odds,
          "st": o.snapshot_type.value, "c": o.captured_at})
+
+
+def provider_keys_with_minutes(conn: Connection, source: SourceCode, keys: list[str]) -> set[str]:
+    """Provider match keys for which `source` already delivered a goal list (backfill resumes after them)."""
+    if not keys:
+        return set()
+    return set(conn.execute(text(
+        "select distinct provider_match_key from core.match_source_records "
+        "where source_id = :s and has_goal_minutes and provider_match_key = any(:k)"),
+        {"s": SOURCE_IDS[source], "k": keys}).scalars())
+
+
+def provider_keys_with_known_15(conn: Connection, source: SourceCode, keys: list[str]) -> set[str]:
+    """Provider match keys of `source` whose trusted match already has a known 15' result (COMPLETE, DERIVED):
+    fetching their goal minutes adds only a second source for the cross-check."""
+    if not keys:
+        return set()
+    return set(conn.execute(text(
+        "select distinct r.provider_match_key from core.match_source_records r "
+        "join core.matches m on m.id = r.match_id "
+        "where r.source_id = :s and r.provider_match_key = any(:k) and m.data_status in ('COMPLETE', 'DERIVED')"),
+        {"s": SOURCE_IDS[source], "k": keys}).scalars())
+
+
+def season_match_ids(conn: Connection, competition_code: str, season_label: str) -> list[UUID]:
+    """Matches of one competition-season that have at least one linked source record, by kick-off."""
+    return list(conn.execute(text("""
+        select m.id from core.matches m
+        join core.competition_seasons s on s.id = m.competition_season_id
+        join core.competitions c on c.id = s.competition_id
+        where c.code = :c and s.label = :l
+          and exists (select 1 from core.match_source_records r where r.match_id = m.id)
+        order by m.kickoff_utc, m.id"""), {"c": competition_code, "l": season_label}).scalars())

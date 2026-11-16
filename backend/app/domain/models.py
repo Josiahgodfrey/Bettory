@@ -29,6 +29,9 @@ class Score(Strict):
     def total(self) -> int:
         return self.home + self.away
 
+    def __str__(self) -> str:
+        return f"{self.home}-{self.away}"
+
 
 class SourceGoal(Strict):
     """One goal as reported by a source. Own goals are credited to the benefiting side."""

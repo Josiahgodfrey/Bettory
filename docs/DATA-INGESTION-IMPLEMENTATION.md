@@ -325,20 +325,75 @@ This uses the Docker `postgres:17` container `bettory-pg`. The integration tests
 
 ---
 
-## 8. Known limits and open items
+## 8. Phase 3 — data pipeline infrastructure (branch `data-pipeline`)
 
-| Item | Status |
-|---|---|
-| football-data.co.uk | Blocked by the network's Sophos TLS interception. Certificate checks are deliberately **not** disabled. The parser is tested on a synthetic CSV only, and the column names (PSCH/PSCD/PSCA, PC>2.5/PC<2.5) must be verified on a real file |
-| API-Football league ids | Only 39 (Premier League) is verified. 40/78/218/140/135/61/88/94 must be checked |
-| API-Football free plan | Seasons 2022–2024 only, no bulk `ids`, dates ±1 day only. A paid plan is needed for the live daily flow |
-| Migrations on Supabase | Applied to local Docker only. Applying them to the Supabase project changes the live database and needs the owner's go-ahead |
-| DB password | It was in git history. **Rotate it** in Supabase |
-| `PARTIAL_DRAW_UNKNOWN` | No source produces it yet |
-| Lint | 14 cosmetic ruff findings (E501/SIM102) remain |
+### 8.1 Where goal minutes come from (checked 2026-11-16)
+
+Every 15' value needs **goal minutes**. Coverage of the free sources:
+
+| Source | Seasons with goal minutes | Notes |
+|---|---|---|
+| openfootball (`-full` JSON and the source `.txt` repositories) | **2025-26 only**, England 1, Germany 1, Austria 1 | 2026-27 and all older seasons: FT/HT only |
+| API-Football free | league seasons 2022–2024, or any match by id | 1 request per match, 100 per day and **10 per minute** (answered as HTTP 200 with a `rateLimit` error); 2026-27 history cannot be listed (dates ±1 day) |
+| API-Football Pro | all seasons | 20 matches per request (`ids`), 7,500 requests per day |
+
+Consequence: without a paid API-Football plan, current-season team windows stay `INSUFFICIENT_DATA` until enough new matches with minutes are collected (months), and the backtest has one season only.
+
+### 8.2 New pieces
+
+| Piece | File | Does |
+|---|---|---|
+| Point-in-time reader | [storage/point_in_time.py](../backend/app/storage/point_in_time.py) | Fixture, team windows, H2H, competition matches, seasons, odds, all as known strictly before `as_of`; every row is checked a second time (`PointInTimeError`) |
+| Analysis builder | [analysis/builder.py](../backend/app/analysis/builder.py) | `AnalysisContext(conn, params, registry, as_of)`: pooled baselines, windows, Model B v2 history with per-match competition baselines, Models A / L / B v2 / C, price, H2H, favourite odds → `FixtureAnalysis` → `verdict()`. Used by the session run and the backtest |
+| Cross-source check | [normalisation/crosscheck.py](../backend/app/normalisation/crosscheck.py) | FT, HT and 15' agreement between sources, plus "15' from goals fits every other source's HT"; lists each disagreement with each source's value |
+| API-Football backfill | `pipeline.api_football_backfill` | Season fixtures, then goal minutes for finished fixtures without API-Football minutes: 20 per request on Pro, 1 on free. **Resumable** and capped per run |
+
+Baseline pooling: the fixture's own season is always included; older seasons are pooled only when complete. Excluding a whole season a source does not cover is unrelated to match outcomes, unlike dropping single INCOMPLETE matches.
+
+### 8.3 Commands
+
+Data health (coverage, stored cross-checks with the bet gate, run audits, quota): see [DATA-HEALTH.md](DATA-HEALTH.md) — `python -m app.cli health --quota`.
+
+```bash
+python -m app.cli crosscheck --comp ENG1 --season 2025-26 --show 10
+python -m app.cli ingest api-football-backfill --comp ENG1 --season 2024-25 --max-requests 50
+```
+
+API: `POST /jobs/ingest/api-football-backfill` with `{competition, season, max_requests?}`.
+
+Settings (`.env`): `API_FOOTBALL_PLAN=free|pro` (bulk `ids` only on `pro`), `API_FOOTBALL_MAX_REQUESTS_PER_RUN` (default 90, the hard cap of one run), `API_FOOTBALL_REQUESTS_PER_MINUTE` (default 10, the free plan: requests are spaced 6 s apart; a rate-limit answer is retried after 61 s, at most 3 times, within the run cap).
+
+New configuration: `fifteen_minute_market` per competition in [competitions.yaml](../backend/config/competitions.yaml) — set to `true` for the 9 leagues as an **assumption to confirm with your bookmaker**; and `model_c.bookmaker_priority` in the params file.
+
+### 8.4 Results on the development database
+
+| Competition | Sources | FT agree | HT agree | 15' vs other sources' HT |
+|---|---|---|---|---|
+| Premier League 2024-25 | 3 | 380/380 | 380/380 | — (no minutes) |
+| Premier League 2025-26 | 2 | 380/380 | 380/380 | 380/380 |
+| Bundesliga 2025-26 | 2 | 306/306 | 306/306 | 306/306 |
+| Austrian Bundesliga 2025-26 | 1 (loaded with minutes) | — | — | — |
+
+The full **15'-vs-15'** comparison (exit criterion ≥ 98%) needs a second goal-minute source and runs after the API-Football upgrade. Loading the Bundesliga second source sent 7 differently spelled team names to the review queue (no duplicates created); they were resolved manually.
+
+The analysis builder priced the last 90 matches of each of the Premier League and the Bundesliga 2025-26 point in time and reproduced the earlier prototype exactly: 129 QUALIFIED / 51 SKIP, no errors.
 
 ---
 
-## 9. What comes next
+## 9. Known limits and open items
 
-Phase 2 of [DEVELOPMENT-PLAN.md](DEVELOPMENT-PLAN.md): the calculation layer (league baselines, team stats, models A, L, B v2 and C, Poisson grid, devig, fair odds, EV). It reads only through the point-in-time functions in §3.3 and never fetches or writes data itself.
+| Item | Status |
+|---|---|
+| Goal minutes | Only 2025-26 (ENG1, GER1, AUT1) until the API-Football upgrade (§8.1) |
+| football-data.co.uk | Blocked by the network's Sophos TLS interception. Certificate checks are deliberately **not** disabled. The parser is tested on a synthetic CSV only. Parked: full checklist for another network in [FOOTBALL-DATA-CO-UK-SETUP.md](FOOTBALL-DATA-CO-UK-SETUP.md) |
+| API-Football league ids | ✅ All 9 verified 2026-11-16 with one `/leagues` request (39, 40, 78, 218, 140, 135, 61, 88, 94: names and countries match; goal-event coverage for 2022-2025 in every league) |
+| `fifteen_minute_market` flags | Assumed `true`; confirm per league with your bookmaker |
+| Migrations on Supabase | Applied to local Docker only (incl. `20261116120000_data_health.sql`). Applying them to the Supabase project changes the live database and needs the owner's go-ahead |
+| DB password | It was in git history. **Rotate it** in Supabase |
+| `PARTIAL_DRAW_UNKNOWN` | No source produces it yet |
+
+---
+
+## 10. What comes next
+
+After the API-Football upgrade: backfill 3+ seasons of the pilot leagues with goal minutes, run the 15' cross-check (≥ 98%), then the Phase 4 backtest (Gate B).

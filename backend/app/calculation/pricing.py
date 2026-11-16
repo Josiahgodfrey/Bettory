@@ -19,6 +19,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from enum import StrEnum
 
+from app.calculation.baselines import CompetitionBaseline
 from app.calculation.ev import fair_odds, min_odds
 from app.calculation.invariants import InvariantError, check_lambda, check_probability
 from app.calculation.models import Expectancy
@@ -134,3 +135,12 @@ def price(model_a: ModelAResult, s: float, params: Params, model_b2: ModelB2Resu
         p_market_draw=model_c.p_draw if market_ok and model_c else None,
         notes=tuple(notes),
     )
+
+
+def league_outcomes(baseline: CompetitionBaseline, params: Params) -> Outcomes:
+    """The competition-average baseline (pricing doc 15): every fixture priced with the competition's average
+    home and away goals, the same s and delta, no team information. Model A/B must beat this to be useful."""
+    if baseline.s is None:
+        raise InvariantError("competition baseline without s: no 15' data")
+    mu = Expectancy(home=baseline.avg_home_goals, away=baseline.avg_away_goals)
+    return _outcomes(mu, baseline.s, 1.0, 1.0, params.state_dependence.delta)[1]

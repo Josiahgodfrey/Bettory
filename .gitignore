@@ -7,3 +7,6 @@
 # Python bytecode caches (anywhere in the repository)
 __pycache__/
 *.py[cod]
+
+# Backtest outputs (rows, summaries): regenerate with `python -m app.cli backtest`
+backend/backtests/

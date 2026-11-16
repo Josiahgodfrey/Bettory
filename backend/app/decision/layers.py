@@ -4,7 +4,8 @@ Docs: DATA-SOURCES-AND-MARKET-MODEL.md 11.2, 14.5, 15, 17; FIFTEEN-MINUTE-ODDS-C
 SYSTEM-DOCUMENTATION.md 7; ARCHITECTURE.md 11 (fail closed), 12.5-12.6, A14 (minimum-odds report).
 
     L0 SCREEN     competition baseline plausible, league P_L >= screen.league_p00_min, 15' markets offered
-    L1 DATA       four full windows without INCOMPLETE matches, Models A and B v2 and the price available
+    L1 DATA       four full windows without INCOMPLETE matches, Models A and B v2 and the price available,
+                  and the league-seasons behind the baseline trusted (no unaccepted FAILED cross-check)
     L2 MODELS     |P_A - P_B| <= value.max_model_gap_pts; |P_team - P_market| <= the same when Model C exists
     L3 VALUE      minimum odds = max((1 + EV_req) / P, Model C fair odds); EV_req = value.ev_min with a market
                   check, value.ev_min_no_market without one. With bookmaker 15' quotes: offered >= minimum
@@ -61,6 +62,7 @@ class FixtureAnalysis:
     context_flags: tuple[str, ...] = ()  # e.g. MUST_SCORE, LINEUP_ATTACKERS, ODDS_MOVEMENT (each blocks)
     quotes: Mapping[Bet, Mapping[str, float]] = field(default_factory=lambda: MappingProxyType({}))
     bookmaker: str = ""
+    untrusted_data: tuple[str, ...] = ()  # league-seasons whose sources disagree too often (docs/DATA-HEALTH.md)
 
 
 @dataclass(frozen=True)
@@ -125,6 +127,9 @@ def _data(a: FixtureAnalysis, p: Params) -> list[Check]:
         w = a.windows
         out += [_window_check("HOME_GENERAL", w.home_general, h), _window_check("HOME_HOME", w.home_home, h),
                 _window_check("AWAY_GENERAL", w.away_general, h), _window_check("AWAY_AWAY", w.away_away, h)]
+    out.append(Check(Layer.DATA, "SOURCE_AGREEMENT", not a.untrusted_data,
+                     "; ".join(a.untrusted_data) or "trusted", "no unaccepted FAILED cross-check",
+                     "review the disagreements, then accept or fix the data" if a.untrusted_data else ""))
     for code, obj in (("MODEL_A", a.model_a), ("MODEL_B2", a.model_b2), ("PRICE", a.price)):
         out.append(Check(Layer.DATA, f"{code}_AVAILABLE", obj is not None, "available" if obj else "missing",
                          "available", "; ".join(a.unavailable) if obj is None else ""))

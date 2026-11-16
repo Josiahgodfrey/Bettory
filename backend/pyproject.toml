@@ -15,6 +15,7 @@ dependencies = [
     "apscheduler>=3.10,<4",
     "pyjwt[crypto]>=2.9",
     "pyyaml>=6.0",
+    "tzdata>=2024.1",  # IANA time zones for zoneinfo (sessions) on Windows and slim images
 ]
 
 [project.optional-dependencies]
@@ -83,6 +84,7 @@ name = "Layers"
 type = "layers"
 layers = [
     "app.api | app.jobs | app.backtest",
+    "app.analysis",
     "app.settlement | app.notifications",
     "app.decision",
     "app.calculation",

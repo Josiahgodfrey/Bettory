@@ -60,6 +60,13 @@ class Settings(BaseSettings):
 
     # Data providers
     api_football_key: SecretStr = SecretStr("")
+    # "free": goal minutes 1 match per request; "pro" (or higher): 20 matches per request with `ids`
+    api_football_plan: Literal["free", "pro"] = "free"
+    # Hard cap of API-Football requests per job run (free plan: 100 per DAY in total - keep runs small)
+    api_football_max_requests_per_run: int = Field(default=90, ge=1, le=75_000)
+    # Per-minute limit of the plan (free: 10; check the API-Football dashboard after upgrading). Requests are
+    # spaced 60 / this many seconds apart.
+    api_football_requests_per_minute: int = Field(default=10, ge=1, le=1_000)
     football_data_org_key: SecretStr = SecretStr("")
 
     # Telegram

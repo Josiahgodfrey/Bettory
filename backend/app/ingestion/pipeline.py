@@ -1,12 +1,16 @@
 """Ingestion jobs: fetch -> raw file + raw.payloads -> parse -> load (one transaction per payload).
 
 Idempotent: a payload whose SHA-256 is already stored is not parsed again (unless reparse=True).
-Every job writes a raw.ingestion_runs row (RUNNING -> SUCCEEDED / FAILED).
+Every job writes a raw.ingestion_runs row (RUNNING -> SUCCEEDED / FAILED). When it ends - successfully or not -
+every competition-season it wrote to is cross-checked and stored, and the run is audited (OK / WARNING /
+ERROR with findings, docs/DATA-HEALTH.md). API-Football jobs first check the day's quota (/status, not counted)
+and plan the run inside it.
 """
 
 from __future__ import annotations
 
 import json
+import logging
 from collections import Counter
 from collections.abc import Callable
 from datetime import date
@@ -17,19 +21,24 @@ from sqlalchemy import Engine
 from app.core.settings import BACKEND_DIR, get_settings
 from app.domain.enums import FixtureStatus, RunStatus, SourceCode
 from app.domain.params import load_params
+from app.domain.quality_config import load_quality_config
 from app.domain.registry import Registry, fdcouk_season_code, season_start_year
-from app.ingestion.api_football import ApiFootball
+from app.ingestion.api_football import BULK_IDS_MAX, ApiFootball
+from app.ingestion.audit import audit_run
 from app.ingestion.base import Fetched
 from app.ingestion.football_data_co_uk import FootballDataCoUk
 from app.ingestion.football_data_org import FootballDataOrg
 from app.ingestion.loader import Loader
 from app.ingestion.openfootball import OpenFootball
+from app.ingestion.quality import crosscheck_season
 from app.normalisation.parsers import ParseResult
 from app.normalisation.parsers import api_football as p_af
 from app.normalisation.parsers import football_data_co_uk as p_uk
 from app.normalisation.parsers import football_data_org as p_fd
 from app.normalisation.parsers import openfootball as p_of
 from app.storage.raw_store import RawStore, object_path, sha256
+from app.storage.repositories import health as health_repo
+from app.storage.repositories import matches as matches_repo
 from app.storage.repositories import raw as raw_repo
 
 PARSER_VERSIONS = {
@@ -40,6 +49,11 @@ PARSER_VERSIONS = {
 }
 
 Parse = Callable[[bytes], ParseResult]
+log = logging.getLogger(__name__)
+
+
+class QuotaError(RuntimeError):
+    """No API request left for this run today (after the configured reserve)."""
 
 
 class Job:
@@ -53,6 +67,8 @@ class Job:
         self.stats: Counter[str] = Counter()
         # the 15' cutoff comes from the active params file (single source of parameter values)
         self.cutoff_minute = load_params(BACKEND_DIR / get_settings().params_file).settlement.cutoff_label_minute
+        self.quality = load_quality_config()
+        self.seasons_touched: set[UUID] = set()
         if run_id is None:
             with engine.begin() as conn:
                 run_id = raw_repo.start_run(conn, source, name)
@@ -75,23 +91,70 @@ class Job:
             loader = Loader(conn, self.registry, self.cutoff_minute)
             loaded = loader.load(parsed, payload.id, PARSER_VERSIONS[self.source])
             self.stats.update(loaded.counts)
+            self.seasons_touched |= loaded.seasons
             return parsed
 
+    def _crosscheck_touched(self) -> None:
+        """Cross-check every competition-season this run wrote to; each check in its own transaction."""
+        for season in sorted(self.seasons_touched):
+            try:
+                with self.engine.begin() as conn:
+                    stored = crosscheck_season(conn, season, self.cutoff_minute, self.quality.crosscheck, self.run_id)
+                self.stats[f"crosscheck:{stored.verdict.status.value}"] += 1
+            except Exception:  # a failed check is reported by the audit; it must not hide the run outcome
+                log.exception("cross-check of competition-season %s failed", season)
+                self.stats["crosscheck_errors"] += 1
+
     def finish(self, requests_used: int, error: BaseException | None = None) -> Counter[str]:
+        self._crosscheck_touched()
+        message = repr(error) if error else None
+        audit_status, findings = audit_run(self.stats, message, self.quality)
         with self.engine.begin() as conn:
             raw_repo.finish_run(conn, self.run_id, RunStatus.FAILED if error else RunStatus.SUCCEEDED,
-                                requests_used, self.stats["source_records"], repr(error) if error else None,
-                                dict(self.stats))
+                                requests_used, self.stats["source_records"], message, dict(self.stats))
+            health_repo.set_run_audit(conn, self.run_id, audit_status.value, [f.as_dict() for f in findings])
         return self.stats
 
 
-def _run(job: Job, client_requests: Callable[[], int], body: Callable[[], object]) -> Counter[str]:
+def _run(job: Job, client_requests: Callable[[], int], body: Callable[[], object],
+         after: Callable[[], None] | None = None) -> Counter[str]:
+    """`after`: adds closing statistics (quota, retries); it runs even when the body failed."""
+    error: BaseException | None = None
     try:
         body()
     except BaseException as exc:
-        job.finish(client_requests(), exc)
-        raise
-    return job.finish(client_requests())
+        error = exc
+    if after is not None:
+        try:
+            after()
+        except Exception:
+            log.exception("closing statistics of run %s failed", job.run_id)
+    job.finish(client_requests(), error)
+    if error is not None:
+        raise error
+    return job.stats
+
+
+def _plan_quota(client: ApiFootball, job: Job, wanted: int) -> None:
+    """Fit this run's request budget into what is left today, minus the reserve; fail visibly if nothing is."""
+    used, limit = client.quota()
+    reserve = job.quality.api_quota.reserve_requests
+    job.stats["quota_limit"], job.stats["quota_used_before"] = limit, used
+    budget = min(wanted, limit - used - reserve)
+    if budget < 1:
+        raise QuotaError(f"API-Football quota: {used}/{limit} requests used today, reserve {reserve}: "
+                         "nothing left for this run")
+    client.http.max_requests = budget
+    job.stats["request_budget"] = budget
+
+
+def _close_api_football(client: ApiFootball, job: Job) -> Callable[[], None]:
+    def after() -> None:
+        job.stats["rate_limit_retries"] = client.rate_limit_retries
+        if "quota_limit" in job.stats:
+            used, limit = client.quota()
+            job.stats["quota_used_after"], job.stats["quota_remaining_after"] = used, max(limit - used, 0)
+    return after
 
 
 # --- jobs per source -----------------------------------------------------------------------
@@ -129,26 +192,34 @@ def football_data_co_uk(engine: Engine, store: RawStore, registry: Registry, com
 
 
 def api_football_season(engine: Engine, store: RawStore, registry: Registry, api_key: str, comp_code: str,
-                        season: str, reparse: bool = False, run_id: UUID | None = None) -> Counter[str]:
+                        season: str, reparse: bool = False, run_id: UUID | None = None, *,
+                        requests_per_minute: int) -> Counter[str]:
     league = registry.get(comp_code).providers[SourceCode.API_FOOTBALL]
-    client = ApiFootball(api_key)
+    client = ApiFootball(api_key, max_requests=1, requests_per_minute=requests_per_minute)
     job = Job(engine, store, registry, SourceCode.API_FOOTBALL, f"api_football_season:{comp_code}:{season}",
               reparse, run_id)
-    return _run(job, lambda: client.requests_used, lambda: job.process(
-        client.fixtures_by_league_season(league, season_start_year(season)),
-        lambda raw: p_af.parse_fixtures(raw, registry)))
+
+    def body() -> None:
+        _plan_quota(client, job, 1)
+        job.process(client.fixtures_by_league_season(league, season_start_year(season)),
+                    lambda raw: p_af.parse_fixtures(raw, registry))
+
+    return _run(job, lambda: client.requests_used, body, _close_api_football(client, job))
 
 
 def api_football_day(engine: Engine, store: RawStore, registry: Registry, api_key: str, day: date,
                      max_event_requests: int = 20, max_odds_requests: int = 20,
-                     reparse: bool = False, run_id: UUID | None = None) -> Counter[str]:
+                     reparse: bool = False, run_id: UUID | None = None, *,
+                     requests_per_minute: int) -> Counter[str]:
     """Fixtures of the day (all registered competitions), then goal minutes for finished registered
     matches and odds (incl. 15' markets) for upcoming ones - each within its request budget."""
-    client = ApiFootball(api_key)
+    client = ApiFootball(api_key, max_requests=1 + max_event_requests + max_odds_requests,
+                         requests_per_minute=requests_per_minute)
     job = Job(engine, store, registry, SourceCode.API_FOOTBALL, f"api_football_day:{day.isoformat()}",
               reparse, run_id)
 
     def body() -> None:
+        _plan_quota(client, job, 1 + max_event_requests + max_odds_requests)
         parsed = job.process(client.fixtures_by_date(day), lambda raw: p_af.parse_fixtures(raw, registry))
         if parsed is None:
             return
@@ -156,14 +227,70 @@ def api_football_day(engine: Engine, store: RawStore, registry: Registry, api_ke
         upcoming = [m for m in parsed.matches if m.status is FixtureStatus.SCHEDULED]
         job.stats["registered_finished"] += len(finished)
         job.stats["registered_upcoming"] += len(upcoming)
+        budget = client.http.max_requests or 0
         for m in finished[:max_event_requests]:
+            if client.requests_used >= budget:
+                job.stats["stopped_at_request_budget"] = 1
+                break
             job.process(client.fixture_with_events(m.provider_match_key),
                         lambda raw: p_af.parse_fixtures(raw, registry))
         for m in upcoming[:max_odds_requests]:
-            job.process(client.http.get("/odds", {"fixture": m.provider_match_key}),
+            if client.requests_used >= budget:
+                job.stats["stopped_at_request_budget"] = 1
+                break
+            job.process(client.odds_for_fixture(m.provider_match_key),
                         lambda raw: p_af.parse_odds(raw, registry))
 
-    return _run(job, lambda: client.requests_used, body)
+    return _run(job, lambda: client.requests_used, body, _close_api_football(client, job))
+
+
+def api_football_backfill(engine: Engine, store: RawStore, registry: Registry, api_key: str, comp_code: str,
+                          season: str, bulk: bool, max_requests: int, reparse: bool = False,
+                          run_id: UUID | None = None, *, requests_per_minute: int) -> Counter[str]:
+    """Season fixtures (1 request), then goal minutes for every finished fixture that has none from
+    API-Football yet: 20 fixtures per request with `bulk` (paid plans), otherwise 1 per request.
+
+    Order: fixtures whose 15' result is still UNKNOWN first; fixtures whose 15' result is already known (e.g.
+    half-time 0-0, or minutes from another source) last - for them the request only adds a second source for
+    the cross-check.
+    Resumable: fixtures that already have API-Football goal minutes are skipped, so repeated runs (e.g. one
+    per day on the free plan) continue where the last one stopped. Stops cleanly at the request budget:
+    `max_requests`, reduced to what the quota of the day still allows."""
+    league = registry.get(comp_code).providers[SourceCode.API_FOOTBALL]
+    client = ApiFootball(api_key, max_requests=max_requests, requests_per_minute=requests_per_minute)
+    job = Job(engine, store, registry, SourceCode.API_FOOTBALL, f"api_football_backfill:{comp_code}:{season}",
+              reparse, run_id)
+
+    def body() -> None:
+        _plan_quota(client, job, max_requests)
+        budget = client.http.max_requests or 0
+        listing = client.fixtures_by_league_season(league, season_start_year(season))
+        parsed = p_af.parse_fixtures(listing.body, registry)  # parsed here too: needed even if the payload is old
+        job.process(listing, lambda raw: parsed)
+        finished = [m.provider_match_key for m in parsed.matches if m.status is FixtureStatus.FINISHED]
+        with engine.connect() as conn:
+            done = matches_repo.provider_keys_with_minutes(conn, SourceCode.API_FOOTBALL, finished)
+            known = matches_repo.provider_keys_with_known_15(conn, SourceCode.API_FOOTBALL, finished)
+        missing = [k for k in finished if k not in done]
+        todo = [k for k in missing if k not in known] + [k for k in missing if k in known]
+        job.stats["finished_fixtures"] += len(finished)
+        job.stats["already_with_minutes"] += len(done)
+        job.stats["todo_unknown_15"] += sum(k not in known for k in missing)
+        job.stats["todo_known_15_crosscheck_only"] += sum(k in known for k in missing)
+        size = BULK_IDS_MAX if bulk else 1
+        requested = 0
+        for i in range(0, len(todo), size):
+            if client.requests_used >= budget:
+                job.stats["stopped_at_request_budget"] = 1
+                break
+            chunk = todo[i:i + size]
+            fetched = client.fixtures_by_ids(chunk) if bulk else client.fixture_with_events(chunk[0])
+            job.process(fetched, lambda raw: p_af.parse_fixtures(raw, registry))
+            requested += len(chunk)
+        job.stats["fixtures_requested_for_minutes"] += requested
+        job.stats["fixtures_still_without_minutes"] += len(todo) - requested
+
+    return _run(job, lambda: client.requests_used, body, _close_api_football(client, job))
 
 
 def format_stats(stats: Counter[str]) -> str:

@@ -37,8 +37,11 @@ class HttpSource:
         self.requests_used = 0
         self._last = 0.0
 
-    def get(self, path: str, params: dict[str, Any] | None = None, ext: str = "json") -> Fetched:
-        if self.max_requests is not None and self.requests_used >= self.max_requests:
+    def get(self, path: str, params: dict[str, Any] | None = None, ext: str = "json",
+            counted: bool = True) -> Fetched:
+        """`counted=False`: a request the provider does not charge (e.g. API-Football /status): it neither uses
+        nor needs the run's request budget."""
+        if counted and self.max_requests is not None and self.requests_used >= self.max_requests:
             raise FetchError(f"request budget of {self.max_requests} reached")
         params = params or {}
         for attempt in range(self.retries + 1):
@@ -53,7 +56,7 @@ class HttpSource:
                     raise FetchError(f"{path}: {exc}") from exc
                 time.sleep(2 * (attempt + 1))
                 continue
-            self.requests_used += 1
+            self.requests_used += int(counted)
             if resp.status_code == 429 or resp.status_code >= 500:
                 if attempt == self.retries:
                     raise FetchError(f"{path}: HTTP {resp.status_code}")
