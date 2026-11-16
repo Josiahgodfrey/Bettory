@@ -94,15 +94,10 @@ def test_lock_refuses_a_plan_edited_after_a_real_run(tmp_path: Path) -> None:
 
 
 def test_fingerprint_ignores_line_endings(tmp_path: Path) -> None:
+    lf_end, crlf_end = bytes([10]), bytes([13, 10])
     lf, crlf = tmp_path / "a.yaml", tmp_path / "b.yaml"
-    lf.write_bytes(b"plan_version: 1
-x: 2
-")
-    crlf.write_bytes(b"plan_version: 1
-x: 2
-")
+    lf.write_bytes(lf_end.join([b"plan_version: 1", b"x: 2", b""]))
+    crlf.write_bytes(crlf_end.join([b"plan_version: 1", b"x: 2", b""]))
     assert sha256_of(lf) == sha256_of(crlf)
-    crlf.write_bytes(b"plan_version: 1
-x: 3
-")
+    crlf.write_bytes(crlf_end.join([b"plan_version: 1", b"x: 3", b""]))
     assert sha256_of(lf) != sha256_of(crlf)                                 # a real edit still shows

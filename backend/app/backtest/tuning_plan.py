@@ -30,6 +30,7 @@ from app.domain.params import CONFIG_DIR, Params, load_params, params_path
 from app.domain.registry import Registry
 
 LOCK_FILE = CONFIG_DIR / "tuning_lock.yaml"
+CRLF, LF = bytes([13, 10]), bytes([10])
 
 
 class _Strict(BaseModel):
@@ -196,9 +197,7 @@ def variations(plan: TuningPlan, base: Params) -> list[Variation]:
 def sha256_of(path: Path) -> str:
     """Fingerprint of the plan's content, independent of line endings: git turns LF into CRLF on Windows checkouts,
     and the same unchanged plan must not look edited on another machine."""
-    return hashlib.sha256(path.read_bytes().replace(b"
-", b"
-")).hexdigest()
+    return hashlib.sha256(path.read_bytes().replace(CRLF, LF)).hexdigest()
 
 
 def _read_lock(lock: Path) -> dict[str, Any]:
