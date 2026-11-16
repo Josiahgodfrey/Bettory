@@ -151,15 +151,17 @@ def _run(job: Job, client_requests: Callable[[], int], body: Callable[[], object
     return job.stats
 
 
-def _plan_quota(client: ApiFootball, job: Job, wanted: int) -> None:
-    """Fit this run's request budget into what is left today, minus the reserve; fail visibly if nothing is."""
+def _plan_quota(client: ApiFootball, job: Job, wanted: int, *, minimum: int) -> None:
+    """Fit this run's request budget into what is left today, minus the reserve. Fail visibly, before any request,
+    if less than `minimum` is left: the fewest requests with which the run achieves anything (a backfill needs
+    the season listing AND at least one fixture - the listing alone would be a wasted request)."""
     used, limit = client.quota()
     reserve = job.quality.api_quota.reserve_requests
     job.stats["quota_limit"], job.stats["quota_used_before"] = limit, used
     budget = min(wanted, limit - used - reserve)
-    if budget < 1:
+    if budget < minimum:
         raise QuotaError(f"API-Football quota: {used}/{limit} requests used today, reserve {reserve}: "
-                         "nothing left for this run")
+                         f"{max(budget, 0)} left, this run needs at least {minimum}")
     client.http.max_requests = budget
     job.stats["request_budget"] = budget
 
@@ -216,7 +218,7 @@ def api_football_season(engine: Engine, store: RawStore, registry: Registry, api
               reparse, run_id)
 
     def body() -> None:
-        _plan_quota(client, job, 1)
+        _plan_quota(client, job, 1, minimum=1)
         job.process(client.fixtures_by_league_season(league, season_start_year(season)),
                     lambda raw: p_af.parse_fixtures(raw, registry))
 
@@ -236,7 +238,7 @@ def api_football_day(engine: Engine, store: RawStore, registry: Registry, api_ke
               reparse, run_id)
 
     def body() -> None:
-        _plan_quota(client, job, 1 + max_event_requests + max_odds_requests)
+        _plan_quota(client, job, 1 + max_event_requests + max_odds_requests, minimum=1)
         parsed = job.process(client.fixtures_by_date(day), lambda raw: p_af.parse_fixtures(raw, registry))
         if parsed is None:
             return
@@ -282,7 +284,7 @@ def api_football_backfill(engine: Engine, store: RawStore, registry: Registry, a
               reparse, run_id)
 
     def body() -> None:
-        _plan_quota(client, job, max_requests)
+        _plan_quota(client, job, max_requests, minimum=2)
         budget = client.http.max_requests or 0
         listing = client.fixtures_by_league_season(league, season_start_year(season))
         parsed = p_af.parse_fixtures(listing.body, registry)  # parsed here too: needed even if the payload is old
