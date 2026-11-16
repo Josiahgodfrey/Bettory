@@ -92,6 +92,7 @@ class CompetitionBaselines(Strict):
 class ModelC(Strict):
     max_line_disagreement: float = Field(gt=0)
     devig_method: DevigMethod
+    bookmaker_priority: tuple[str, ...]
     input_lines: dict[MarketCode, tuple[float, ...]]
 
     @model_validator(mode="after")

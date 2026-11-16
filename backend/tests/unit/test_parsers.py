@@ -72,7 +72,8 @@ def test_football_data_org_rejects_error_payload() -> None:
 
 def _registry_with(af_league: str) -> Registry:
     test_comp = CompetitionDef(code="TST1", name="Test", country="Testland", type="LEAGUE", timezone="UTC",
-                               season_format="CALENDAR", team_sources=(SourceCode.API_FOOTBALL,),
+                               season_format="CALENDAR", fifteen_minute_market=True,
+                               team_sources=(SourceCode.API_FOOTBALL,),
                                providers={SourceCode.API_FOOTBALL: af_league})
     return Registry([test_comp])
 

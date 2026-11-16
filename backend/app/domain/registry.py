@@ -29,6 +29,7 @@ class CompetitionDef(Strict):
     level: int | None = Field(default=None, ge=1, le=10)
     timezone: str
     season_format: SeasonFormat
+    fifteen_minute_market: bool  # bookmaker offers the 15' markets (Layer 0)
     team_sources: tuple[SourceCode, ...]
     providers: dict[SourceCode, str]
 

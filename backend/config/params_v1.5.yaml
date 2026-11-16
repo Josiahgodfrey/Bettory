@@ -8,7 +8,8 @@
 #   + model_a.ft_weight (was fixed in code), model_a.rating_prior_matches (new: shrinkage of attack/defence
 #     ratings toward the league average; derived below), model_c.input_lines (was fixed in code),
 #     h2h.* (was fixed in code / SQL), red_flags.recent_window, value.overround_min,
-#     screen.league_p00_min (data doc 14.5, was only in the docs), red_flags.h2h_bonus_zero_zero_rate (data doc 11.2)
+#     screen.league_p00_min (data doc 14.5, was only in the docs), red_flags.h2h_bonus_zero_zero_rate (data doc 11.2),
+#     model_c.bookmaker_priority
 #   - data_gate.min_complete_per_view (superseded by the selection-bias rule, DATA-MODEL.md 7.1)
 #
 # rating_prior_matches derivation (2026-11-15, ENG1 + GER1 2025-26): empirical-Bayes m = within-team
@@ -59,6 +60,7 @@ competition_baselines:
 model_c:
   max_line_disagreement: 0.20
   devig_method: "POWER"
+  bookmaker_priority: ["Pinnacle", "Betfair", "Bet365"]   # whose main-market prices feed Model C; otherwise the bookmaker with the most usable lines
   input_lines:                        # pricing doc 11.1
     HT_TOTAL: [0.5, 1.5]
     HT_ASIAN_TOTAL: [1.0]

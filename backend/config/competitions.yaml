@@ -4,6 +4,9 @@
 # season_format: SPLIT (Aug–May, label "2025-26") or CALENDAR (label "2025")
 # team_sources:  sources allowed to CREATE new teams for this competition. Every other source
 #                must match existing teams (provider id / alias) or goes to the review queue.
+# fifteen_minute_market: your bookmaker offers the 15' markets (0-15 Draw, 0-15 Under 0.5) for this competition.
+#                Layer 0 skips every fixture of a competition set to false ("no market, no bet").
+#                Initial values are ASSUMED true for these major leagues - confirm with your bookmaker.
 # API-Football league ids: verify with /leagues before relying on them (Phase 0 checked 39 only).
 
 competitions:
@@ -14,6 +17,7 @@ competitions:
     level: 1
     timezone: Europe/London
     season_format: SPLIT
+    fifteen_minute_market: true
     team_sources: [FOOTBALL_DATA_ORG, OPENFOOTBALL, API_FOOTBALL]
     providers:
       API_FOOTBALL: "39"
@@ -28,6 +32,7 @@ competitions:
     level: 2
     timezone: Europe/London
     season_format: SPLIT
+    fifteen_minute_market: true
     team_sources: [FOOTBALL_DATA_ORG, OPENFOOTBALL, API_FOOTBALL]
     providers:
       API_FOOTBALL: "40"
@@ -42,6 +47,7 @@ competitions:
     level: 1
     timezone: Europe/Berlin
     season_format: SPLIT
+    fifteen_minute_market: true
     team_sources: [FOOTBALL_DATA_ORG, OPENFOOTBALL, API_FOOTBALL]
     providers:
       API_FOOTBALL: "78"
@@ -56,6 +62,7 @@ competitions:
     level: 1
     timezone: Europe/Vienna
     season_format: SPLIT
+    fifteen_minute_market: true
     team_sources: [OPENFOOTBALL, API_FOOTBALL]
     providers:
       API_FOOTBALL: "218"
@@ -68,6 +75,7 @@ competitions:
     level: 1
     timezone: Europe/Madrid
     season_format: SPLIT
+    fifteen_minute_market: true
     team_sources: [FOOTBALL_DATA_ORG, OPENFOOTBALL, API_FOOTBALL]
     providers:
       API_FOOTBALL: "140"
@@ -82,6 +90,7 @@ competitions:
     level: 1
     timezone: Europe/Rome
     season_format: SPLIT
+    fifteen_minute_market: true
     team_sources: [FOOTBALL_DATA_ORG, OPENFOOTBALL, API_FOOTBALL]
     providers:
       API_FOOTBALL: "135"
@@ -96,6 +105,7 @@ competitions:
     level: 1
     timezone: Europe/Paris
     season_format: SPLIT
+    fifteen_minute_market: true
     team_sources: [FOOTBALL_DATA_ORG, OPENFOOTBALL, API_FOOTBALL]
     providers:
       API_FOOTBALL: "61"
@@ -110,6 +120,7 @@ competitions:
     level: 1
     timezone: Europe/Amsterdam
     season_format: SPLIT
+    fifteen_minute_market: true
     team_sources: [FOOTBALL_DATA_ORG, OPENFOOTBALL, API_FOOTBALL]
     providers:
       API_FOOTBALL: "88"
@@ -124,6 +135,7 @@ competitions:
     level: 1
     timezone: Europe/Lisbon
     season_format: SPLIT
+    fifteen_minute_market: true
     team_sources: [FOOTBALL_DATA_ORG, OPENFOOTBALL, API_FOOTBALL]
     providers:
       API_FOOTBALL: "94"
