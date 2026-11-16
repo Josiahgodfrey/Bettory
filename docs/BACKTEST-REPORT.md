@@ -247,3 +247,27 @@ evidence; 83 s for 60 variations):
 | Prospective | PENDING — starts 2026-11-18 |
 
 Read with care: the tuning window here is five months of one season; the real run tunes on three seasons.
+
+## 9. First real-run attempt: not ready (2026-11-16 23:04 UTC, 2026-11-17 EAT)
+
+`python -m app.cli tune --real` was started on `tuning_v2.yaml` before the backfill had loaded the tuning seasons.
+All 60 variations ran on the tuning period and **none could be scored**: no metric was computed, the holdout and
+the prospective period were not touched, no params file was written.
+
+| Tuning period content (base params) | Fixtures | Priced | Known 15' result | Most common failed checks |
+|---|---|---|---|---|
+| ENG1 2024-25 | 380 | 0 | 160 | WINDOW_HOME_HOME, WINDOW_AWAY_AWAY, MODEL_A_AVAILABLE (all 380) |
+| GER1, AUT1 | — | — | — | no fixture loaded in the period |
+
+Cause: ENG1 2024-25 is the oldest season in the database, and the team windows and ratings need an earlier season.
+Consequence for the real run: each competition's first loaded season (2022-23) is **warm-up only**; the scored
+tuning data will be 2023-24 and 2024-25.
+
+The run had already written `config/tuning_lock.yaml` (the SHA-256 of `tuning_v2.yaml`). The entry is kept and
+committed: it is true that a real run started on that plan, it fixes the plan as it was, and it does not block the
+later run (locking is idempotent for an unchanged plan). Since this event the tool:
+
+- locks a plan only once the tuning period has been scored, and before the holdout is touched;
+- stops with **NOT READY** (exit code 3) and a per-season readiness table (fixtures, priced, known results, failed
+  checks, competitions with nothing loaded) when nothing can be scored;
+- shows "N fixtures, M priced with a known result" per variation instead of the fixture count alone.

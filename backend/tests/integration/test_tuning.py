@@ -13,7 +13,7 @@ import yaml
 
 from app.backtest import tuning as tuning_module
 from app.backtest.config import load_backtest_config
-from app.backtest.tuning import PAPER_BETTING, run_tuning, select, write_params
+from app.backtest.tuning import PAPER_BETTING, TuningNotReady, run_tuning, select, write_params
 from app.backtest.tuning_plan import load_plan, variations
 from app.backtest.tuning_report import render_tuning, tuning_json, variations_csv
 from app.domain.params import CONFIG_DIR, load_params, params_path
@@ -155,3 +155,18 @@ def test_prospective_period_and_honest_holdout(league: Any, tmp_path: Path) -> N
     early = run_tuning(engine, REGISTRY, CFG, plan, dry_run=True, lock=tmp_path / "l.yaml", today=date(2025, 9, 1))
     assert early.prospective is not None and early.prospective.status.startswith("PENDING")
     assert tuning_json(early)["prospective"]["status"].startswith("PENDING")
+
+
+def test_real_run_with_nothing_to_score_locks_nothing(league: Any, tmp_path: Path) -> None:  # noqa: F811
+    """A real run started before the tuning seasons are loaded explains why and leaves the plan unlocked."""
+    path = small_plan(tmp_path)
+    data = yaml.safe_load(path.read_text(encoding="utf-8"))
+    data["periods"] = {"tuning": {"first": "2020-01-01", "last": "2020-02-29"},     # no fixture loaded here
+                       "holdout": {"first": "2025-08-20", "last": "2025-10-05"}}
+    path.write_text(yaml.safe_dump(data, sort_keys=False), encoding="utf-8")
+    engine, _, _ = league
+    lock = tmp_path / "lock.yaml"
+    with pytest.raises(TuningNotReady, match="Nothing was locked") as e:
+        run_tuning(engine, REGISTRY, CFG, path, dry_run=False, lock=lock, params_dir=tmp_path)
+    assert "no fixture loaded in the period: TST1" in str(e.value)
+    assert not lock.exists()

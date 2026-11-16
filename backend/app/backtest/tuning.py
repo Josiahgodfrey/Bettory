@@ -1,10 +1,12 @@
 """Tuning run of a pre-registered plan (DEVELOPMENT-PLAN 4.5, docs/RESEARCH-PHASE4-TUNING.md §2, §8).
 
-    1  lock the plan (real run) - a plan edited after use is refused (tuning_plan.py)
+    1  real run: a plan edited after use is refused (tuning_plan.py)
     2  every variation through run_backtest on the TUNING period, sharing one ReadCache
     3  score each on the SAME fixtures (priced in every variation, result known) by the plan's metric;
        variations with identical predictions form one group: the effective number of trials, and dimensions whose
-       options never change a prediction are NOT TESTABLE (e.g. the team/market weight without main-market odds)
+       options never change a prediction are NOT TESTABLE (e.g. the team/market weight without main-market odds).
+       Nothing to score -> TuningNotReady with a per-season readiness report, and nothing is locked; otherwise a
+       real run locks the plan here, before the holdout is touched
     4  select: lowest metric; within tie_tolerance of the best -> fewest changed dimensions from the base, then
        grid order
     5  HOLDOUT, touched once: the selected variation and the base params (one run if they are the same); paired
@@ -20,7 +22,7 @@ from __future__ import annotations
 
 import logging
 import math
-from collections import defaultdict
+from collections import Counter, defaultdict
 from collections.abc import Callable, Sequence
 from dataclasses import dataclass
 from datetime import UTC, date, datetime
@@ -136,6 +138,30 @@ class TuningResult:
 # --- scoring and selection -----------------------------------------------------------------------------------
 
 
+class TuningNotReady(ValueError):
+    """The registered tuning period has nothing to score yet: its seasons are not loaded, or have no earlier
+    season to build ratings and the league baseline from. A real run locks nothing in this case."""
+
+
+def readiness(run: BacktestRun, bet: Bet, competitions: Sequence[str]) -> list[str]:
+    """One line per competition season in the run: fixtures, priced, known 15' results, most common failed checks."""
+    by: dict[tuple[str, str], list[BacktestRow]] = defaultdict(list)
+    for r in run.rows:
+        by[(r.competition, r.season)].append(r)
+    out = []
+    for (comp, season), rows in sorted(by.items()):
+        priced = sum(_p(r, bet) is not None for r in rows)
+        known = sum(_y(r, bet) is not None for r in rows)
+        missing = Counter(f for r in rows if _p(r, bet) is None for f in r.failed).most_common(3)
+        out.append(f"{comp} {season}: {len(rows)} fixtures, {priced} priced, {known} with a known 15' result"
+                   + (f"; most common failed checks: {', '.join(f'{k} ({n})' for k, n in missing)}"
+                      if missing else ""))
+    absent = sorted(set(competitions) - {c for c, _ in by})
+    if absent:
+        out.append(f"no fixture loaded in the period: {', '.join(absent)}")
+    return out
+
+
 def _score_variations(runs: dict[str, BacktestRun], vs: Sequence[Variation], metric: Metric,
                       bet: Bet) -> list[VariationScore]:
     probs = {v.id: {r.fixture_id: (p, y) for r in runs[v.id].rows
@@ -146,7 +172,7 @@ def _score_variations(runs: dict[str, BacktestRun], vs: Sequence[Variation], met
     for v in vs:
         pairs = [probs[v.id][k] for k in common]
         if not pairs:
-            raise ValueError("no fixture was priced with a known result in every variation: nothing to tune on")
+            raise TuningNotReady("no fixture was priced with a known result in every variation: nothing to tune on")
         sc = score(pairs)
         assert sc is not None
         key = tuple(round(p, 12) for p, _ in pairs)
@@ -327,8 +353,7 @@ def run_tuning(engine: Engine, registry: Registry, cfg: BacktestConfig, plan_pat
     plan.check_registry(registry)
     sha = sha256_of(plan_path)
     if not dry_run:
-        check_unchanged(plan_path, lock)
-        register_use(plan_path, "tuning run", lock)
+        check_unchanged(plan_path, lock)  # refuse an edited plan before any work
     base_params = load_params(params_path(plan.base_params))
     vs = variations(plan, base_params)
     base = next(v for v in vs if v.is_base)
@@ -343,8 +368,19 @@ def run_tuning(engine: Engine, registry: Registry, cfg: BacktestConfig, plan_pat
     for v in vs:
         runs[v.id] = run_backtest(engine, v.params, registry, cfg, tuning.first, tuning.last, plan.competitions,
                                   cache=cache)
-        say(f"tuning {v.id} {v.name}: {len(runs[v.id].rows)} fixtures")
-    scores = _score_variations(runs, vs, plan.selection.metric, bet)
+        priced = sum(_p(r, bet) is not None and _y(r, bet) is not None for r in runs[v.id].rows)
+        say(f"tuning {v.id} {v.name}: {len(runs[v.id].rows)} fixtures, {priced} priced with a known result")
+    try:
+        scores = _score_variations(runs, vs, plan.selection.metric, bet)
+    except TuningNotReady as e:
+        lines = "\n".join(f"  {x}" for x in readiness(runs[base.id], bet, plan.competitions))
+        raise TuningNotReady(
+            f"{e}.\nTuning period {tuning.first} .. {tuning.last}, base params:\n{lines}\n"
+            "Nothing was locked and the holdout was not touched. A competition's first loaded season cannot be "
+            "priced (no earlier season for ratings and the league baseline); run again once the backfill has "
+            "loaded the tuning seasons (python -m app.cli backfill-daily).") from None
+    if not dry_run:
+        register_use(plan_path, "tuning run", lock)  # locked once the tuning period scores, before the holdout
     selected, tied = select(scores, base, plan.selection.tie_tolerance)
     say(f"selected {selected.id} {selected.name}")
 

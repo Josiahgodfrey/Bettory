@@ -34,7 +34,7 @@ from uuid import UUID
 from app.backtest.config import load_backtest_config
 from app.backtest.report import render_markdown, rows_csv, summarise, summary_json
 from app.backtest.runner import SessionRun, run_backtest
-from app.backtest.tuning import period_of, run_tuning
+from app.backtest.tuning import TuningNotReady, period_of, run_tuning
 from app.backtest.tuning_plan import check_unchanged, current_plan_path, lineage, load_plan, sha256_of, variations
 from app.backtest.tuning_report import render_tuning, tuning_json, variations_csv
 from app.core.settings import BACKEND_DIR, get_settings
@@ -182,11 +182,15 @@ def main(argv: list[str] | None = None) -> int:
             print("a real run uses the registered periods: --tuning / --holdout are for dry runs", file=sys.stderr)
             return 2
         plan_path = args.plan or current_plan_path()
-        result = run_tuning(
-            engine, registry, load_backtest_config(), plan_path, dry_run=not args.real,
-            tuning_override=period_of(*args.tuning) if args.tuning else None,
-            holdout_override=period_of(*args.holdout) if args.holdout else None,
-            progress=lambda m: print(f"  {m}", file=sys.stderr))
+        try:
+            result = run_tuning(
+                engine, registry, load_backtest_config(), plan_path, dry_run=not args.real,
+                tuning_override=period_of(*args.tuning) if args.tuning else None,
+                holdout_override=period_of(*args.holdout) if args.holdout else None,
+                progress=lambda m: print(f"  {m}", file=sys.stderr))
+        except TuningNotReady as e:
+            print(f"NOT READY: {e}", file=sys.stderr)
+            return 3
         cfg_bt = load_backtest_config()
         stamp = datetime.now(UTC).strftime("%Y%m%dT%H%M%SZ")
         kind = "real" if args.real else "dryrun"
