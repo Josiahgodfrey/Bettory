@@ -39,6 +39,7 @@ from app.normalisation.parsers import openfootball as p_of
 from app.storage.raw_store import RawStore, object_path, sha256
 from app.storage.repositories import health as health_repo
 from app.storage.repositories import matches as matches_repo
+from app.storage.repositories import ops as ops_repo
 from app.storage.repositories import raw as raw_repo
 
 PARSER_VERSIONS = {
@@ -54,6 +55,21 @@ log = logging.getLogger(__name__)
 
 class QuotaError(RuntimeError):
     """No API request left for this run today (after the configured reserve)."""
+
+
+class ConcurrentRunError(RuntimeError):
+    """Another process is running a job of the same source (they would share one quota)."""
+
+
+def _exclusive(engine: Engine, source: SourceCode, body: Callable[[], None]) -> Callable[[], None]:
+    """Run `body` holding the source's database lock: one job per source across ALL processes (API, worker,
+    command line). The in-process lock of ingestion/runner.py only covers the API process."""
+    def run() -> None:
+        with ops_repo.exclusive(engine, f"ingest:{source.value}") as got:
+            if not got:
+                raise ConcurrentRunError(f"another {source.value} job is running in another process")
+            body()
+    return run
 
 
 class Job:
@@ -204,7 +220,8 @@ def api_football_season(engine: Engine, store: RawStore, registry: Registry, api
         job.process(client.fixtures_by_league_season(league, season_start_year(season)),
                     lambda raw: p_af.parse_fixtures(raw, registry))
 
-    return _run(job, lambda: client.requests_used, body, _close_api_football(client, job))
+    return _run(job, lambda: client.requests_used, _exclusive(engine, SourceCode.API_FOOTBALL, body),
+                _close_api_football(client, job))
 
 
 def api_football_day(engine: Engine, store: RawStore, registry: Registry, api_key: str, day: date,
@@ -241,18 +258,21 @@ def api_football_day(engine: Engine, store: RawStore, registry: Registry, api_ke
             job.process(client.odds_for_fixture(m.provider_match_key),
                         lambda raw: p_af.parse_odds(raw, registry))
 
-    return _run(job, lambda: client.requests_used, body, _close_api_football(client, job))
+    return _run(job, lambda: client.requests_used, _exclusive(engine, SourceCode.API_FOOTBALL, body),
+                _close_api_football(client, job))
 
 
 def api_football_backfill(engine: Engine, store: RawStore, registry: Registry, api_key: str, comp_code: str,
                           season: str, bulk: bool, max_requests: int, reparse: bool = False,
-                          run_id: UUID | None = None, *, requests_per_minute: int) -> Counter[str]:
+                          run_id: UUID | None = None, *, requests_per_minute: int,
+                          skip_known_15: bool) -> Counter[str]:
     """Season fixtures (1 request), then goal minutes for every finished fixture that has none from
     API-Football yet: 20 fixtures per request with `bulk` (paid plans), otherwise 1 per request.
 
     Order: fixtures whose 15' result is still UNKNOWN first; fixtures whose 15' result is already known (e.g.
     half-time 0-0, or minutes from another source) last - for them the request only adds a second source for
-    the cross-check.
+    the cross-check. `skip_known_15`: do not fetch those at all (when no second goal-minute source exists for
+    the season, they would add nothing).
     Resumable: fixtures that already have API-Football goal minutes are skipped, so repeated runs (e.g. one
     per day on the free plan) continue where the last one stopped. Stops cleanly at the request budget:
     `max_requests`, reduced to what the quota of the day still allows."""
@@ -272,11 +292,12 @@ def api_football_backfill(engine: Engine, store: RawStore, registry: Registry, a
             done = matches_repo.provider_keys_with_minutes(conn, SourceCode.API_FOOTBALL, finished)
             known = matches_repo.provider_keys_with_known_15(conn, SourceCode.API_FOOTBALL, finished)
         missing = [k for k in finished if k not in done]
-        todo = [k for k in missing if k not in known] + [k for k in missing if k in known]
+        todo = [k for k in missing if k not in known] + ([] if skip_known_15 else [k for k in missing if k in known])
         job.stats["finished_fixtures"] += len(finished)
         job.stats["already_with_minutes"] += len(done)
         job.stats["todo_unknown_15"] += sum(k not in known for k in missing)
-        job.stats["todo_known_15_crosscheck_only"] += sum(k in known for k in missing)
+        job.stats["todo_known_15_crosscheck_only"] += 0 if skip_known_15 else sum(k in known for k in missing)
+        job.stats["skipped_known_15"] += sum(k in known for k in missing) if skip_known_15 else 0
         size = BULK_IDS_MAX if bulk else 1
         requested = 0
         for i in range(0, len(todo), size):
@@ -290,7 +311,8 @@ def api_football_backfill(engine: Engine, store: RawStore, registry: Registry, a
         job.stats["fixtures_requested_for_minutes"] += requested
         job.stats["fixtures_still_without_minutes"] += len(todo) - requested
 
-    return _run(job, lambda: client.requests_used, body, _close_api_football(client, job))
+    return _run(job, lambda: client.requests_used, _exclusive(engine, SourceCode.API_FOOTBALL, body),
+                _close_api_football(client, job))
 
 
 def format_stats(stats: Counter[str]) -> str:

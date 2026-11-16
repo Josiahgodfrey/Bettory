@@ -103,9 +103,9 @@ def install(monkeypatch: pytest.MonkeyPatch, fake: FakeApi) -> None:
     monkeypatch.setattr(pipeline, "ApiFootball", lambda key, max_requests, requests_per_minute: fake)
 
 
-def run(engine: Engine, tmp_path: Path, bulk: bool, max_requests: int) -> Any:
+def run(engine: Engine, tmp_path: Path, bulk: bool, max_requests: int, skip_known: bool = False) -> Any:
     return pipeline.api_football_backfill(engine, LocalRawStore(tmp_path), REG, "key", "TST1", "2024-25",
-                                          bulk, max_requests, requests_per_minute=10)
+                                          bulk, max_requests, requests_per_minute=10, skip_known_15=skip_known)
 
 
 def minutes(engine: Engine) -> int:
@@ -207,3 +207,13 @@ def test_every_run_is_cross_checked_and_audited(engine: Engine, tmp_path: Path,
     with engine.connect() as c:
         check = c.execute(text("select status, matches, run_id is not null from core.crosscheck_results")).one()
     assert tuple(check) == ("NOT_MEASURABLE", N, True)
+
+
+def test_history_mode_skips_known_15_minute_results(engine: Engine, tmp_path: Path,
+                                                    monkeypatch: pytest.MonkeyPatch) -> None:
+    fake = FakeApi(free=True)
+    install(monkeypatch, fake)
+    stats = run(engine, tmp_path, bulk=False, max_requests=100, skip_known=True)
+    requested = [int(c["id"]) - 5000 for c in fake.calls if "id" in c]
+    assert sorted(requested) == [n for n in range(N) if n % 2 == 0]        # only the unknown ones
+    assert stats["skipped_known_15"] == N // 2 and stats["fixtures_still_without_minutes"] == 0

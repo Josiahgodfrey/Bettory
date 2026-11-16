@@ -53,7 +53,7 @@ strict = true
 plugins = ["pydantic.mypy"]
 
 [[tool.mypy.overrides]]
-module = ["scipy", "scipy.*"]  # scipy ships no type information
+module = ["scipy", "scipy.*", "apscheduler", "apscheduler.*"]  # no type information shipped
 ignore_missing_imports = true
 
 # Architecture R3: the calculation and decision packages are pure.

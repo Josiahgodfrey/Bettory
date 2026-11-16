@@ -389,7 +389,7 @@ A task is done when:
 | 1 — Foundation | ✅ Done | | | |
 | 2 — Calculation engine | ✅ Done | | | Models L, A, B v2, C, pricing, decision layer; params v1.5 |
 | 3 — Data pipeline | 🟡 In progress | | | Infrastructure done; 15'-vs-15' cross-check and multi-season goal minutes wait for API-Football Pro |
-| 4 — Backtest (Gate B) | 🟡 In progress | 2026-11-16 | | Runner done; first run on one season: Gate B not passed (see BACKTEST-REPORT.md) |
+| 4 — Backtest (Gate B) | 🟡 In progress | 2026-11-16 | | Runner done; first run on one season: Gate B not passed (see BACKTEST-REPORT.md). Data collection automated: DAILY-BACKFILL.md |
 | 5 — Session pipeline + API | ⬜ Not started | | | |
 | 6 — Frontend | ⬜ Not started | | | |
 | 7 — Deployment + go-live | ⬜ Not started | | | |
