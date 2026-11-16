@@ -32,6 +32,7 @@ from app.domain.params import Params
 from app.domain.registry import Registry
 from app.domain.sessions import SessionCalendar, SessionId, SessionKind
 from app.settlement.settle import Result15, result_15
+from app.storage.point_in_time import ReadCache
 from app.storage.results import FixtureResult, SeasonShare, fixtures_between, season_shares
 
 log = logging.getLogger(__name__)
@@ -143,8 +144,12 @@ def _row(f: FixtureResult, sid: SessionId, as_of: datetime, a: FixtureAnalysis |
 
 def run_backtest(engine: Engine, params: Params, registry: Registry, config: BacktestConfig, first: date,
                  last: date, competitions: Sequence[str] | None = None,
-                 progress: Callable[[SessionRun], None] | None = None) -> BacktestRun:
-    """Replay the sessions of the dates first..last (session dates, EAT)."""
+                 progress: Callable[[SessionRun], None] | None = None,
+                 cache: ReadCache | None = None) -> BacktestRun:
+    """Replay the sessions of the dates first..last (session dates, EAT).
+
+    `cache`: one ReadCache shared by several runs over the same period (parameter variations) - they analyse the
+    same sessions at the same as_of, so the database is read once. Results are identical with or without it."""
     known = {d.code for d in registry.competitions}
     codes = tuple(sorted(competitions)) if competitions else tuple(sorted(known))
     unknown = [c for c in codes if c not in known]
@@ -162,7 +167,7 @@ def run_backtest(engine: Engine, params: Params, registry: Registry, config: Bac
         fixtures = {str(f.id): f for f in fixtures_between(conn, start, end, codes)}
         for sid, items in cal.group((k, f.kickoff_utc) for k, f in fixtures.items()).items():
             as_of = cal.run_start(sid, items[0][1])
-            ctx = AnalysisContext(conn, params, registry, as_of)
+            ctx = AnalysisContext(conn, params, registry, as_of, cache)
             evaluated = {key: ctx.evaluate(fixtures[key].id) for key, _ in items}
             report = rank_and_cap([v for _, v in evaluated.values()], params)
             final = {v.fixture_id: v.decision for v in (*report.listed, *report.over_cap, *report.not_qualified)}

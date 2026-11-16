@@ -27,6 +27,7 @@ ranking and the 50-match cap. Results are read **separately, afterwards**, only 
 | Live-identical decisions | The runner calls `AnalysisContext.evaluate`, `verify` and `rank_and_cap`; no backtest-only decision logic |
 | No writes | The run is a `READ ONLY` transaction; tested |
 | Reproducible | Output records params_version; rows, summary and report written to `backend/backtests/<run>/` |
+| Fast, without changing results | Point-in-time reads are memoised per `as_of` (`ReadCache`); parameter variations share one cache. Tested: identical rows with and without it, a warm run reads no history, different `as_of` never share. Full season 88 s → 34 s; a further variation on cached reads ≈ 16× faster |
 | Selection bias | INCOMPLETE matches are never dropped: a window containing one is INSUFFICIENT_DATA (DATA-MODEL 7.1) |
 
 What is measured (settings in [config/backtest.yaml](../backend/config/backtest.yaml), never in code):

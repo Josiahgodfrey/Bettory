@@ -5,15 +5,20 @@ functions core.team_history / core.h2h / core.competition_matches (FINISHED, not
 kick-off < as_of) or applies the same rule, and every returned row is checked again here: a row with
 kick-off >= as_of raises PointInTimeError instead of being returned. Odds are the latest snapshot captured
 strictly before `as_of`.
+
+Reads are memoised in a ReadCache keyed by (as_of, read, arguments): within one analysis moment the same read is
+made once (season metadata alone was 63 % of a backtest's time), and backtest parameter variations can share one
+cache because they analyse the same sessions at the same as_of. A key always contains as_of, so nothing read for
+one moment can be served to another; rows are frozen and lists are copied on the way out.
 """
 
 from __future__ import annotations
 
-from collections.abc import Sequence
+from collections.abc import Callable, Hashable, Sequence
 from dataclasses import dataclass
 from datetime import datetime
 from decimal import Decimal
-from typing import Any
+from typing import Any, TypeVar, cast
 from uuid import UUID
 
 from sqlalchemy import Connection, text
@@ -24,6 +29,31 @@ from app.storage.repositories import health as health_repo
 
 class PointInTimeError(RuntimeError):
     """A read returned data that was not known before as_of. Never caught silently."""
+
+
+T = TypeVar("T")
+
+
+class ReadCache:
+    """Memo of point-in-time reads (and other as_of-bound, parameter-independent results such as competition
+    tallies). Callers must put `as_of` in every key; PointInTimeReader does."""
+
+    def __init__(self) -> None:
+        self._store: dict[Hashable, object] = {}
+        self.hits = 0
+        self.misses = 0
+
+    def get(self, key: Hashable, load: Callable[[], T]) -> T:
+        if key in self._store:
+            self.hits += 1
+            return cast(T, self._store[key])
+        self.misses += 1
+        value = load()
+        self._store[key] = value
+        return value
+
+    def __len__(self) -> int:
+        return len(self._store)
 
 
 @dataclass(frozen=True)
@@ -94,11 +124,16 @@ def _match(row: Any) -> MatchRow:
 class PointInTimeReader:
     """All reads for one `as_of`. One instance per analysis moment (e.g. a session run, or a backtest kick-off)."""
 
-    def __init__(self, conn: Connection, as_of: datetime) -> None:
+    def __init__(self, conn: Connection, as_of: datetime, cache: ReadCache | None = None) -> None:
         if as_of.tzinfo is None:
             raise PointInTimeError("as_of must be timezone-aware")
         self.conn = conn
         self.as_of = as_of
+        self.cache = cache if cache is not None else ReadCache()
+
+    def memo(self, name: str, args: tuple[Hashable, ...], load: Callable[[], T]) -> T:
+        """Cache `load()` under (as_of, name, args)."""
+        return self.cache.get((self.as_of, name, args), load)
 
     def _guard(self, rows: Sequence[MatchRow]) -> list[MatchRow]:
         for r in rows:
@@ -110,7 +145,7 @@ class PointInTimeReader:
 
     # --- the fixture ------------------------------------------------------------------------------------
 
-    def fixture(self, match_id: UUID) -> FixtureRow:
+    def _db_fixture(self, match_id: UUID) -> FixtureRow:
         row = self.conn.execute(text("""
             select m.id, m.kickoff_utc, m.home_team_id, m.away_team_id, m.status, m.competition_season_id,
                    s.label as season_label, c.id as competition_id, c.code, c.competition_type
@@ -122,26 +157,26 @@ class PointInTimeReader:
 
     # --- history ---------------------------------------------------------------------------------------
 
-    def team_history(self, team_id: UUID, category: str, limit: int) -> list[MatchRow]:
+    def _db_team_history(self, team_id: UUID, category: str, limit: int) -> list[MatchRow]:
         """Newest first (core.team_history: GENERAL / HOME / AWAY)."""
         rows = self.conn.execute(text("select * from core.team_history(:t, cast(:c as core.history_category), :a, :n)"),
                                  {"t": team_id, "c": category, "a": self.as_of, "n": limit}).mappings().all()
         return self._guard([_match(r) for r in rows])
 
-    def h2h(self, team_a: UUID, team_b: UUID, limit: int, max_years: int) -> list[MatchRow]:
+    def _db_h2h(self, team_a: UUID, team_b: UUID, limit: int, max_years: int) -> list[MatchRow]:
         rows = self.conn.execute(text(
             "select * from core.h2h(:a, :b, :t, :n, cast(:t as timestamptz) - make_interval(years => :y))"),
             {"a": team_a, "b": team_b, "t": self.as_of, "n": limit, "y": max_years}).mappings().all()
         return self._guard([_match(r) for r in rows])
 
-    def competition_matches(self, competition_season_id: UUID) -> list[MatchRow]:
+    def _db_competition_matches(self, competition_season_id: UUID) -> list[MatchRow]:
         rows = self.conn.execute(text("select * from core.competition_matches(:s, :a)"),
                                  {"s": competition_season_id, "a": self.as_of}).mappings().all()
         return self._guard([_match(r) for r in rows])
 
     # --- seasons ---------------------------------------------------------------------------------------
 
-    def competition_seasons(self, competition_id: UUID) -> list[SeasonRow]:
+    def _db_competition_seasons(self, competition_id: UUID) -> list[SeasonRow]:
         """Seasons of a competition with at least one finished match before as_of."""
         rows = self.conn.execute(text("""
             select s.id, s.competition_id, s.label, c.competition_type
@@ -152,14 +187,14 @@ class PointInTimeReader:
         return [SeasonRow(r["id"], r["competition_id"], r["label"], CompetitionType(r["competition_type"]))
                 for r in rows.mappings()]
 
-    def season(self, competition_season_id: UUID) -> SeasonRow:
+    def _db_season(self, competition_season_id: UUID) -> SeasonRow:
         r = self.conn.execute(text("""
             select s.id, s.competition_id, s.label, c.competition_type
             from core.competition_seasons s join core.competitions c on c.id = s.competition_id
             where s.id = :s"""), {"s": competition_season_id}).mappings().one()
         return SeasonRow(r["id"], r["competition_id"], r["label"], CompetitionType(r["competition_type"]))
 
-    def all_league_seasons(self) -> list[SeasonRow]:
+    def _db_all_league_seasons(self) -> list[SeasonRow]:
         """Every LEAGUE competition-season with finished matches before as_of (global shrinkage targets)."""
         rows = self.conn.execute(text("""
             select s.id, s.competition_id, s.label, c.competition_type
@@ -170,7 +205,7 @@ class PointInTimeReader:
         return [SeasonRow(r["id"], r["competition_id"], r["label"], CompetitionType(r["competition_type"]))
                 for r in rows.mappings()]
 
-    def domestic_league_season(self, team_id: UUID, season_label: str) -> UUID | None:
+    def _db_domestic_league_season(self, team_id: UUID, season_label: str) -> UUID | None:
         """The LEAGUE competition-season the team played in that season (Model B v2 fallback, data doc 16.7)."""
         rows = self.conn.execute(text("""
             select distinct s.id from core.matches m
@@ -185,7 +220,7 @@ class PointInTimeReader:
 
     # --- data trust ------------------------------------------------------------------------------------
 
-    def untrusted_seasons(self, competition_season_ids: Sequence[UUID]) -> list[str]:
+    def _db_untrusted_seasons(self, competition_season_ids: Sequence[UUID]) -> list[str]:
         """Seasons among these whose current cross-check is an unaccepted FAIL (docs/DATA-HEALTH.md 2).
 
         Deliberately NOT limited to as_of: like a match's CONFLICT status, a cross-check describes whether the
@@ -195,7 +230,7 @@ class PointInTimeReader:
 
     # --- odds ------------------------------------------------------------------------------------------
 
-    def odds(self, match_id: UUID, markets: Sequence[MarketCode]) -> list[OddsRow]:
+    def _db_odds(self, match_id: UUID, markets: Sequence[MarketCode]) -> list[OddsRow]:
         """Latest snapshot per (bookmaker, market, line, selection) captured strictly before as_of."""
         rows = self.conn.execute(text("""
             select distinct on (b.name, o.market, o.line, o.selection)
@@ -213,3 +248,42 @@ class PointInTimeReader:
                                float(line) if isinstance(line, (Decimal, float, int)) else None,
                                r["selection"], float(r["odds"]), r["captured_at"]))
         return out
+
+    # --- memoised public reads (same signatures as the _db_ reads) ------------------------------------------
+
+    def fixture(self, match_id: UUID) -> FixtureRow:
+        return self.memo("fixture", (match_id,), lambda: self._db_fixture(match_id))
+
+    def team_history(self, team_id: UUID, category: str, limit: int) -> list[MatchRow]:
+        return list(self.memo("team_history", (team_id, category, limit),
+                              lambda: tuple(self._db_team_history(team_id, category, limit))))
+
+    def h2h(self, team_a: UUID, team_b: UUID, limit: int, max_years: int) -> list[MatchRow]:
+        return list(self.memo("h2h", (team_a, team_b, limit, max_years),
+                              lambda: tuple(self._db_h2h(team_a, team_b, limit, max_years))))
+
+    def competition_matches(self, competition_season_id: UUID) -> list[MatchRow]:
+        return list(self.memo("competition_matches", (competition_season_id,),
+                              lambda: tuple(self._db_competition_matches(competition_season_id))))
+
+    def competition_seasons(self, competition_id: UUID) -> list[SeasonRow]:
+        return list(self.memo("competition_seasons", (competition_id,),
+                              lambda: tuple(self._db_competition_seasons(competition_id))))
+
+    def season(self, competition_season_id: UUID) -> SeasonRow:
+        return self.memo("season", (competition_season_id,), lambda: self._db_season(competition_season_id))
+
+    def all_league_seasons(self) -> list[SeasonRow]:
+        return list(self.memo("all_league_seasons", (), lambda: tuple(self._db_all_league_seasons())))
+
+    def domestic_league_season(self, team_id: UUID, season_label: str) -> UUID | None:
+        return self.memo("domestic_league_season", (team_id, season_label),
+                         lambda: self._db_domestic_league_season(team_id, season_label))
+
+    def untrusted_seasons(self, competition_season_ids: Sequence[UUID]) -> list[str]:
+        key = tuple(sorted(competition_season_ids))
+        return list(self.memo("untrusted_seasons", key, lambda: tuple(self._db_untrusted_seasons(list(key)))))
+
+    def odds(self, match_id: UUID, markets: Sequence[MarketCode]) -> list[OddsRow]:
+        key = (match_id, tuple(m.value for m in markets))
+        return list(self.memo("odds", key, lambda: tuple(self._db_odds(match_id, markets))))

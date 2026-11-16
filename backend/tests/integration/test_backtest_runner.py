@@ -139,3 +139,27 @@ def test_backtest_never_writes(league: tuple[Engine, str, dict[tuple[str, int], 
                          ).fetchone() == counts
     with pytest.raises(ValueError, match="unknown competitions"):
         run_backtest(engine, PARAMS, REGISTRY, CFG, FIRST, LAST, ["XXX"])
+
+
+def test_shared_read_cache_is_identical_and_skips_the_database(
+        league: tuple[Engine, str, dict[tuple[str, int], UUID]]) -> None:
+    """Parameter variations share one ReadCache: same results as without it, and a warm run reads no history."""
+    from sqlalchemy import event
+
+    from app.storage.point_in_time import ReadCache
+
+    engine, _, _ = league
+    statements: list[str] = []
+    event.listen(engine, "before_cursor_execute", lambda *a: statements.append(a[2]))
+    plain = backtest(engine)
+    cache = ReadCache()
+    statements.clear()
+    cold = run_backtest(engine, PARAMS, REGISTRY, CFG, FIRST, LAST, cache=cache)
+    cold_reads = len(statements)
+    statements.clear()
+    other = params(model_a__rating_prior_matches={"FT": 80, "HT": 80})
+    warm = run_backtest(engine, other, REGISTRY, CFG, FIRST, LAST, cache=cache)
+    assert cold.rows == plain.rows                                       # the cache changes nothing
+    assert cache.hits > 0 and len(statements) < 5 < cold_reads           # warm: only the fixture list and shares
+    assert not any("team_history" in s or "competition_matches" in s for s in statements)
+    assert [r.p_under05 for r in warm.rows] != [r.p_under05 for r in cold.rows]   # params still matter
