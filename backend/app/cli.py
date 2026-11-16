@@ -26,9 +26,11 @@ from __future__ import annotations
 import argparse
 import json
 import logging
+import subprocess
 import sys
 from datetime import UTC, date, datetime
 from pathlib import Path
+from typing import Any
 from uuid import UUID
 
 from app.backtest.config import load_backtest_config
@@ -38,18 +40,21 @@ from app.backtest.tuning import TuningNotReady, period_of, run_tuning
 from app.backtest.tuning_plan import check_unchanged, current_plan_path, lineage, load_plan, sha256_of, variations
 from app.backtest.tuning_report import render_tuning, tuning_json, variations_csv
 from app.core.settings import BACKEND_DIR, get_settings
-from app.domain.params import load_params
+from app.domain.params import Params, load_params, params_path
 from app.domain.quality_config import load_quality_config
 from app.domain.registry import load_registry
+from app.domain.sessions import SessionCalendar, SessionId
 from app.ingestion import pipeline
 from app.ingestion.api_football import ApiFootball
 from app.ingestion.health_view import render_text, snapshot
 from app.ingestion.quality import crosscheck_season
 from app.jobs.backfill import load_backfill_config, plan, run_daily_backfill
 from app.jobs.scheduler import build_scheduler
+from app.paper.freeze import Provenance, due_sessions, freeze_session, replay_session
 from app.storage.db import get_engine
 from app.storage.raw_store import store_from_settings
 from app.storage.repositories import health as health_repo
+from app.storage.repositories import paper as paper_repo
 from app.storage.repositories import reference as ref
 
 
@@ -113,6 +118,16 @@ def main(argv: list[str] | None = None) -> int:
     tp = sub.add_parser("tuning-plan", help="show and validate a pre-registered tuning plan")
     tp.add_argument("--plan", type=Path, default=None, help="plan file (default: the newest registered plan)")
 
+    pf = sub.add_parser("paper-freeze", help="freeze the predictions of due sessions before kick-off")
+    pf.add_argument("--session", action="append", help="session id, e.g. 2026-11-18-NOON (repeatable; default: "
+                    "every session that has not ended, yesterday .. tomorrow)")
+    pf.add_argument("--params", action="append", help="params version (repeatable; default: the live params)")
+    pv = sub.add_parser("paper-verify", help="check the hash chain of frozen predictions; --replay recomputes")
+    pv.add_argument("--replay", action="append", metavar="SESSION",
+                    help="recompute a frozen session and compare (repeatable)")
+    pl = sub.add_parser("paper-list", help="frozen predictions of one session")
+    pl.add_argument("session")
+
     bt = sub.add_parser("backtest", help="replay sessions point in time and report calibration / Gate B")
     bt.add_argument("--from", dest="first", required=True, type=date.fromisoformat, help="first session date")
     bt.add_argument("--to", dest="last", required=True, type=date.fromisoformat, help="last session date")
@@ -123,6 +138,9 @@ def main(argv: list[str] | None = None) -> int:
 
     args = parser.parse_args(argv)
     settings, engine, registry = get_settings(), get_engine(), load_registry()
+
+    if args.cmd.startswith("paper-"):
+        return _paper(args, engine, registry, load_params(BACKEND_DIR / settings.params_file))
 
     if args.cmd == "backtest":
         params, cfg = load_params(BACKEND_DIR / settings.params_file), load_backtest_config()
@@ -312,6 +330,73 @@ def main(argv: list[str] | None = None) -> int:
         stats = pipeline.api_football_day(engine, store, registry, settings.api_football_key.get_secret_value(),
                                           args.date, args.events, args.odds, args.reparse, requests_per_minute=rpm)
     print(pipeline.format_stats(stats))
+    return 0
+
+
+def _code_version() -> str | None:
+    """Short git commit of the running code, '+dirty' when app/ or config/ has uncommitted changes."""
+    try:
+        head = subprocess.run(["git", "-C", str(BACKEND_DIR), "rev-parse", "--short=12", "HEAD"], check=True,
+                              capture_output=True, text=True, timeout=10).stdout.strip()
+        dirty = subprocess.run(["git", "-C", str(BACKEND_DIR), "status", "--porcelain", "--", "app", "config"],
+                               check=True, capture_output=True, text=True, timeout=10).stdout.strip()
+    except (OSError, subprocess.SubprocessError):
+        return None
+    return head + ("+dirty" if dirty else "")
+
+
+def _paper(args: argparse.Namespace, engine: Any, registry: Any, live: Params) -> int:
+    if args.cmd == "paper-freeze":
+        versions = args.params or [live.params_version]
+        plan_path = current_plan_path()
+        prov = Provenance(plan_path.name, sha256_of(plan_path), _code_version())
+        now = datetime.now(UTC)
+
+        for version in versions:
+            params = live if version == live.params_version else load_params(params_path(version))
+            cal = SessionCalendar(params)
+            sids = [SessionId.parse(x) for x in args.session] if args.session else due_sessions(cal, now)
+            for sid in sids:
+                r = freeze_session(engine, params, registry, sid, now=now, provenance=prov)
+                line = f"{sid}  params {version}  {r.status}"
+                if r.status == "TOO_EARLY":
+                    line += f"  ({r.fixtures} fixtures; data cut-off {r.as_of:%Y-%m-%d %H:%M}Z: freeze after it)"
+                elif r.status == "FROZEN":
+                    line += (f"  as_of {r.as_of:%Y-%m-%d %H:%M}Z  fixtures {r.fixtures}  new {r.frozen}  "
+                             f"already {r.already}  started {r.started}  listed {r.qualified}")
+                    if r.chain_from is not None:
+                        line += f"  chain {r.chain_from}..{r.chain_to}"
+                print(line)
+        return 0
+    if args.cmd == "paper-verify":
+        with engine.connect() as conn:
+            chain = paper_repo.verify_chain(conn)
+        print(f"frozen predictions: {chain.rows}")
+        if chain.head_pos is not None:
+            print(f"head: #{chain.head_pos} {chain.head_hash}  (note it down: a later head must extend this one)")
+        for pos, problem in chain.problems:
+            print(f"  ! #{pos}: {problem}")
+        print("chain:", "INTACT" if chain.intact else "BROKEN")
+        ok = chain.intact
+        for sid in args.replay or []:
+            with engine.connect() as conn:
+                versions = sorted({r.params_version for r in paper_repo.frozen(conn, sid)})
+            for version in versions:
+                params = live if version == live.params_version else load_params(params_path(version))
+                rr = replay_session(engine, params, registry, sid)
+                print(f"replay {sid} params {version}: {rr.compared} rows, "
+                      + ("IDENTICAL" if rr.identical else f"{len(rr.differences)} DIFFERENCES"))
+                for d in rr.differences[:20]:
+                    print(f"  ~ {d.match_id} {d.field}: frozen {d.frozen}  now {d.replayed}")
+                ok = ok and rr.identical
+        return 0 if ok else 4
+    with engine.connect() as conn:  # paper-list
+        rows = paper_repo.frozen(conn, args.session)
+    for fp in rows:
+        p = "-" if fp.p_under05 is None else f"{fp.p_under05:.3f}"
+        print(f"#{fp.chain_pos:<6} {fp.kickoff_utc:%Y-%m-%d %H:%M}Z {fp.competition_code:<5} {fp.decision:<18} "
+              f"{fp.grade:<5} P(U0.5) {p:<6} params {fp.params_version}  recorded {fp.recorded_at:%H:%M:%S}Z")
+    print(f"{len(rows)} frozen predictions in {args.session}")
     return 0
 
 

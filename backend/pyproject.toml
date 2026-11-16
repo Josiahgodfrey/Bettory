@@ -83,7 +83,7 @@ forbidden_modules = [
 name = "Layers"
 type = "layers"
 layers = [
-    "app.api | app.jobs | app.backtest",
+    "app.api | app.jobs | app.backtest | app.paper",
     "app.analysis",
     "app.settlement | app.notifications",
     "app.decision",

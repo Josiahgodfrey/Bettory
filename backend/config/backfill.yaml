@@ -16,7 +16,8 @@ schedule:
   timezone: "UTC"
   time: "00:30"                # API-Football's daily quota resets at 00:00 UTC (to verify on your dashboard)
 
-daily_max_requests: 90         # upper bound per day; the quota guard (config/data_quality.yaml) still applies
+daily_max_requests: 70         # upper bound per day; ~25 left for the paper-betting recorder (owner decision
+                               # 2026-11-17: backfill 70 / recorder 25 / reserve 5); the quota guard still applies
 
 targets:
   - { competition: ENG1, season: "2024-25", mode: history }
