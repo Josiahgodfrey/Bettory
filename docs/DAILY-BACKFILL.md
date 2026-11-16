@@ -70,3 +70,63 @@ In both cases Docker Desktop with the `bettory-pg` container must be running, an
    `API_FOOTBALL_MAX_REQUESTS_PER_RUN`.
 2. `config/backfill.yaml`: raise `daily_max_requests`; enable the commented `crosscheck` targets for 2025-26.
 3. The remaining history targets then finish in one or two days (20 fixtures per request).
+
+---
+
+## 6. What the branch `daily-backfill` changed
+
+13 files, 686 lines added. Commit `eb86a64`, on top of `main` after PR #4.
+
+### 6.1 How the pieces fit
+
+```
+python -m app.cli worker
+  └─ jobs/scheduler.py        build_scheduler(): one cron job "daily_backfill" at schedule.time
+       └─ jobs/backfill.py    run_daily_backfill(): for each unfinished target, in order
+            ├─ target_status()                    finished?  <- storage/repositories/ops.py latest_run()
+            └─ ingestion/pipeline.py              api_football_backfill(..., skip_known_15=history mode)
+                 ├─ _exclusive()                  one API-Football job across processes <- ops.exclusive()
+                 ├─ _plan_quota()                 fit the run into today's quota (from PR #4)
+                 └─ Job.finish()                  cross-check + audit of the run (from PR #4)
+```
+
+### 6.2 New and changed code, file by file
+
+| File | Status | What is in it |
+|---|---|---|
+| [config/backfill.yaml](../backend/config/backfill.yaml) | new | The queue: `schedule` (time zone, HH:MM), `daily_max_requests`, ordered `targets` (competition, season, mode). The 2025-26 `crosscheck` targets are commented out until a paid plan |
+| [app/jobs/backfill.py](../backend/app/jobs/backfill.py) | new (was a one-line stub) | **Config models** `Target`, `Schedule`, `BackfillConfig` (strict: unknown keys, bad time / time zone and duplicate targets are rejected); `check_registry()` (every target must be a registered competition with an API-Football league id); `load_backfill_config()`. **Progress**: `TargetState` (FINISHED / IN_PROGRESS / NOT_STARTED) and `target_status()`, read from the target's last SUCCEEDED run (`fixtures_still_without_minutes == 0`, not stopped at its budget; a history run never finishes a crosscheck target). **The day**: `run_daily_backfill()` returns a `DayResult` (runs, requests used, why it stopped); `plan()` shows every target without a request |
+| [app/jobs/scheduler.py](../backend/app/jobs/scheduler.py) | new (was a stub) | `build_scheduler()`: APScheduler `BlockingScheduler`, cron trigger in the configured time zone, `coalesce=True`, `max_instances=1`, `misfire_grace_time` 6 h; checks the config against the registry at start. `daily_backfill_job()` logs the outcome and never lets an error stop the scheduler. Phase 5 adds its jobs here |
+| [app/storage/repositories/ops.py](../backend/app/storage/repositories/ops.py) | new (was a stub) | `exclusive(engine, name)`: Postgres session advisory lock (`pg_try_advisory_lock`) as a context manager, yields False at once if another process holds it; stable 64-bit key from SHA-256 of the name. `latest_run(engine, job_name, status)`: the newest run row of a job |
+| [app/ingestion/pipeline.py](../backend/app/ingestion/pipeline.py) | changed | `ConcurrentRunError` and `_exclusive()`: the three API-Football jobs (season, day, backfill) now run under the lock `ingest:API_FOOTBALL`. `api_football_backfill()` takes the required keyword `skip_known_15`; new statistic `skipped_known_15` |
+| [app/cli.py](../backend/app/cli.py) | changed | `worker` (start the scheduler), `backfill-daily` (plan) and `backfill-daily --run` (one day now); `ingest api-football-backfill --skip-known` |
+| [app/api/schemas.py](../backend/app/api/schemas.py), [app/api/routers/jobs.py](../backend/app/api/routers/jobs.py) | changed | `POST /jobs/ingest/api-football-backfill` accepts `skip_known_15` (default false) |
+| [pyproject.toml](../backend/pyproject.toml) | changed | mypy: `apscheduler` ships no type information (same treatment as scipy) |
+
+Nothing changed in the calculation, decision, analysis or backtest code, and there is no database migration: the
+lock is a Postgres feature and progress is read from the existing `raw.ingestion_runs`.
+
+### 6.3 Design decisions
+
+| Decision | Why |
+|---|---|
+| Progress is derived from run rows, not stored separately | One source of truth: manual runs of the same target count too, and nothing can get out of sync |
+| `history` mode skips matches already known | For 2022-23 – 2024-25 no second goal-minute source exists; a half-time 0-0 match is already a certain 0-0 at 15', so its minutes add nothing (about a quarter of each day's requests saved) |
+| Database lock instead of only the in-process lock | The API and the worker are separate processes sharing one quota; two runs at once would fetch the same fixtures twice |
+| A failed target does not stop the day, but quota / lock problems do | A season-specific error (e.g. a season the plan does not allow) should not block the others; a used-up quota or a busy source affects every target |
+| Targets are for finished seasons | The current season changes daily; it belongs to the Phase 5 day jobs |
+
+### 6.4 Tests
+
+| Test file | Covers |
+|---|---|
+| [tests/integration/test_daily_backfill.py](../backend/tests/integration/test_daily_backfill.py) (new, 6 tests) | targets in order inside the daily budget; a finished target costs no request on the next day; crosscheck mode fetches the known matches a history run skipped; no quota → the day stops with no request; another process holding the lock → the day stops cleanly and the lock is released; config validation; the shipped config is valid and builds the expected schedule |
+| [tests/integration/test_api_football_backfill.py](../backend/tests/integration/test_api_football_backfill.py) (1 test added) | history mode fetches exactly the unknown fixtures |
+
+The fake API keeps **one quota counter across runs**, like the real daily limit. Results: 411 tests pass;
+ruff, mypy (strict) and the import contracts are clean.
+
+### 6.5 Verified on the development database
+
+`python -m app.cli backfill-daily` (no request): ENG1 2024-25 IN_PROGRESS, the other 8 targets NOT_STARTED.
+The real run starts with the next quota day. The worker is **not started automatically**: see §4.
