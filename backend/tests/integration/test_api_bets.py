@@ -14,7 +14,7 @@ from sqlalchemy import text
 
 from app.paper.freeze import freeze_session
 from tests.integration.conftest import ADMIN_URL
-from tests.integration.test_api_frontend import Clock, api
+from tests.integration.test_api_frontend import Clock, api, same_time
 from tests.integration.test_backtest_runner import REGISTRY, league  # noqa: F401 - the synthetic league fixture
 from tests.integration.test_paper_freeze import upcoming_session
 from tests.support import PARAMS
@@ -52,7 +52,7 @@ def test_quote_card_and_stored_prices(league: Any, tmp_path: Path) -> None:  # n
     card = c.post(f"/matches/{ids[0]}/quotes", json=GOOD).json()
     assert (card["mode"], card["listed"], card["advice"], card["selected_market"]) == ("FROZEN", True, "BET",
                                                                                          "UNDER05")
-    assert card["selected_odds"] == 1.40 and card["ev"] > 0 and card["as_of_utc"] == as_of.isoformat()
+    assert card["selected_odds"] == 1.40 and card["ev"] > 0 and same_time(card["as_of_utc"], as_of)
     assert card["stored_prices"] == 2 and any(ch["code"] == "QUOTE_UNDER05_PRICE" for ch in card["checks"])
 
     short = c.post(f"/matches/{ids[0]}/quotes", json={**SHORT, "store": False}).json()

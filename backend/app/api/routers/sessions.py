@@ -15,6 +15,7 @@ from typing import Annotated, Any
 from fastapi import APIRouter, HTTPException, Query, status
 
 from app.api.deps import ClockDep, EngineDep, OwnerDep, ParamsDep, RegistryDep, ReportCompetitionsDep
+from app.api.responses import SessionFixturesOut, SessionOut, SessionReportOut
 from app.api.views import info_json, report_json, session_entries, session_infos
 from app.domain.sessions import SessionCalendar, SessionId
 
@@ -29,7 +30,7 @@ def parse_session(session_id: str) -> SessionId:
                             "session id must look like 2026-11-21-NOON or 2026-11-21-NIGHT") from exc
 
 
-@router.get("")
+@router.get("", response_model=list[SessionOut])
 def sessions(_: OwnerDep, engine: EngineDep, params: ParamsDep, competitions: ReportCompetitionsDep, now: ClockDep,
              first: Annotated[date | None, Query(alias="from")] = None,
              last: Annotated[date | None, Query(alias="to")] = None) -> list[dict[str, Any]]:
@@ -45,7 +46,7 @@ def sessions(_: OwnerDep, engine: EngineDep, params: ParamsDep, competitions: Re
     return [info_json(i, cal) for i in infos]
 
 
-@router.get("/{session_id}")
+@router.get("/{session_id}", response_model=SessionReportOut)
 def report(session_id: str, _: OwnerDep, engine: EngineDep, params: ParamsDep, registry: RegistryDep,
            competitions: ReportCompetitionsDep, now: ClockDep, preview: bool = True) -> dict[str, Any]:
     sid = parse_session(session_id)
@@ -54,7 +55,7 @@ def report(session_id: str, _: OwnerDep, engine: EngineDep, params: ParamsDep, r
     return report_json(se, SessionCalendar(params), listed_only=True)
 
 
-@router.get("/{session_id}/fixtures")
+@router.get("/{session_id}/fixtures", response_model=SessionFixturesOut)
 def fixtures(session_id: str, _: OwnerDep, engine: EngineDep, params: ParamsDep, registry: RegistryDep,
              competitions: ReportCompetitionsDep, now: ClockDep, preview: bool = True) -> dict[str, Any]:
     sid = parse_session(session_id)

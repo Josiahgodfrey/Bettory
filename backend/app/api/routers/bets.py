@@ -18,6 +18,7 @@ from fastapi import APIRouter, HTTPException, Query, status
 
 from app.api.betting import BetInput, BetRefused, bet_json, performance, quote_card, record_bet
 from app.api.deps import ClockDep, EngineDep, OwnerDep, ParamsDep, RegistryDep
+from app.api.responses import BetOut, PerformanceOut, QuoteCardOut
 from app.api.routers.sessions import parse_session
 from app.api.schemas import BetIn, CancelBet, QuoteIn
 from app.backtest.config import load_backtest_config
@@ -42,7 +43,7 @@ def _local_range(params: Params, first: date | None, last: date | None) -> tuple
     return lo, hi
 
 
-@router.post("/matches/{match_id}/quotes")
+@router.post("/matches/{match_id}/quotes", response_model=QuoteCardOut)
 def quotes(match_id: UUID, body: QuoteIn, _: OwnerDep, engine: EngineDep, params: ParamsDep, registry: RegistryDep,
            now: ClockDep) -> dict[str, Any]:
     entered: dict[Bet, dict[str, float]] = {}
@@ -58,7 +59,7 @@ def quotes(match_id: UUID, body: QuoteIn, _: OwnerDep, engine: EngineDep, params
             raise _not_found(str(exc)) from exc
 
 
-@router.post("/bets", status_code=status.HTTP_201_CREATED)
+@router.post("/bets", status_code=status.HTTP_201_CREATED, response_model=BetOut)
 def place(body: BetIn, _: OwnerDep, engine: EngineDep, params: ParamsDep, now: ClockDep) -> dict[str, Any]:
     b = BetInput(body.match_id, Bet(body.market), body.odds, body.stake, body.bookmaker.strip(), body.placed_at,
                  body.note)
@@ -74,7 +75,7 @@ def place(body: BetIn, _: OwnerDep, engine: EngineDep, params: ParamsDep, now: C
     return bet_json(row)
 
 
-@router.get("/bets")
+@router.get("/bets", response_model=list[BetOut])
 def list_bets(_: OwnerDep, engine: EngineDep, params: ParamsDep, session: str | None = None,
               first: Annotated[date | None, Query(alias="from")] = None,
               last: Annotated[date | None, Query(alias="to")] = None,
@@ -88,7 +89,7 @@ def list_bets(_: OwnerDep, engine: EngineDep, params: ParamsDep, session: str | 
     return [bet_json(r) for r in rows]
 
 
-@router.get("/bets/{bet_id}")
+@router.get("/bets/{bet_id}", response_model=BetOut)
 def one_bet(bet_id: UUID, _: OwnerDep, engine: EngineDep) -> dict[str, Any]:
     with engine.connect() as conn:
         row = bet_repo.bet(conn, bet_id)
@@ -97,7 +98,7 @@ def one_bet(bet_id: UUID, _: OwnerDep, engine: EngineDep) -> dict[str, Any]:
     return bet_json(row)
 
 
-@router.post("/bets/{bet_id}/cancel")
+@router.post("/bets/{bet_id}/cancel", response_model=BetOut)
 def cancel(bet_id: UUID, body: CancelBet, _: OwnerDep, engine: EngineDep) -> dict[str, Any]:
     with engine.begin() as conn:
         if bet_repo.bet(conn, bet_id) is None:
@@ -111,7 +112,7 @@ def cancel(bet_id: UUID, body: CancelBet, _: OwnerDep, engine: EngineDep) -> dic
     return bet_json(row)
 
 
-@router.get("/performance")
+@router.get("/performance", response_model=PerformanceOut)
 def perf(_: OwnerDep, engine: EngineDep, params: ParamsDep,
          first: Annotated[date | None, Query(alias="from")] = None,
          last: Annotated[date | None, Query(alias="to")] = None) -> dict[str, Any]:

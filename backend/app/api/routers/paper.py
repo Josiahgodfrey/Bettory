@@ -32,6 +32,7 @@ from app.api.recorder import (
     report_json,
     run_manual_cycle,
 )
+from app.api.responses import ChainOut, CycleOut, PaperPredictionOut, RecorderStatusOut, ReplayOut
 from app.api.routers.sessions import parse_session
 from app.api.views import entry_json, jsonable
 from app.domain.params import Params, load_params, params_path
@@ -60,7 +61,7 @@ def report(_: OwnerDep, engine: EngineDep, params: ParamsDep, version: Annotated
     return report_json(paper_summary(engine, params, version))
 
 
-@router.get("/predictions")
+@router.get("/predictions", response_model=list[PaperPredictionOut])
 def predictions(_: OwnerDep, engine: EngineDep, params: ParamsDep, session: str | None = None,
                 version: Annotated[str | None, Query(alias="params")] = None,
                 limit: Annotated[int, Query(ge=1, le=1000)] = 200) -> list[dict[str, Any]]:
@@ -74,7 +75,7 @@ def predictions(_: OwnerDep, engine: EngineDep, params: ParamsDep, session: str 
              "row_hash": r.row_hash} for r in rows]
 
 
-@router.get("/chain")
+@router.get("/chain", response_model=ChainOut)
 def chain(_: OwnerDep, engine: EngineDep) -> dict[str, Any]:
     with engine.connect() as conn:
         c = paper_repo.verify_chain(conn)
@@ -82,7 +83,7 @@ def chain(_: OwnerDep, engine: EngineDep) -> dict[str, Any]:
             "problems": [{"chain_pos": pos, "problem": p} for pos, p in c.problems]}
 
 
-@router.post("/replay/{session_id}")
+@router.post("/replay/{session_id}", response_model=ReplayOut)
 def replay(session_id: str, _: OwnerDep, engine: EngineDep, params: ParamsDep,
            registry: RegistryDep) -> dict[str, Any]:
     parse_session(session_id)
@@ -98,13 +99,13 @@ def replay(session_id: str, _: OwnerDep, engine: EngineDep, params: ParamsDep,
     return {"session_id": session_id, "identical": all(r["identical"] for r in out), "replays": out}
 
 
-@router.get("/status")
+@router.get("/status", response_model=RecorderStatusOut)
 def recorder(_: OwnerDep, engine: EngineDep, params: ParamsDep, registry: RegistryDep, settings: SettingsDep,
              store: RawStoreFactoryDep, now: ClockDep) -> dict[str, Any]:
     return recorder_status(cycle_inputs(engine, registry, params, settings, store=store), now)
 
 
-@router.post("/cycle", status_code=status.HTTP_202_ACCEPTED)
+@router.post("/cycle", status_code=status.HTTP_202_ACCEPTED, response_model=CycleOut)
 def cycle(_: OwnerDep, engine: EngineDep, params: ParamsDep, registry: RegistryDep, settings: SettingsDep,
           store: RawStoreFactoryDep, tasks: BackgroundTasks, now: ClockDep,
           dry_run: bool = False) -> dict[str, Any]:

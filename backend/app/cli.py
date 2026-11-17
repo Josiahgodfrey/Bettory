@@ -14,6 +14,7 @@ Examples (from backend/, venv active):
   python -m app.cli health --runs 10 --quota
   python -m app.cli backfill-daily              # where every target stands (no request)
   python -m app.cli backfill-daily --run        # run today's backfill now
+  python -m app.cli openapi                     # export docs/api/openapi.json (frontend types)
   python -m app.cli worker                      # start the scheduler (foreground): backfill + paper cycle
   python -m app.cli paper-cycle [--dry-run]     # one paper betting cycle: capture, freeze, results, settle
   python -m app.cli tuning-plan                 # the pre-registered tuning plan (config/tuning_v1.yaml)
@@ -53,6 +54,7 @@ from app.ingestion.health_view import render_text, snapshot
 from app.ingestion.quality import crosscheck_season
 from app.jobs.backfill import load_backfill_config, plan, run_daily_backfill
 from app.jobs.scheduler import IntervalJob, build_scheduler
+from app.main import OPENAPI_FILE, openapi_json
 from app.paper.capture import capture_session
 from app.paper.config import load_paper_config
 from app.paper.cycle import run_cycle
@@ -117,6 +119,8 @@ def main(argv: list[str] | None = None) -> int:
 
     bd = sub.add_parser("backfill-daily", help="automatic API-Football backfill (config/backfill.yaml)")
     bd.add_argument("--run", action="store_true", help="run today's backfill now (otherwise: show the plan)")
+    oa = sub.add_parser("openapi", help="export the API's OpenAPI schema (for the frontend's TypeScript types)")
+    oa.add_argument("--out", type=Path, default=OPENAPI_FILE, help="default: docs/api/openapi.json")
     wk = sub.add_parser("worker", help="start the scheduler in the foreground (Ctrl+C to stop)")
     wk.add_argument("--no-paper", action="store_true", help="without the paper betting cycle")
     tn = sub.add_parser("tune", help="run a pre-registered tuning plan (dry run unless --real)")
@@ -161,6 +165,11 @@ def main(argv: list[str] | None = None) -> int:
     bt.add_argument("--out", type=Path, default=None, help="output folder (default: backtests/<params>_<dates>)")
 
     args = parser.parse_args(argv)
+    if args.cmd == "openapi":
+        args.out.parent.mkdir(parents=True, exist_ok=True)
+        args.out.write_text(openapi_json(), encoding="utf-8")
+        print(f"written to {args.out}")
+        return 0
     settings, engine, registry = get_settings(), get_engine(), load_registry()
 
     if args.cmd.startswith("paper-"):

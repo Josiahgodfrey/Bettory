@@ -51,6 +51,8 @@ def jsonable(obj: Any) -> Any:
         return float(obj)
     if isinstance(obj, Enum):
         return obj.value
+    if isinstance(obj, datetime) and obj.utcoffset() == timedelta(0):
+        return obj.isoformat().replace("+00:00", "Z")  # the API's time format (docs/API.md 1)
     if isinstance(obj, datetime | date | time):
         return obj.isoformat()
     if isinstance(obj, UUID):

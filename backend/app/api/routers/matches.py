@@ -16,6 +16,7 @@ from uuid import UUID
 from fastapi import APIRouter, HTTPException, Query, status
 
 from app.api.deps import ClockDep, EngineDep, OwnerDep, ParamsDep, RegistryDep
+from app.api.responses import CalendarOut, MatchOddsOut, MatchOut
 from app.api.views import day_window, fixture_json, jsonable, match_analysis
 from app.domain.sessions import SessionCalendar
 from app.storage.repositories import frontend as fe_repo
@@ -28,7 +29,7 @@ def _not_found(match_id: UUID) -> HTTPException:
     return HTTPException(status.HTTP_404_NOT_FOUND, f"unknown match {match_id}")
 
 
-@router.get("/fixtures")
+@router.get("/fixtures", response_model=CalendarOut)
 def calendar(_: OwnerDep, engine: EngineDep, params: ParamsDep, now: ClockDep,
              day: Annotated[date | None, Query(alias="date")] = None,
              competition: Annotated[list[str] | None, Query()] = None) -> dict[str, Any]:
@@ -49,7 +50,7 @@ def calendar(_: OwnerDep, engine: EngineDep, params: ParamsDep, now: ClockDep,
     return {"date": day.isoformat(), "timezone": params.sessions.timezone, "fixtures": out}
 
 
-@router.get("/matches/{match_id}")
+@router.get("/matches/{match_id}", response_model=MatchOut)
 def match(match_id: UUID, _: OwnerDep, engine: EngineDep, params: ParamsDep) -> dict[str, Any]:
     cal = SessionCalendar(params)
     with engine.connect() as conn:
@@ -71,7 +72,7 @@ def analysis(match_id: UUID, _: OwnerDep, engine: EngineDep, params: ParamsDep, 
             raise _not_found(match_id) from exc
 
 
-@router.get("/matches/{match_id}/odds")
+@router.get("/matches/{match_id}/odds", response_model=MatchOddsOut)
 def odds(match_id: UUID, _: OwnerDep, engine: EngineDep) -> dict[str, Any]:
     with engine.connect() as conn:
         if fe_repo.match(conn, match_id) is None:

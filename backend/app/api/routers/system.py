@@ -22,6 +22,7 @@ from app.api.deps import (
     SettingsDep,
 )
 from app.api.recorder import dashboard
+from app.api.responses import BookmakerOut, DashboardOut, MeOut
 from app.api.views import jsonable
 from app.backtest.config import load_backtest_config
 from app.backtest.tuning_plan import current_plan_path
@@ -31,7 +32,7 @@ from app.storage.repositories import frontend as fe_repo
 router = APIRouter(tags=["system"])
 
 
-@router.get("/me")
+@router.get("/me", response_model=MeOut)
 def me(owner: OwnerDep) -> dict[str, Any]:
     return {"user_id": owner.user_id, "aal": owner.aal, "local_bypass": owner.local_bypass}
 
@@ -58,13 +59,13 @@ def settings_view(_: OwnerDep, settings: SettingsDep, params: ParamsDep, registr
     }
 
 
-@router.get("/bookmakers")
+@router.get("/bookmakers", response_model=list[BookmakerOut])
 def bookmakers(_: OwnerDep, engine: EngineDep) -> list[dict[str, Any]]:
     with engine.connect() as conn:
         return [jsonable(b) for b in fe_repo.bookmakers(conn)]
 
 
-@router.get("/dashboard")
+@router.get("/dashboard", response_model=DashboardOut)
 def today(_: OwnerDep, engine: EngineDep, params: ParamsDep, competitions: ReportCompetitionsDep,
           now: ClockDep) -> dict[str, Any]:
     return dashboard(engine, params, competitions, now)

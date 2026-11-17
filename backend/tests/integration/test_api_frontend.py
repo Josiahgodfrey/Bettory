@@ -29,6 +29,11 @@ from tests.support import PARAMS
 pytestmark = pytest.mark.skipif(not ADMIN_URL, reason="TEST_DATABASE_URL not set")
 
 
+def same_time(text: str, when: datetime) -> bool:
+    """API times are ISO 8601 UTC with a Z."""
+    return text.endswith("Z") and datetime.fromisoformat(text) == when
+
+
 class Clock:
     now: datetime
 
@@ -57,7 +62,7 @@ def test_session_report_from_preview_to_frozen(league: Any) -> None:  # noqa: F8
     night, noon = listing
     assert night["report_state"] == "NO_FIXTURES" and night["fixtures"] == 0
     assert (noon["report_state"], noon["phase"], noon["fixtures"], noon["frozen"]) == ("PLANNED", "UPCOMING", 2, 0)
-    assert noon["as_of_utc"] == as_of.isoformat()
+    assert same_time(noon["as_of_utc"], as_of)
 
     pre = c.get(f"/sessions/{sid}").json()
     assert pre["source"] == "PREVIEW" and sum(pre["decisions"].values()) == 2
@@ -69,7 +74,7 @@ def test_session_report_from_preview_to_frozen(league: Any) -> None:  # noqa: F8
     clock.now = as_of + timedelta(minutes=1)
     assert c.get("/sessions", params={"from": day, "to": day}).json()[1]["report_state"] == "PUBLISHED"
     rep = c.get(f"/sessions/{sid}").json()
-    assert rep["source"] == "FROZEN" and rep["as_of_utc"] == as_of.isoformat()
+    assert rep["source"] == "FROZEN" and same_time(rep["as_of_utc"], as_of)
     assert rep["session"]["frozen"] == 2 and "minimum odds" in rep["how_to_bet"]
     for e in rep["entries"]:
         assert e["fixture"]["home_team"] and e["fixture"]["competition_code"] == "TST1"
@@ -97,7 +102,7 @@ def test_match_calendar_analysis_and_odds(league: Any) -> None:  # noqa: F811
     assert m["goals"] == [] and len(m["predictions"]) == 1
 
     a = c.get(f"/matches/{ids[0]}/analysis").json()
-    assert a["mode"] == "FROZEN" and a["matches_frozen"] is True and a["as_of_utc"] == as_of.isoformat()
+    assert a["mode"] == "FROZEN" and a["matches_frozen"] is True and same_time(a["as_of_utc"], as_of)
     assert a["checks"] and a["analysis"]["model_a"]["p00"] > 0 and a["verdict"]["decision"] == "QUALIFIED"
     assert a["frozen"]["checks"] == a["checks"]
 

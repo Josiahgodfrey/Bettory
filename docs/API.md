@@ -87,7 +87,7 @@
 | 1 | Read endpoints: me, settings, bookmakers, sessions, session report, session fixtures, calendar, match, analysis, odds | ✅ §7 |
 | 2 | Paper betting and recorder endpoints, dashboard | ✅ §8 |
 | 3 | Odds check, placed bets (new table, settlement), performance | ✅ §9 |
-| 4 | OpenAPI schema export and generated TypeScript types for the frontend | ⬜ |
+| 4 | Typed responses, OpenAPI schema export for the frontend's TypeScript types | ✅ §10 |
 
 ## 6. Owner decisions (2026-11-17)
 
@@ -241,3 +241,59 @@ CLV needs closing odds (not captured yet).
 | [app/storage/repositories/betting.py](../backend/app/storage/repositories/betting.py) | bets, cancellations, bookmakers, manual odds |
 | [app/domain/betting_config.py](../backend/app/domain/betting_config.py), [config/betting.yaml](../backend/config/betting.yaml) | currency TZS, `max_stake` |
 | [tests/integration/test_api_bets.py](../backend/tests/integration/test_api_bets.py) | decision card, stored prices, every breach, cancellation, append-only, settlement, performance, refused input |
+
+## 10. Step 4 — the typed contract (done)
+
+### 10.1 Typed responses
+
+Every frontend endpoint declares its response model ([app/api/responses.py](../backend/app/api/responses.py)).
+FastAPI validates each response against it (unknown fields are an error), so a change in what an endpoint
+returns fails the tests instead of breaking the frontend silently. Three responses stay open JSON objects on
+purpose: `GET /matches/{id}/analysis` (every model's internals), `GET /settings` (the whole params file) and
+`GET /paper/report` (structure in PAPER-BETTING.md §7). All times are ISO 8601 UTC ending in `Z`.
+
+### 10.2 The schema for the frontend
+
+`python -m app.cli openapi` writes [docs/api/openapi.json](api/openapi.json) (45 paths). A test fails when the
+committed file is out of date, when an endpoint listed in §3 is not served, or when a frontend endpoint has no
+response type. In the frontend (Phase 6):
+
+```
+npx openapi-typescript ../docs/api/openapi.json -o src/lib/api-types.ts
+```
+
+gives the TypeScript types of every request and response; `src/lib/api.ts` wraps `fetch` with them.
+
+### 10.3 Connecting the frontend
+
+| Topic | How |
+|---|---|
+| Start the API locally | `cd backend` → `fastapi dev app/main.py` (http://127.0.0.1:8000; interactive docs at `/docs` when `ENVIRONMENT=local`) |
+| Login | Supabase Auth in the frontend (password + TOTP); send the session's access token as `Authorization: Bearer <token>`; the API accepts only `OWNER_USER_ID` with `aal2` |
+| Local development without login | `AUTH_LOCAL_BYPASS=true` (only with `ENVIRONMENT=local`, only from this machine) |
+| CORS | `CORS_ORIGINS` (default `http://localhost:5173`, the Vite dev server); methods GET and POST only |
+| Polling | the Today screen and the recorder status are cheap: poll every 30–60 s; a session report with a preview recomputes the session (≈ 0.5 s), so refresh it on demand |
+
+### 10.4 Screen → endpoints (quick reference)
+
+| Screen | Load | Actions |
+|---|---|---|
+| Today | `GET /dashboard` | — |
+| Bets section | `GET /sessions`, `GET /sessions/{id}` | open analysis, odds check, record bet |
+| All fixtures | `GET /sessions/{id}/fixtures` | — |
+| Match analysis | `GET /matches/{id}`, `GET /matches/{id}/analysis`, `GET /matches/{id}/odds` | — |
+| Odds check | — | `POST /matches/{id}/quotes` |
+| Record a bet | `GET /bookmakers` | `POST /bets` |
+| My bets | `GET /bets` | `POST /bets/{id}/cancel` |
+| Performance | `GET /performance` | — |
+| Paper betting | `GET /paper/report`, `GET /paper/predictions`, `GET /paper/chain` | `POST /paper/replay/{session}` |
+| Recorder | `GET /paper/status` | `POST /paper/cycle` |
+| Calendar | `GET /fixtures?date=` | — |
+| Data health | `GET /data-health…` | `POST /data-health/crosschecks…` |
+| Data loading, team review | `GET /jobs/runs`, `GET /reviews`, `GET /teams` | `POST /jobs/ingest/…`, `POST /reviews/{id}/…` |
+| Settings | `GET /settings`, `GET /me` | — |
+
+### 10.5 Not built yet (later Phase 5 tasks)
+
+Lineup re-check and withdrawals (`lineup_status` stays `NOT_CHECKED`), Telegram notifications, closing odds and
+CLV. The `betting` migration, like the paper migration, still needs the owner's approval for Supabase.
