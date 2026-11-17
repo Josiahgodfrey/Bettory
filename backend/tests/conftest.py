@@ -23,9 +23,21 @@ ISOLATED = {
 }
 os.environ.update(ISOLATED)
 
+import httpx  # noqa: E402
+
 from app.core.settings import get_settings  # noqa: E402 - after the environment is isolated
+from app.notifications import telegram  # noqa: E402
 from app.storage.db import get_engine  # noqa: E402
 
 get_settings.cache_clear()
 get_engine.cache_clear()
+
+
+def _no_real_telegram() -> httpx.Client:
+    """Second guard: even with a token, a test can never open a connection to Telegram (2026-11-17 a cycle test
+    sent real "report ready" messages before the environment was isolated). Tests inject a MockTransport client."""
+    raise RuntimeError("tests must not connect to Telegram: pass a client with a MockTransport")
+
+
+telegram.ipv4_client = _no_real_telegram
 
