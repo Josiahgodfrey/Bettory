@@ -2116,6 +2116,107 @@
         "title": "MeOut",
         "type": "object"
       },
+      "NotificationOut": {
+        "additionalProperties": false,
+        "properties": {
+          "attempts": {
+            "title": "Attempts",
+            "type": "integer"
+          },
+          "created_at": {
+            "format": "date-time",
+            "title": "Created At",
+            "type": "string"
+          },
+          "event_key": {
+            "title": "Event Key",
+            "type": "string"
+          },
+          "id": {
+            "format": "uuid",
+            "title": "Id",
+            "type": "string"
+          },
+          "kind": {
+            "title": "Kind",
+            "type": "string"
+          },
+          "last_error": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Last Error"
+          },
+          "message": {
+            "title": "Message",
+            "type": "string"
+          },
+          "sent_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Sent At"
+          },
+          "status": {
+            "title": "Status",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "event_key",
+          "kind",
+          "message",
+          "created_at",
+          "status",
+          "attempts",
+          "sent_at",
+          "last_error"
+        ],
+        "title": "NotificationOut",
+        "type": "object"
+      },
+      "NotificationsOut": {
+        "additionalProperties": false,
+        "properties": {
+          "configured": {
+            "title": "Configured",
+            "type": "boolean"
+          },
+          "counts": {
+            "additionalProperties": {
+              "type": "integer"
+            },
+            "title": "Counts",
+            "type": "object"
+          },
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/NotificationOut"
+            },
+            "title": "Items",
+            "type": "array"
+          }
+        },
+        "required": [
+          "configured",
+          "counts",
+          "items"
+        ],
+        "title": "NotificationsOut",
+        "type": "object"
+      },
       "OddsRowOut": {
         "additionalProperties": false,
         "properties": {
@@ -3167,6 +3268,9 @@
           "schedule_every_minutes": {
             "title": "Schedule Every Minutes",
             "type": "integer"
+          },
+          "telegram": {
+            "$ref": "#/components/schemas/TelegramStatusOut"
           }
         },
         "required": [
@@ -3184,7 +3288,8 @@
           "due_now",
           "cycle_running",
           "manual_cycle",
-          "schedule_every_minutes"
+          "schedule_every_minutes",
+          "telegram"
         ],
         "title": "RecorderStatusOut",
         "type": "object"
@@ -4314,6 +4419,49 @@
           "country"
         ],
         "title": "TeamOut",
+        "type": "object"
+      },
+      "TelegramStatusOut": {
+        "additionalProperties": false,
+        "properties": {
+          "configured": {
+            "title": "Configured",
+            "type": "boolean"
+          },
+          "failed": {
+            "title": "Failed",
+            "type": "integer"
+          },
+          "pending": {
+            "title": "Pending",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "configured",
+          "pending",
+          "failed"
+        ],
+        "title": "TelegramStatusOut",
+        "type": "object"
+      },
+      "TestNotificationOut": {
+        "additionalProperties": false,
+        "properties": {
+          "failed": {
+            "title": "Failed",
+            "type": "integer"
+          },
+          "sent": {
+            "title": "Sent",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "sent",
+          "failed"
+        ],
+        "title": "TestNotificationOut",
         "type": "object"
       },
       "Under05Prices": {
@@ -5914,6 +6062,7 @@
     },
     "/me": {
       "get": {
+        "description": "The frontend calls this after login: the first call of a login session queues a Telegram login alert.",
         "operationId": "me_me_get",
         "responses": {
           "200": {
@@ -5933,6 +6082,83 @@
           }
         ],
         "summary": "Me",
+        "tags": [
+          "system"
+        ]
+      }
+    },
+    "/notifications": {
+      "get": {
+        "operationId": "notifications_notifications_get",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "default": 50,
+              "maximum": 200,
+              "minimum": 1,
+              "title": "Limit",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/NotificationsOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Notifications",
+        "tags": [
+          "system"
+        ]
+      }
+    },
+    "/notifications/test": {
+      "post": {
+        "description": "Queue a test message and send what is queued now.",
+        "operationId": "test_notification_notifications_test_post",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TestNotificationOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Test Notification",
         "tags": [
           "system"
         ]

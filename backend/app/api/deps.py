@@ -39,6 +39,7 @@ class Owner:
     user_id: str
     aal: str
     local_bypass: bool = False
+    session_id: str | None = None  # the Supabase login session (one login alert per session)
 
 
 # --- shared resources (overridden in tests) ---------------------------------------------------
@@ -135,7 +136,7 @@ def require_owner(
         raise HTTPException(status.HTTP_403_FORBIDDEN, "not the owner")
     if claims.get("aal") != "aal2":
         raise HTTPException(status.HTTP_403_FORBIDDEN, "two-factor authentication required")
-    return Owner(user_id=str(claims["sub"]), aal="aal2")
+    return Owner(user_id=str(claims["sub"]), aal="aal2", session_id=str(claims.get("session_id") or "") or None)
 
 
 OwnerDep = Annotated[Owner, Depends(require_owner)]

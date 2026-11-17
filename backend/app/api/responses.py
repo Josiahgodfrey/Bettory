@@ -370,6 +370,7 @@ class RecorderStatusOut(Out):
     cycle_running: bool
     manual_cycle: ManualCycleOut | None
     schedule_every_minutes: int
+    telegram: TelegramStatusOut
 
 
 class CycleOut(Out):
@@ -491,3 +492,35 @@ class PerformanceOut(Out):
     by_rules: dict[str, RoiOut]
     profit_curve: list[CurvePointOut]
     confidence: float
+
+
+# --- notifications ---------------------------------------------------------------------------------------------
+
+
+class NotificationOut(Out):
+    id: UUID
+    event_key: str
+    kind: str  # REPORT_READY / NO_MATCHES / WITHDRAWN / FAILURE / LOGIN / TEST
+    message: str
+    created_at: datetime
+    status: str  # PENDING / SENT / FAILED / EXPIRED
+    attempts: int
+    sent_at: datetime | None
+    last_error: str | None
+
+
+class NotificationsOut(Out):
+    configured: bool
+    counts: dict[str, int]
+    items: list[NotificationOut]
+
+
+class TestNotificationOut(Out):
+    sent: int
+    failed: int
+
+
+class TelegramStatusOut(Out):
+    configured: bool
+    pending: int
+    failed: int

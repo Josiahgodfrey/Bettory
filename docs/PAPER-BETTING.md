@@ -398,3 +398,41 @@ before kick-off; odds entered by hand are excluded (they are the owner's own rec
 
 Shown: the paper report's bets (`clv_mean`, `clv_beat` = share beating the line, over settled bets with a
 usable closing line), each real bet once kicked off (`GET /bets` → `clv`), and `GET /performance` per group.
+
+## 12. Telegram notifications (2026-11-17)
+
+Messages (summary and link only — never odds; the link opens the app, which requires login):
+
+| Event | When | Message |
+|---|---|---|
+| Report ready | the session's first freeze | "☀️ Noon session 21 Nov — 3 matches verified (first kick-off 15:30 EAT). Open: <APP_URL>/bets?session=…" |
+| No matches | the first freeze with nothing listed | "Noon session 21 Nov — 0 matches passed verification." |
+| Withdrawn | the re-check withdraws a listed match | "⚠️ Withdrawn: Home vs Away (15:30 EAT) — reason: … Do not bet it." |
+| Failure | a recorder step fails | "❗ BETTORY recorder: …" — the same failure at most once an hour |
+| Login | the first `GET /me` of a Supabase login session | "🔐 New login to BETTORY at … EAT. Not you? …" |
+
+**Outbox** (`ops.notifications`, migration `20261120120000_notifications.sql`): each message is queued once under
+a stable event key, delivered by the recorder cycle (and right away for a login), retried up to 3 times, expired
+after 24 h rather than sent late. Without a token the messages wait; `GET /notifications` shows them. The bot
+token never reaches a log or the database (errors keep only the HTTP status and Telegram's description).
+
+**Set up (owner, about 5 minutes):**
+
+1. In Telegram, talk to **@BotFather** → `/newbot` → copy the bot token it gives you.
+2. Send any message to your new bot, then find your **chat id** (e.g. talk to **@userinfobot**, which replies with
+   your id).
+3. In the repo-root `.env` (`BETTORY/.env`, never committed) add:
+   ```
+   TELEGRAM_BOT_TOKEN=<the token>
+   TELEGRAM_CHAT_ID=<your chat id>
+   APP_URL=<the frontend's address, e.g. http://localhost:5173 for now>
+   ```
+4. Restart the API / worker, then `POST /notifications/test` (or `/docs` → notifications → test): the bot sends
+   "✅ BETTORY test message".
+
+| File | Role |
+|---|---|
+| [app/notifications/telegram.py](../backend/app/notifications/telegram.py) | the client (TLS, token never in errors) |
+| [app/notifications/messages.py](../backend/app/notifications/messages.py) | the texts |
+| [app/notifications/outbox.py](../backend/app/notifications/outbox.py) | `notify`, `notify_at_most_hourly`, `deliver` |
+| [tests/integration/test_notifications.py](../backend/tests/integration/test_notifications.py) | once per event, retries, expiry, cycle events, login alert, endpoints |

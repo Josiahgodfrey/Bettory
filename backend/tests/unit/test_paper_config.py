@@ -48,5 +48,5 @@ def test_interval_job_failure_does_not_stop_the_scheduler() -> None:
 def test_closing_window_must_be_longer_than_the_cycle() -> None:
     raw = load_paper_config().model_dump()
     raw["closing"]["minutes_before"] = raw["schedule"]["every_minutes"]
-    with pytest.raises(ValidationError, match="closing.minutes_before"):
+    with pytest.raises(ValidationError, match=r"closing.minutes_before"):
         PaperConfig.model_validate(raw)

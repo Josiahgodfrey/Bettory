@@ -69,9 +69,12 @@ class Settings(BaseSettings):
     api_football_requests_per_minute: int = Field(default=10, ge=1, le=1_000)
     football_data_org_key: SecretStr = SecretStr("")
 
-    # Telegram
+    # Telegram (app/notifications): the bot's token from @BotFather and the owner's chat id. Empty: messages are
+    # queued but not sent.
     telegram_bot_token: SecretStr = SecretStr("")
     telegram_chat_id: str = ""
+    # The frontend's address, for the links in the messages
+    app_url: str = "http://localhost:5173"
 
     # Calculation parameters (versioned file in config/)
     params_file: str = "config/params_v1.5.yaml"

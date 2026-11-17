@@ -13,6 +13,7 @@ any process: a step that is not due does nothing and costs nothing.
     closing   listed (not withdrawn) or bet matches just before kick-off: the closing odds, for CLV
     results   at most every results.every_hours: goal minutes of the frozen fixtures still without a 15' result
     settle    every cycle, from the stored results (no request): app/paper/settle.py
+    notify    Telegram (app/notifications): report ready / no matches, withdrawals, failures; sent once each
 
 All recorder runs share one daily request bound (daily_max_requests, per quota day from 00:00 UTC) on top of
 the quota guard. Two cycles never overlap (a database lock across processes).
@@ -20,10 +21,12 @@ the quota guard. Two cycles never overlap (a database lock across processes).
 
 from __future__ import annotations
 
+import hashlib
 import logging
 from collections.abc import Callable, Sequence
 from dataclasses import dataclass, field
 from datetime import UTC, datetime, timedelta
+from uuid import UUID
 
 from sqlalchemy import Engine
 
@@ -33,6 +36,8 @@ from app.domain.params import Params
 from app.domain.registry import Registry
 from app.domain.sessions import SessionCalendar, SessionId
 from app.ingestion import pipeline
+from app.notifications import messages, outbox
+from app.notifications.outbox import Sender
 from app.paper.capture import RECORDER_JOB_PREFIX, capture_job, capture_session
 from app.paper.config import PaperConfig
 from app.paper.freeze import MIN_LEAD, Provenance, due_sessions, freeze_session
@@ -40,6 +45,7 @@ from app.paper.recheck import Rechecked, run_rechecks
 from app.paper.recheck import due as recheck_due
 from app.paper.settle import SETTLE_AFTER, settle_due
 from app.storage.raw_store import RawStore
+from app.storage.repositories import frontend as fe_repo
 from app.storage.repositories import ops as ops_repo
 from app.storage.repositories import paper as paper_repo
 
@@ -78,6 +84,7 @@ class CycleInputs:
     competitions: Sequence[str]
     provenance: Provenance
     stake: float
+    send: Sender | None = None  # Telegram sender (tests); default: from the settings, None if not configured
 
 
 def _quota_day(now: datetime) -> datetime:
@@ -117,6 +124,22 @@ class _Cycle:
         self.results()
         if not self.dry_run:
             self.settle()
+            self.notify_and_deliver()
+
+    def notify_and_deliver(self) -> None:
+        """Queue the failures of this cycle (at most once an hour each), then send what is queued."""
+        x, now, out = self.x, self.now, self.out
+        stamp = now.astimezone(UTC).isoformat()
+        try:
+            for line in [ln[2:] for ln in out.lines if ln.startswith("! ")]:
+                key = hashlib.sha256(line.encode()).hexdigest()[:16]
+                outbox.notify_at_most_hourly(x.engine, f"fail:{key}:", "FAILURE", messages.failure(line), stamp)
+            send = x.send if x.send is not None else outbox.sender(x.settings)
+            d = outbox.deliver(x.engine, send)
+            if d.sent or d.failed:
+                out.note(f"telegram: {d.sent} sent, {d.failed} failed")
+        except Exception:  # notifications must never stop the recorder
+            log.exception("telegram notifications failed")
 
     def session(self, cal: SessionCalendar, sid: SessionId) -> None:
         x, now, out = self.x, self.now, self.out
@@ -162,6 +185,11 @@ class _Cycle:
                                competitions=self.codes, provenance=x.provenance, stake=x.stake)
             out.note(f"{sid} freeze {r.status}: new {r.frozen}, listed {r.qualified}, paper bets {r.bets}"
                      + (f", chain {r.chain_from}..{r.chain_to}" if r.chain_from is not None else "") + warn)
+            if r.status == "FROZEN" and r.frozen:
+                text = messages.report_ready(str(sid), r.qualified, fixtures[0].kickoff_utc, cal.tz,
+                                             x.settings.app_url)
+                outbox.notify(x.engine, f"report:{sid}:{x.params.params_version}",
+                              "REPORT_READY" if r.qualified else "NO_MATCHES", text)
         except Exception as exc:
             out.fail(f"{sid} freeze failed: {type(exc).__name__}: {exc}")
 
@@ -182,6 +210,13 @@ class _Cycle:
         if run.fetch_error:
             out.fail(f"re-check fetch failed (verified with the data known): {run.fetch_error}")
         for r in run.results:
+            if r.status == "WITHDRAWN":
+                with x.engine.connect() as conn:
+                    f = fe_repo.match(conn, UUID(r.match_id))
+                if f is not None:
+                    outbox.notify(x.engine, f"withdrawn:{r.prediction_id}", "WITHDRAWN",
+                                  messages.withdrawn(f["home_team"], f["away_team"], r.kickoff_utc, r.failed_checks,
+                                                     SessionCalendar(x.params).tz))
             failed = f" ({', '.join(r.failed_checks)})" if r.status == "WITHDRAWN" and r.failed_checks else ""
             out.note(f"{r.session_id} re-check {r.match_id[:8]} kick-off {r.kickoff_utc:%H:%M}Z: {r.status}{failed}")
         self.rechecked.extend(run.results)

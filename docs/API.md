@@ -65,6 +65,8 @@
 | GET | `/bets`, `/bets/{id}` | placed bets with settlement | 🆕 3 |
 | POST | `/bets/{id}/cancel` | cancel a bet recorded by mistake (append-only) | 🆕 3 |
 | GET | `/performance` | real-bet performance | 🆕 3 |
+| GET | `/notifications` | the Telegram outbox and whether Telegram is configured | 🆕 later |
+| POST | `/notifications/test` | send a test Telegram message now | 🆕 later |
 | | `/jobs/…`, `/reviews…`, `/teams`, `/data-health/…` | data loading, team review, data health | ✅ |
 
 ## 4. Design decisions
@@ -297,7 +299,7 @@ gives the TypeScript types of every request and response; `src/lib/api.ts` wraps
 
 ### 10.5 Not built yet (later Phase 5 tasks)
 
-Telegram notifications (being built). The `betting` migration, like the paper migration, still needs the owner's approval for Supabase.
+Nothing from the original list: the re-check, Telegram and CLV are built (§11). The `betting` migration, like the paper migration, still needs the owner's approval for Supabase.
 
 ## 11. Additions after step 4
 
@@ -307,3 +309,7 @@ Telegram notifications (being built). The `betting` migration, like the paper mi
 - **Closing odds and CLV (2026-11-17):** each bet's `clv` (`fair_closing_p`, `fair_closing_odds`, `books`,
   `book_closing_odds`, `clv_fair`, `clv_book`) once its match has kicked off; `clv_n`, `clv_mean`, `clv_beat` in
   every performance group; the paper report's bets carry the same three figures.
+- **Telegram (2026-11-17):** `GET /notifications` (outbox, latest first: kind, message, status `PENDING` /
+  `SENT` / `FAILED` / `EXPIRED`), `POST /notifications/test` (409 when not configured), `telegram` in
+  `GET /paper/status`; `GET /me` queues one login alert per Supabase login session (the frontend calls it right
+  after login).

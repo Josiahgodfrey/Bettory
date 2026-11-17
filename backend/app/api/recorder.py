@@ -25,11 +25,13 @@ from app.domain.params import Params
 from app.domain.registry import Registry
 from app.domain.sessions import SessionCalendar
 from app.ingestion.health_view import snapshot
+from app.notifications import outbox
 from app.paper.capture import RECORDER_JOB_PREFIX
 from app.paper.config import PaperConfig, load_paper_config
 from app.paper.cycle import RESULTS_JOB, CycleInputs, CycleResult, run_cycle
 from app.paper.freeze import Provenance
 from app.storage.raw_store import RawStore, store_from_settings
+from app.storage.repositories import notifications as notif_repo
 from app.storage.repositories import ops as ops_repo
 from app.storage.repositories import paper as paper_repo
 
@@ -82,6 +84,7 @@ def recorder_status(x: CycleInputs, now: datetime) -> dict[str, Any]:
     day = now.astimezone(UTC).replace(hour=0, minute=0, second=0, microsecond=0)
     with x.engine.connect() as conn:
         marks = paper_repo.recorder_marks(conn)
+        counts = notif_repo.counts(conn)
     due = run_cycle(x, now=now, dry_run=True)
     m = MANUAL
     return {
@@ -103,6 +106,8 @@ def recorder_status(x: CycleInputs, now: datetime) -> dict[str, Any]:
             "error": m.error, "lines": m.result.lines if m.result else [],
             "errors": m.result.errors if m.result else 0},
         "schedule_every_minutes": x.cfg.schedule.every_minutes,
+        "telegram": {"configured": outbox.configured(x.settings), "pending": counts.get("PENDING", 0),
+                     "failed": counts.get("FAILED", 0)},
     }
 
 
