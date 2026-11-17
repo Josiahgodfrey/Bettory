@@ -40,6 +40,13 @@ create table paper.predictions (
   p_league_draw     double precision check (p_league_draw between 0 and 1),
   min_odds_under05  double precision check (min_odds_under05 > 1),
   min_odds_draw     double precision check (min_odds_draw > 1),
+  fair_under05      double precision check (fair_under05 > 1),
+  fair_draw         double precision check (fair_draw > 1),
+  model_spread_pts  double precision check (model_spread_pts >= 0),  -- gap between the models (agreement)
+  complete_sample   integer check (complete_sample >= 0),           -- smallest exact-15' sample of the windows
+  -- every check of the verdict with what was measured and the rule (layer, code, passed, value, threshold,
+  -- detail, blocking): the reasons shown to the owner, sealed with the prediction
+  checks            jsonb not null default '[]'::jsonb check (jsonb_typeof(checks) = 'array'),
   -- the prices known at as_of (latest snapshot per bookmaker, market, line, selection captured before as_of):
   -- the offered 15' odds next to the main-market odds Model C used, sealed with the prediction
   odds_seen         jsonb not null default '[]'::jsonb check (jsonb_typeof(odds_seen) = 'array'),
@@ -82,6 +89,8 @@ language sql immutable as $$
     'p_market', p.p_market, 'p_market_draw', p.p_market_draw,
     'p_league_00', p.p_league_00, 'p_league_draw', p.p_league_draw,
     'min_odds_under05', p.min_odds_under05, 'min_odds_draw', p.min_odds_draw,
+    'fair_under05', p.fair_under05, 'fair_draw', p.fair_draw, 'model_spread_pts', p.model_spread_pts,
+    'complete_sample', p.complete_sample, 'checks', p.checks,
     'odds_seen', p.odds_seen, 'best_under05_odds', p.best_under05_odds, 'best_under05_book', p.best_under05_book,
     'best_draw_odds', p.best_draw_odds, 'best_draw_book', p.best_draw_book,
     'bet_market', p.bet_market, 'bet_odds', p.bet_odds, 'bet_book', p.bet_book, 'bet_ev', p.bet_ev,

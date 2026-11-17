@@ -29,7 +29,7 @@ class SessionFixture:
 # Everything a live session would have had on its list: the cap ranks this whole set, also fixtures that have
 # started or finished by the time a late freeze runs (they are evaluated, never frozen). Postponed and cancelled
 # fixtures have no kick-off in the session.
-_IN_SESSION = (FixtureStatus.SCHEDULED, FixtureStatus.LIVE, FixtureStatus.FINISHED, FixtureStatus.ABANDONED)
+IN_SESSION = (FixtureStatus.SCHEDULED, FixtureStatus.LIVE, FixtureStatus.FINISHED, FixtureStatus.ABANDONED)
 
 
 def session_fixtures(conn: Connection, start_utc: datetime, end_utc: datetime,
@@ -46,7 +46,7 @@ def session_fixtures(conn: Connection, start_utc: datetime, end_utc: datetime,
           and c.code = any(:codes) and m.status::text = any(:statuses)
         order by m.kickoff_utc, m.id
     """), {"start": start_utc, "end": end_utc, "codes": list(competition_codes),
-           "statuses": [x.value for x in _IN_SESSION]}).all()
+           "statuses": [x.value for x in IN_SESSION]}).all()
     return [SessionFixture(r[0], r[1], r[2], FixtureStatus(r[3])) for r in rows]
 
 
@@ -76,6 +76,11 @@ class NewPrediction:
     p_league_draw: float | None
     min_odds_under05: float | None
     min_odds_draw: float | None
+    fair_under05: float | None = None
+    fair_draw: float | None = None
+    model_spread_pts: float | None = None
+    complete_sample: int | None = None
+    checks: tuple[dict[str, Any], ...] = ()
     odds_seen: tuple[dict[str, Any], ...] = ()
     best_under05_odds: float | None = None
     best_under05_book: str | None = None
@@ -97,8 +102,9 @@ def insert_prediction(conn: Connection, p: NewPrediction) -> int | None:
     values: dict[str, Any] = asdict(p)
     values["failed_checks"] = list(p.failed_checks)
     values["odds_seen"] = json.dumps(list(p.odds_seen))
+    values["checks"] = json.dumps(list(p.checks))
     cols = ", ".join(_COLUMNS)
-    binds = ", ".join("cast(:odds_seen as jsonb)" if c == "odds_seen" else f":{c}" for c in _COLUMNS)
+    binds = ", ".join(f"cast(:{c} as jsonb)" if c in ("odds_seen", "checks") else f":{c}" for c in _COLUMNS)
     return conn.execute(text(f"""
         insert into paper.predictions ({cols}) values ({binds})
         on conflict (match_id, session_id, params_version) do nothing
@@ -123,6 +129,21 @@ class FrozenPrediction:
     p_draw: float | None
     min_odds_under05: float | None
     min_odds_draw: float | None
+    fair_under05: float | None
+    fair_draw: float | None
+    model_spread_pts: float | None
+    complete_sample: int | None
+    checks: list[dict[str, Any]]
+    failed_checks: list[str]
+    formula_version: str
+    code_version: str | None
+    p_model_a: float | None
+    p_model_b2: float | None
+    p_market: float | None
+    p_market_draw: float | None
+    p_league_00: float | None
+    p_league_draw: float | None
+    error: str | None
     best_under05_odds: float | None
     best_under05_book: str | None
     best_draw_odds: float | None

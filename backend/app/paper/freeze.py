@@ -17,10 +17,12 @@ from __future__ import annotations
 from collections.abc import Sequence
 from dataclasses import dataclass
 from datetime import datetime, timedelta
+from typing import Any
 
 from sqlalchemy import Engine, text
 
 from app.analysis.session import SessionVerdict, evaluate_session, league_baseline
+from app.decision.layers import Verdict
 from app.domain.enums import Decision, FixtureStatus, Grade
 from app.domain.params import Params
 from app.domain.registry import Registry
@@ -59,6 +61,13 @@ class FreezeResult:
     bets: int = 0  # new rows with a paper bet
 
 
+def checks_json(v: Verdict) -> tuple[dict[str, Any], ...]:
+    """Every check of a verdict as stored with the prediction (the reasons shown to the owner)."""
+    return tuple({"layer": int(c.layer), "layer_name": c.layer.name, "code": c.code, "passed": c.passed,
+                  "value": c.value, "threshold": c.threshold, "detail": c.detail, "blocking": c.blocking}
+                 for c in v.checks)
+
+
 def due_sessions(cal: SessionCalendar, now: datetime) -> list[SessionId]:
     """Sessions that have not ended yet among yesterday .. tomorrow (EAT dates), in time order."""
     today = now.astimezone(cal.tz).date()
@@ -66,8 +75,9 @@ def due_sessions(cal: SessionCalendar, now: datetime) -> list[SessionId]:
             if cal.times(sid).end_utc > now]
 
 
-def _row(sv: SessionVerdict, f: paper_repo.SessionFixture, sid: SessionId, as_of: datetime, params: Params,
-         prov: Provenance, odds: SeenOdds, bet: PaperBet | None) -> paper_repo.NewPrediction:
+def prediction_row(sv: SessionVerdict, f: paper_repo.SessionFixture, sid: SessionId, as_of: datetime,
+                   params: Params, prov: Provenance, odds: SeenOdds, bet: PaperBet | None) -> paper_repo.NewPrediction:
+    """The frozen row of one fixture (also the shape of a session preview, computed now and not stored)."""
     a, v = sv.analysis, sv.verdict
     c = a.model_c if a is not None and a.model_c is not None and a.model_c.available else None
     league_00, league_draw = league_baseline(a, params)
@@ -84,6 +94,8 @@ def _row(sv: SessionVerdict, f: paper_repo.SessionFixture, sid: SessionId, as_of
         p_market=c.p00 if c else None, p_market_draw=c.p_draw if c else None,
         p_league_00=league_00, p_league_draw=league_draw,
         min_odds_under05=v.min_odds_under05, min_odds_draw=v.min_odds_draw,
+        fair_under05=v.fair_under05, fair_draw=v.fair_draw, model_spread_pts=v.model_spread_pts,
+        complete_sample=v.complete_sample, checks=checks_json(v),
         odds_seen=tuple(odds.rows),
         best_under05_odds=odds.best_under05[0] if odds.best_under05 else None,
         best_under05_book=odds.best_under05[1] if odds.best_under05 else None,
@@ -119,8 +131,8 @@ def freeze_session(engine: Engine, params: Params, registry: Registry, sid: Sess
                 continue
             rows = reader.odds(f.match_id, SEALED_MARKETS)
             bet = paper_bet(sv.analysis, sv.decision, rows, params, stake)
-            pos = paper_repo.insert_prediction(conn, _row(sv, f, sid, as_of, params, provenance, seen_odds(rows),
-                                                          bet))
+            row = prediction_row(sv, f, sid, as_of, params, provenance, seen_odds(rows), bet)
+            pos = paper_repo.insert_prediction(conn, row)
             if pos is None:
                 already += 1
             else:
@@ -185,10 +197,16 @@ def replay_session(engine: Engine, params: Params, registry: Registry, session_i
                 again_bet = (bet.market.value, bet.odds, bet.bookmaker) if bet else None
                 if again_bet != ((r.bet_market, r.bet_odds, r.bet_book) if r.bet_market else None):
                     diffs.append(ReplayDifference(str(r.match_id), "bet", r.bet_market, again_bet))
+                if list(checks_json(v)) != r.checks:
+                    diffs.append(ReplayDifference(str(r.match_id), "checks", len(r.checks), len(v.checks)))
+                if r.complete_sample != v.complete_sample:
+                    diffs.append(ReplayDifference(str(r.match_id), "complete_sample", r.complete_sample,
+                                                  v.complete_sample))
                 pre_cap = r.decision if r.decision != Decision.QUALIFIED_OVER_CAP.value else Decision.QUALIFIED.value
                 for name, old, new in (("p_under05", r.p_under05, v.p_under05), ("p_draw", r.p_draw, v.p_draw),
                                        ("min_odds_under05", r.min_odds_under05, v.min_odds_under05),
                                        ("min_odds_draw", r.min_odds_draw, v.min_odds_draw),
+                                       ("model_spread_pts", r.model_spread_pts, v.model_spread_pts),
                                        ("decision", pre_cap, v.decision.value)):
                     if not _same(old, new):
                         diffs.append(ReplayDifference(str(r.match_id), name, old, new))

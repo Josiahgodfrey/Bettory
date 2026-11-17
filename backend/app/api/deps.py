@@ -13,6 +13,7 @@ from __future__ import annotations
 
 from collections.abc import Callable
 from dataclasses import dataclass
+from datetime import UTC, datetime
 from functools import lru_cache
 from typing import Annotated, Any
 
@@ -21,7 +22,9 @@ from fastapi import Depends, HTTPException, Request, status
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from sqlalchemy import Engine
 
-from app.core.settings import Settings, get_settings
+from app.backtest.tuning_plan import current_plan_path, load_plan
+from app.core.settings import BACKEND_DIR, Settings, get_settings
+from app.domain.params import Params, load_params
 from app.domain.registry import Registry, load_registry
 from app.storage.db import get_engine
 from app.storage.raw_store import RawStore, store_from_settings
@@ -56,6 +59,22 @@ def registry_dep() -> Registry:
 def raw_store_factory_dep(settings: Annotated[Settings, Depends(settings_dep)]) -> Callable[[], RawStore]:
     """A factory, not a store: the Supabase store makes a network call, so it is created inside the job."""
     return lambda: store_from_settings(settings)
+
+
+def clock_dep() -> datetime:
+    """The current time (UTC). Overridden in tests to put the system at any moment."""
+    return datetime.now(UTC)
+
+
+def params_dep(settings: Annotated[Settings, Depends(settings_dep)]) -> Params:
+    """The live params file (PARAMS_FILE)."""
+    return load_params(BACKEND_DIR / settings.params_file)
+
+
+def report_competitions_dep() -> tuple[str, ...]:
+    """The competitions of the session reports: those of the tuning plan in force (the paper-betting freeze uses
+    the same list)."""
+    return tuple(load_plan(current_plan_path()).competitions)
 
 
 # --- authentication -----------------------------------------------------------------------------
@@ -124,3 +143,6 @@ EngineDep = Annotated[Engine, Depends(engine_dep)]
 RegistryDep = Annotated[Registry, Depends(registry_dep)]
 SettingsDep = Annotated[Settings, Depends(settings_dep)]
 RawStoreFactoryDep = Annotated[Callable[[], RawStore], Depends(raw_store_factory_dep)]
+ClockDep = Annotated[datetime, Depends(clock_dep)]
+ParamsDep = Annotated[Params, Depends(params_dep)]
+ReportCompetitionsDep = Annotated[tuple[str, ...], Depends(report_competitions_dep)]
