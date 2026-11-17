@@ -29,7 +29,7 @@ def test_send_ok_and_errors_without_the_token() -> None:
 
     assert client(httpx.MockTransport(ok)).send("hello").ok
     body = json.loads(seen[0].content)
-    assert body == {"chat_id": "42", "text": "hello", "disable_web_page_preview": True}
+    assert body == {"chat_id": "42", "text": "hello", "link_preview_options": {"is_disabled": True}}
     assert seen[0].url.scheme == "https" and seen[0].url.host == "api.telegram.org"
 
     def unauthorized(request: httpx.Request) -> httpx.Response:
@@ -37,6 +37,21 @@ def test_send_ok_and_errors_without_the_token() -> None:
 
     r = client(httpx.MockTransport(unauthorized)).send("x")
     assert not r.ok and r.error is not None and "401" in r.error and TOKEN not in r.error
+
+    def flood(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(429, json={"ok": False, "error_code": 429, "description": "Too Many Requests: retry",
+                                         "parameters": {"retry_after": 7}})
+
+    r = client(httpx.MockTransport(flood)).send("x")
+    assert not r.ok and r.retry_after == 7 and r.error is not None and r.error.startswith("HTTP 429")
+
+    long_text: list[str] = []
+
+    def capture(request: httpx.Request) -> httpx.Response:
+        long_text.append(json.loads(request.content)["text"])
+        return httpx.Response(200, json={"ok": True})
+
+    assert client(httpx.MockTransport(capture)).send("y" * 5000).ok and len(long_text[0]) == 4096
 
     def down(request: httpx.Request) -> httpx.Response:
         raise httpx.ConnectError(f"cannot reach {request.url}")
