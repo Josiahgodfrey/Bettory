@@ -15,6 +15,9 @@
 | 4 | `paper-report`: calibration, ROI with session-bootstrap interval, sequential e-value vs the bookmaker's de-vigged 15' price | ✅ §7 |
 | 5 | Jobs in the worker / Task Scheduler: one cycle (capture → freeze → results → settle) every 5 minutes | ✅ §8 |
 
+> **Status 2026-11-17: built, NOT live — unfinished activity.** The code for steps 1–5 is done and tested, but
+> the recorder has not been switched on and no real prediction has been frozen yet. What is left: §9.
+
 **Daily API-Football quota (owner decision 2026-11-17):** backfill 70 / recorder 25 / reserve 5
 (`config/backfill.yaml` `daily_max_requests: 70`). The backfill finishes about a week later (≈ 5 weeks).
 
@@ -320,3 +323,32 @@ Exit code 4 when a step failed (the line starts with `!`; the failure is also a 
 | [app/jobs/scheduler.py](../backend/app/jobs/scheduler.py) | `IntervalJob`: the worker runs the cycle (built in the CLI: `app.jobs` must not import `app.paper`) |
 | [app/storage/repositories/paper.py](../backend/app/storage/repositories/paper.py) | `frozen_match_ids`, `results_wanted` |
 | [tests/integration/test_paper_cycle.py](../backend/tests/integration/test_paper_cycle.py) | capture once inside the window, freeze once after as_of, freeze without capture reported, results fetched once, dry run does nothing |
+
+## 9. Unfinished — what is left before paper betting is live (2026-11-17)
+
+Branch `paper-betting` (commits 4e24d18 .. 39a97ae), **not pushed**, no PR yet. Everything below is open.
+
+### 9.1 Owner actions
+
+| # | Action | Why it blocks |
+|---|---|---|
+| 1 | Finish the API-Football **Pro** upgrade, then set `API_FOOTBALL_PLAN=pro`, `API_FOOTBALL_REQUESTS_PER_MINUTE`, `API_FOOTBALL_MAX_REQUESTS_PER_RUN=1000` in `BETTORY/.env`; check `health --quota` (§4) | the key still reports **Free**: this season's played matches (goal minutes) cannot be loaded, so the session's fixtures are INSUFFICIENT_DATA and nothing qualifies |
+| 2 | Run `backfill-daily --run` once after the upgrade | loads this season's goal minutes and the 2022-23 .. 2024-25 backlog |
+| 3 | Confirm **alpha = 0.05** and **min_bets = 100** (`config/backtest.yaml` `paper_betting`, marked PROPOSED) | the profit rule must be fixed before the first real bet is recorded |
+| 4 | Approve the Supabase migration `20261117120000_paper_predictions.sql` | applied to the local Docker database only |
+| 5 | Switch the recorder on: `python -m app.cli worker`, **or** the Task Scheduler task of §8.2 (not both) | nothing runs by itself until then; Docker (`bettory-pg`) must be running |
+| 6 | Say when to push `paper-betting` and open the PR | |
+
+### 9.2 Still to verify (first real weekend: Sat 21 Nov, ENG1)
+
+- **Step 0:** the free plan returns the 15' markets (`Goal in 1-15 minutes`, `1x2 - 15 minutes`) for upcoming
+  fixtures — the first capture shows it (`paper-list <session>` lists the sealed odds). With the recorder on by
+  Friday evening this happens without further action.
+- **Results on the free plan:** whether `fixtures?id=` answers for a current-season fixture (§8.3). If not,
+  settlement waits for the nightly backfill on Pro.
+- After the first freeze: `paper-verify --replay <session>` → chain INTACT and replay IDENTICAL.
+
+### 9.3 Afterwards (not started)
+
+- The real `tune --real` once the backfill has finished (BACKTEST-REPORT.md §9).
+- Read `paper-report` regularly; Gate B profit needs months of bets (§7.2).
