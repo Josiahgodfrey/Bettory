@@ -12,6 +12,8 @@ import psycopg
 import pytest
 from sqlalchemy import Engine, text
 
+from app.backtest.config import load_backtest_config
+from app.backtest.paper_report import summarise_paper
 from app.domain.enums import SOURCE_IDS, SourceCode
 from app.domain.sessions import SessionCalendar
 from app.paper.freeze import freeze_session, replay_session
@@ -107,3 +109,8 @@ def test_paper_bet_is_sealed_and_settled(league: Any) -> None:  # noqa: F811
         c.execute(text("insert into paper.settlements (prediction_id, prediction_hash, match_status, data_status) "
                        "values (:p, :h, 'FINISHED', 'COMPLETE')"), {"p": lost["prediction_id"],
                                                                      "h": "0" * 64})
+
+    with engine.connect() as c:                                               # the report reads the same tables
+        rep = summarise_paper(paper_repo.report_rows(c), paper_repo.verify_chain(c), load_backtest_config(), PARAMS)
+    assert (rep.frozen, rep.settled, rep.pending, rep.corrections) == (2, 2, 0, 1)
+    assert (rep.bets.bets, rep.bets.wins, rep.bets.profit, rep.e_profit.n) == (1, 0, -1.0, 1)

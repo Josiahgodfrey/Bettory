@@ -235,3 +235,52 @@ def insert_settlement(conn: Connection, s: NewSettlement) -> UUID:
     return UUID(str(conn.execute(text(
         f"insert into paper.settlements ({', '.join(cols)}) values ({', '.join(':' + c for c in cols)}) "
         "returning id"), asdict(s)).scalar_one()))
+
+
+# --- report ----------------------------------------------------------------------------------------------------
+
+
+@dataclass(frozen=True)
+class ReportRow:
+    """One frozen prediction with its latest settlement (none: not settled yet)."""
+
+    chain_pos: int
+    session_id: str
+    competition_code: str
+    kickoff_utc: datetime
+    params_version: str
+    decision: str
+    grade: str
+    p_under05: float | None
+    p_draw: float | None
+    p_league_00: float | None
+    p_league_draw: float | None
+    odds_seen: list[dict[str, Any]]
+    bet_market: str | None
+    bet_odds: float | None
+    bet_book: str | None
+    bet_ev: float | None
+    bet_stake: float | None
+    settled: bool
+    under05: bool | None
+    draw: bool | None
+    bet_outcome: str | None
+    profit: float | None
+    corrections: int  # settlements superseded for this prediction
+
+
+def report_rows(conn: Connection, params_version: str | None = None) -> list[ReportRow]:
+    rows = conn.execute(text("""
+        select p.chain_pos, p.session_id, p.competition_code, p.kickoff_utc, p.params_version, p.decision, p.grade,
+               p.p_under05, p.p_draw, p.p_league_00, p.p_league_draw, p.odds_seen,
+               p.bet_market, p.bet_odds, p.bet_book, p.bet_ev, p.bet_stake,
+               s.id is not null as settled, s.under05, s.draw, s.bet_outcome, s.profit,
+               (select count(*) from paper.settlements x where x.prediction_id = p.id) - (s.id is not null)::int
+                 as corrections
+        from paper.predictions p
+        left join lateral (select * from paper.settlements x where x.prediction_id = p.id
+                           order by x.settled_at desc limit 1) s on true
+        where cast(:pv as text) is null or p.params_version = :pv
+        order by p.kickoff_utc, p.chain_pos
+    """), {"pv": params_version}).mappings().all()
+    return [ReportRow(**r) for r in rows]

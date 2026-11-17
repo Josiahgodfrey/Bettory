@@ -12,7 +12,7 @@
 | 1 | **Frozen predictions**: append-only, hash-chained, stamped by the database clock | ✅ this document §2 |
 | 2 | Odds snapshot at the same moment: offered 15' odds **and** main-market odds (Model C) | ✅ §5 |
 | 3 | Paper bets (qualified, offered odds ≥ minimum odds, 1 unit) and settlement WIN / LOSE / VOID | ✅ §6 |
-| 4 | `paper-report`: calibration, ROI with session-bootstrap interval, sequential e-value vs the bookmaker's de-vigged 15' price | ⬜ |
+| 4 | `paper-report`: calibration, ROI with session-bootstrap interval, sequential e-value vs the bookmaker's de-vigged 15' price | ✅ §7 |
 | 5 | Jobs in the worker / Task Scheduler | ⬜ |
 
 **Daily API-Football quota (owner decision 2026-11-17):** backfill 70 / recorder 25 / reserve 5
@@ -200,3 +200,57 @@ contradicts itself is reported, not settled (exit code 4).
 | [app/paper/settle.py](../backend/app/paper/settle.py) | `settle_due` |
 | [app/storage/repositories/paper.py](../backend/app/storage/repositories/paper.py) | `settlement_candidates`, `insert_settlement` |
 | [tests/integration/test_paper_bets.py](../backend/tests/integration/test_paper_bets.py) | the bet chosen by the live rule, pending, WIN, no-bet outcomes, a corrected score, the database guards |
+
+## 7. Step 4 — the paper betting report
+
+`python -m app.cli paper-report [--params 1.5] [--json] [--out folder]` reads only the sealed predictions and their
+latest settlements, and judges them with the **same** rules as the backtest (`calibration_criterion` and
+`baseline_criterion` in [app/backtest/report.py](../backend/app/backtest/report.py), `config/backtest.yaml`).
+Exit code 4 if the hash chain is broken (the report then starts with a FAIL "Record integrity").
+
+| Section | Content |
+|---|---|
+| Record | frozen / settled / pending, sessions, corrected results, the chain status and its head |
+| Gate B (forward test) | qualified selections (settled listed predictions, ≥ 300), calibration, beats the competition-only price, profit — accruing criteria show NOT_EVALUABLE, never FAIL, until they have enough data |
+| Forecasts | Under 0.5 and Draw on every priced, settled prediction: n, mean P, actual, Brier, log loss, calibration buckets; the paired Brier difference vs competition-only with a session-bootstrap interval |
+| Paper bets | settled / won / void / pending, staked, profit, ROI with its interval, hit rate vs break-even |
+| Sequential evidence | the two e-values below, now and at their peak, against the bar 1/alpha |
+
+### 7.1 The e-values ([app/settlement/evalues.py](../backend/app/settlement/evalues.py))
+
+The wealth of a bet against a null hypothesis H0 that starts at 1, staking a fraction λ of the wealth each time on
+a ratio whose expectation is at most 1 under H0, averaged over a fixed grid of λ (0.01 … 0.5). Under H0 it reaches
+1/alpha **at most alpha of the time, however often the report is read** (Ville's inequality). That is what allows
+a daily look and stopping as soon as the bar is reached — "check the ROI every week and stop when it looks good"
+does not have this property.
+
+| Test | Ratio per observation | H0 |
+|---|---|---|
+| **Profit** (Gate B) | the sealed bet's odds if it won, 0 if it lost | no edge: P(win) ≤ 1 / odds for every bet |
+| Forecast | BETTORY's probability of what happened ÷ the bookmakers' de-vigged probability (mean over the bookmakers with a complete sealed `Goal in 1-15 minutes` market) | the market's 15' price is right |
+
+**Gate B profit** = PASS when the profit e-value has reached 1/alpha with at least `min_bets` settled bets
+(`config/backtest.yaml` `paper_betting`: alpha **0.05 — proposed, to be confirmed by the owner**, min_bets 100).
+
+### 7.2 How many bets it takes (simulation, odds 1.40, 400 runs each)
+
+| True edge (EV) | Reached by 500 / 1,000 / 2,000 / 3,000 bets | Median bets |
+|---|---|---|
+| 0 % (no edge) | 3 % / 3 % / 3 % / 4 % | never (as it should: ≤ 5 %) |
+| +3 % | 9 % / 18 % / 36 % / 51 % | ≈ 2,900 |
+| +5 % | 22 % / 43 % / 80 % / 95 % | ≈ 1,150 |
+| +8 % | 62 % / 91 % / 100 % / 100 % | ≈ 390 |
+| +12 % | 96 % / 100 % / 100 % / 100 % | ≈ 170 |
+
+A small edge needs a long test: at +5 % about a thousand bets, i.e. many months at a few bets per session. The
+forecast e-value and the paired Brier usually give an earlier signal of whether the model is on track.
+
+### 7.3 Code
+
+| File | Role |
+|---|---|
+| [app/backtest/paper_report.py](../backend/app/backtest/paper_report.py) | `summarise_paper`, `render_paper`, `paper_json`, `market_p_under05` |
+| [app/settlement/evalues.py](../backend/app/settlement/evalues.py) | `e_process`, `profit_ratio`, `forecast_ratio` |
+| [app/storage/repositories/paper.py](../backend/app/storage/repositories/paper.py) | `report_rows` (each prediction with its latest settlement) |
+| [tests/unit/test_evalues.py](../backend/tests/unit/test_evalues.py) | arithmetic, validity under no edge (simulated, looking after every bet), power with an edge |
+| [tests/unit/test_paper_report.py](../backend/tests/unit/test_paper_report.py) | the profit verdict, min_bets, the market probability, integrity, the outputs |

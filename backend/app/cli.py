@@ -34,6 +34,7 @@ from typing import Any
 from uuid import UUID
 
 from app.backtest.config import load_backtest_config
+from app.backtest.paper_report import paper_json, render_paper, summarise_paper
 from app.backtest.report import render_markdown, rows_csv, summarise, summary_json
 from app.backtest.runner import SessionRun, run_backtest
 from app.backtest.tuning import TuningNotReady, period_of, run_tuning
@@ -134,6 +135,10 @@ def main(argv: list[str] | None = None) -> int:
                     "every session that has not ended, yesterday .. tomorrow)")
     pf.add_argument("--params", action="append", help="params version (repeatable; default: the live params)")
     sub.add_parser("paper-settle", help="settle frozen predictions whose 15' result is known (append-only)")
+    prp = sub.add_parser("paper-report", help="the forward test: forecasts, paper bets, e-values, Gate B")
+    prp.add_argument("--params", default=None, help="one params version (default: all frozen versions)")
+    prp.add_argument("--json", action="store_true")
+    prp.add_argument("--out", type=Path, default=None, help="also write paper_report.md / .json to this folder")
     pv = sub.add_parser("paper-verify", help="check the hash chain of frozen predictions; --replay recomputes")
     pv.add_argument("--replay", action="append", metavar="SESSION",
                     help="recompute a frozen session and compare (repeatable)")
@@ -426,6 +431,21 @@ def _paper(args: argparse.Namespace, engine: Any, registry: Any, live: Params, s
                         line += f"  chain {r.chain_from}..{r.chain_to}"
                 print(line)
         return 0
+    if args.cmd == "paper-report":
+        with engine.connect() as conn:
+            report_rows = paper_repo.report_rows(conn, args.params)
+            chain = paper_repo.verify_chain(conn)
+        cfg_bt = load_backtest_config()
+        summary = summarise_paper(report_rows, chain, cfg_bt, live, args.params)
+        md, js = render_paper(summary, cfg_bt), paper_json(summary)
+        if args.out is not None:
+            args.out.mkdir(parents=True, exist_ok=True)
+            (args.out / "paper_report.md").write_text(md, encoding="utf-8")
+            (args.out / "paper_report.json").write_text(json.dumps(js, indent=2, default=str), encoding="utf-8")
+        if hasattr(sys.stdout, "reconfigure"):  # the report uses UTF-8 punctuation; a Windows console may not
+            sys.stdout.reconfigure(encoding="utf-8", errors="replace")
+        print(json.dumps(js, indent=2, default=str) if args.json else md)
+        return 0 if chain.intact else 4
     if args.cmd == "paper-settle":
         sr = settle_due(engine, datetime.now(UTC))
         print(f"settled {sr.settled}  corrected {sr.corrected}  pending (15' result not known yet) {sr.pending}  "
