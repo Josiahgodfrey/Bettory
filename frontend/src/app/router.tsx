@@ -4,6 +4,7 @@ import { AppLayout } from '@/app/app-layout'
 import { ComingSoon, PageHeader } from '@/components/page'
 import { Button } from '@/components/ui/button'
 import { LoginPage } from '@/features/auth/login-page'
+import { SessionPage, SessionsIndex } from '@/features/sessions/session-page'
 import { TodayPage } from '@/features/today/today-page'
 
 function NotFound() {
@@ -23,8 +24,8 @@ export const router = createBrowserRouter([
     element: <AppLayout />,
     children: [
       { index: true, element: <TodayPage /> },
-      { path: 'sessions', element: <ComingSoon title="Bets section" step={2} endpoints={['GET /sessions', 'GET /sessions/{id}']} /> },
-      { path: 'sessions/:sessionId', element: <ComingSoon title="Bets section" step={2} endpoints={['GET /sessions/{id}']} /> },
+      { path: 'sessions', element: <SessionsIndex /> },
+      { path: 'sessions/:sessionId', element: <SessionPage /> },
       {
         path: 'matches/:matchId',
         element: <ComingSoon title="Match analysis" step={3} endpoints={['GET /matches/{id}', 'GET /matches/{id}/analysis', 'POST /matches/{id}/quotes']} />,

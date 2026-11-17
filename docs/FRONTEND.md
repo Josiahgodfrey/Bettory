@@ -58,7 +58,7 @@ Until step 3 is done, the API refuses every real login (503 "authentication is n
 | Step | Content | Status |
 |---|---|---|
 | 1 | Project, preset, typed API client, login (password + code, QR enrolment), layout and navigation, theme | ✅ 2026-11-17 |
-| 2 | Today (dashboard) and Bets section (sessions, report, all fixtures) | ⬜ |
+| 2 | Today (dashboard) and Bets section (sessions, report, all fixtures) | ✅ 2026-11-18 |
 | 3 | Match analysis, odds check, record a bet, My bets (cancel) | ⬜ |
 | 4 | Performance, Paper betting (report, predictions, chain, replay) | ⬜ |
 | 5 | Recorder, Calendar, Data health, Notifications, Settings | ⬜ |
@@ -70,3 +70,19 @@ Until step 3 is done, the API refuses every real login (503 "authentication is n
 - Dev API on the local database with the bypass: `GET /me` → connected.
 - Real Supabase login page: a protected address redirects to `/login`; wrong credentials are refused by Supabase
   and shown.
+
+### Step 2 checks (2026-11-18)
+
+- **Today** (`GET /dashboard`, refreshed every minute): alerts first (blocking in red), the next session with its
+  cut-off, report and first kick-off times counting down, counts (fixtures, listed, withdrawn, paper bets), the
+  sessions from yesterday to tomorrow, the paper record (chain, frozen predictions, last freeze, unsettled).
+- **Bets section** (`/sessions/{id}`): session picker (sessions with fixtures, a week back to two weeks ahead, arrows
+  for previous / next), the state banner (preview with "Recompute", published and sealed, awaiting freeze, missed),
+  decision counts, the betting rule, one card per listed match: **minimum odds** for both markets side by side (also
+  on a phone), P, fair odds, best price seen at the cut-off, grade, lineup status, re-check minimum when it changed,
+  n, model agreement, paper bet. A withdrawn match shows a red "never bet" banner and struck-through odds.
+- **All fixtures** tab (`?tab=all`): every fixture with its decision and the first reasons in plain English
+  (`src/lib/checks.ts`), linking to the match analysis.
+- Checked on the local database (real fixtures, all "not enough data" before the Pro backfill) and with a mocked
+  published report for the listed cards; navigation driven in a phone-sized browser; no console errors; unit tests
+  (`npm test`) for formatting, EAT times and check names.
