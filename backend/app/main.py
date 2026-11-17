@@ -6,7 +6,7 @@ Run locally:  fastapi dev app/main.py
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
-from app.api.routers import data_health, health, jobs, matches, paper, reviews, sessions, system
+from app.api.routers import bets, data_health, health, jobs, matches, paper, reviews, sessions, system
 from app.core.settings import get_settings
 
 
@@ -38,6 +38,7 @@ def create_app() -> FastAPI:
     application.include_router(sessions.router)
     application.include_router(matches.router)
     application.include_router(paper.router)
+    application.include_router(bets.router)
     return application
 
 

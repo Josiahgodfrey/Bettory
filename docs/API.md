@@ -86,16 +86,16 @@
 |---|---|---|
 | 1 | Read endpoints: me, settings, bookmakers, sessions, session report, session fixtures, calendar, match, analysis, odds | ✅ §7 |
 | 2 | Paper betting and recorder endpoints, dashboard | ✅ §8 |
-| 3 | Odds check, placed bets (new table, settlement), performance — needs the owner decisions in §6 | ⬜ |
+| 3 | Odds check, placed bets (new table, settlement), performance | ✅ §9 |
 | 4 | OpenAPI schema export and generated TypeScript types for the frontend | ⬜ |
 
-## 6. Owner decisions needed before step 3
+## 6. Owner decisions (2026-11-17)
 
-| # | Question | Recommendation |
+| # | Question | Decision |
 |---|---|---|
-| D1 | A placed bet that breaks a rule (match not listed, odds below the minimum, both markets on one match): refuse it, or record it with a flag? | **Record it with a flag** (`rule_breaches`): the money is already staked, so it must count; performance shows rule-following and rule-breaking bets separately |
-| D2 | Can a placed bet be edited? | **No** — append-only like every other record; a mistake is cancelled (`POST /bets/{id}/cancel`, with a reason) and recorded again |
-| D3 | Stake currency | one currency for all bets, set in settings (e.g. KES) |
+| D1 | A placed bet that breaks a rule (match not listed, odds below the minimum, both markets on one match, placed after kick-off) | **Recorded and flagged** (`rule_breaches`): the money is staked, so it counts; performance shows rule-following and rule-breaking bets separately |
+| D2 | Can a placed bet be edited? | **No** — append-only; a mistake is cancelled (`POST /bets/{id}/cancel`, with a reason; it stays visible as `CANCELLED`) and recorded again |
+| D3 | Stake currency | **TZS** for all bets (`config/betting.yaml`) |
 
 ## 7. Step 1 — read endpoints (done)
 
@@ -180,3 +180,64 @@ running) — the same cycle as the worker and `paper-cycle`, with the same lock 
 | [app/api/routers/paper.py](../backend/app/api/routers/paper.py) | `/paper/report`, `/predictions`, `/chain`, `/replay/{session}`, `/status`, `/cycle` |
 | [app/core/provenance.py](../backend/app/core/provenance.py) | `code_version()` (moved from the CLI) |
 | [tests/integration/test_api_paper.py](../backend/tests/integration/test_api_paper.py) | chain, predictions, replay, report, recorder status and cycle, dashboard alerts over time |
+
+## 9. Step 3 — odds check, real bets, performance (done)
+
+### 9.1 `POST /matches/{id}/quotes` — the decision card
+
+Body: `{"bookmaker": "…", "under05": {"yes": 3.30, "no": 1.40}, "draw": {"home": …, "draw": …, "away": …},
+"store": true}` — at least one **complete** market (both sides of Under 0.5, all three of the 15' result: one
+side alone cannot reveal the bookmaker's margin). The live quote check runs on the analysis at the session's
+frozen cut-off (or now, as a preview), exactly as the paper bet does.
+
+| Field | Meaning |
+|---|---|
+| `advice` | `BET` (listed and a quoted market passes), `NO_BET` (not listed, no market passes, or started), `WAIT` (report not published yet) |
+| `reason` | one sentence, e.g. "bet UNDER05 at 1.40 or more" |
+| `selected_market`, `selected_odds`, `ev` | the market to bet — the higher EV of the two, **never both** |
+| `checks[]` | every check, including `QUOTE_*_PRICE` (offered vs minimum, the bookmaker's margin) and `QUOTE_*_BOOKMAKER_GAP` (BETTORY's P vs the bookmaker's de-vigged P) |
+| `listed`, `report_decision`, `mode` | whether the match is on the published report; `FROZEN` or `PREVIEW` |
+
+The prices are stored (append-only, source `MANUAL`, snapshot `BET_TIME`); a new bookmaker name is added to
+`core.bookmakers`. Prices entered **before** a session's cut-off are information known at the cut-off and are
+sealed with the freeze like any captured price.
+
+### 9.2 Real bets
+
+`POST /bets` `{"match_id", "market": "UNDER05" | "DRAW", "odds", "stake", "bookmaker", "placed_at"?, "note"?}`
+→ `201` with the bet. Refused (`422`) only when it cannot be a real bet: `placed_at` in the future or without a
+time zone, a stake above `max_stake` (typing-error guard), unknown fields. Everything else is recorded, with:
+
+| Rule breach | When |
+|---|---|
+| `NOT_LISTED` | the match is not QUALIFIED on the session's published (frozen) report |
+| `BELOW_MIN_ODDS` | odds taken below the frozen minimum odds of that market |
+| `BOTH_MARKETS` | another active bet on the same match is on the other market |
+| `AFTER_KICKOFF` | placed at or after kick-off |
+
+Each bet: `state` = `PENDING` / `WIN` / `LOSE` / `VOID` / `CANCELLED`, `profit` (in the currency), `result_15`,
+`follows_rules`, the frozen `min_odds`, `grade`, `prediction_id`. The settlement is **not stored**: it is read from
+the match's stored 15' result on every request, so a corrected score shows at once (same rules as the paper
+settlement: unknown → PENDING, never assumed 0-0; not played → VOID).
+
+Database (`supabase/migrations/20261118120000_placed_bets.sql`, schema `betting`): `placed_bets` and
+`bet_cancellations`, both append-only (UPDATE / DELETE / TRUNCATE refused), recording time from the database
+clock, a `placed_at` later than the database clock refused, RLS on, no access for anon / authenticated.
+Applied to the local database only; **Supabase needs the owner's approval** like the paper migration.
+
+### 9.3 `GET /performance?from=&to=`
+
+`overall` and `by_market`, `by_competition`, `by_grade`, `by_rules` (`FOLLOWED` / `BROKEN`): settled, wins, voids,
+pending, staked, profit, `roi` with `roi_interval` (bootstrap over whole sessions, `reliable` from 30 sessions),
+`hit_rate` vs `break_even`; `profit_curve` (cumulative, by kick-off). Cancelled bets are excluded and counted.
+CLV needs closing odds (not captured yet).
+
+### 9.4 Code
+
+| File | Role |
+|---|---|
+| [app/api/betting.py](../backend/app/api/betting.py) | `quote_card`, `record_bet` (rule breaches), `bet_json` (settlement on read), `performance` |
+| [app/api/routers/bets.py](../backend/app/api/routers/bets.py) | the endpoints |
+| [app/storage/repositories/betting.py](../backend/app/storage/repositories/betting.py) | bets, cancellations, bookmakers, manual odds |
+| [app/domain/betting_config.py](../backend/app/domain/betting_config.py), [config/betting.yaml](../backend/config/betting.yaml) | currency TZS, `max_stake` |
+| [tests/integration/test_api_bets.py](../backend/tests/integration/test_api_bets.py) | decision card, stored prices, every breach, cancellation, append-only, settlement, performance, refused input |

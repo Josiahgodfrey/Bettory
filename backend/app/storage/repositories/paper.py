@@ -339,3 +339,9 @@ def recorder_marks(conn: Connection) -> dict[str, Any]:
                  as kicked_off_unsettled
     """)).mappings().one()
     return dict(row)
+
+
+def prediction_id(conn: Connection, chain_pos: int) -> UUID:
+    found: UUID = conn.execute(text("select id from paper.predictions where chain_pos = :p"),
+                               {"p": chain_pos}).scalar_one()
+    return found

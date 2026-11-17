@@ -215,5 +215,5 @@ def test_h2h(conn: psycopg.Connection) -> None:
 
 def test_rls_enabled_on_every_table(conn: psycopg.Connection) -> None:
     rows = conn.execute("select schemaname, tablename, rowsecurity from pg_tables "
-                        "where schemaname in ('raw', 'core', 'paper')").fetchall()
+                        "where schemaname in ('raw', 'core', 'paper', 'betting')").fetchall()
     assert rows and all(r["rowsecurity"] for r in rows)

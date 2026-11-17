@@ -1,0 +1,4 @@
+# Real bets placed by the owner (docs/API.md step 3). Loaded and validated by app/domain/betting_config.py.
+
+currency: TZS                  # owner decision 2026-11-17: every stake and profit is in this currency
+max_stake: 100000000           # a sanity bound against typing errors (an extra zero), in the currency above
