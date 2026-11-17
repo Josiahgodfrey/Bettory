@@ -83,7 +83,7 @@ def test_database_refuses_changes_late_rows_and_wrong_kickoffs(league: Any) -> N
     sid, _, as_of = upcoming_session(url)
     freeze_session(engine, PARAMS, REGISTRY, sid, now=as_of, provenance=PROV)
     for sql in ("update paper.predictions set p_under05 = 0.5", "delete from paper.predictions",
-                "truncate paper.predictions"):
+                "truncate paper.predictions cascade"):
         with pytest.raises(Exception, match="append-only"), engine.begin() as conn:
             conn.execute(text(sql))
 

@@ -11,7 +11,7 @@
 | 0 | Check that the free API-Football plan returns 15' odds (`Goal in 1-15 minutes`, `1x2 - 15 minutes`) for upcoming ENG1 / GER1 fixtures | ⏳ 2026-11-17 (still Free): the free plan refuses `next` ("Free plans do not have access to the Next parameter"; 2 requests). On Free it works only by date (yesterday .. tomorrow) - the first ENG1 matches after the international break are on Sat 21 Nov, so `paper-capture` on Fri 20 / Sat 21 Nov is step 0. On Pro any time |
 | 1 | **Frozen predictions**: append-only, hash-chained, stamped by the database clock | ✅ this document §2 |
 | 2 | Odds snapshot at the same moment: offered 15' odds **and** main-market odds (Model C) | ✅ §5 |
-| 3 | Paper bets (qualified, offered odds ≥ minimum odds, 1 unit) and settlement WIN / LOSE / VOID | ⬜ |
+| 3 | Paper bets (qualified, offered odds ≥ minimum odds, 1 unit) and settlement WIN / LOSE / VOID | ✅ §6 |
 | 4 | `paper-report`: calibration, ROI with session-bootstrap interval, sequential e-value vs the bookmaker's de-vigged 15' price | ⬜ |
 | 5 | Jobs in the worker / Task Scheduler | ⬜ |
 
@@ -157,3 +157,46 @@ The capture's requests come out of what is left (the quota guard keeps the reser
 | [app/paper/capture.py](../backend/app/paper/capture.py) | `capture_session`: window, run, status CAPTURED / LATE / ENDED |
 | [app/paper/odds.py](../backend/app/paper/odds.py) | `seen_odds`: the sealed list and the best 15' prices |
 | [tests/integration/test_paper_capture.py](../backend/tests/integration/test_paper_capture.py) | only the session's paper fixtures, the budget, sealing only what was known at as_of |
+
+## 6. Step 3 — the paper bet and its settlement
+
+### 6.1 The bet is decided at the freeze and sealed
+
+For a fixture **listed** in the session report (QUALIFIED after the cap), every bookmaker whose sealed odds hold a
+**complete** 15' market (both sides of `Goal in 1-15 minutes`, all three of `1x2 - 15 minutes`: only then can the
+margin be removed) is run through the live decision code, `verify` in quote mode (layer 3):
+
+- offered odds ≥ the minimum odds (EV ≥ 5 %, 8 % without a market check, and ≥ Model C fair odds);
+- |P − the bookmaker's de-vigged P| ≤ 10 pts (`value.max_bookmaker_gap_pts`): a price far from our own estimate is
+  more likely our error than the bookmaker's;
+- of the two markets, the higher EV — never both (a 0-0 wins both: they are one risk).
+
+The best qualifying offer (highest EV; ties: Under 0.5, then the bookmaker name) is the paper bet: `bet_market`,
+`bet_odds`, `bet_book`, `bet_ev`, `bet_stake` (flat 1 unit, `config/backtest.yaml` `estimated_value.stake`) in the
+sealed row. The highest price is not always the bet: the test case has a bookmaker at 1.50 rejected by the gap
+rule and the bet taken at 1.40. `paper-verify --replay` recomputes the bet as well.
+
+### 6.2 Settlement
+
+`python -m app.cli paper-settle` — for every frozen prediction whose match kicked off more than 2 h ago:
+
+| Stored result | What happens |
+|---|---|
+| unchanged since its latest settlement | nothing |
+| 15' result not known yet (INCOMPLETE / PENDING) | **pending** — never assumed 0-0; waits for goal minutes |
+| known (COMPLETE / DERIVED; PARTIAL for Under 0.5) | a `paper.settlements` row: the 15' outcomes `under05`, `draw` (also without a bet: the calibration of step 4 needs every prediction), and the bet's WIN / LOSE / VOID with its profit (`app/settlement/settle.py`) |
+| abandoned / postponed / cancelled | VOID, stake returned |
+| changed after a settlement (a corrected score) | a **new** row that `supersedes` the previous one — nothing is overwritten, the correction stays visible |
+
+`paper.settlements` is append-only like the predictions (database clock, UPDATE / DELETE / TRUNCATE refused), and
+each row carries the `row_hash` of the sealed prediction it settles (checked by the database). A stored result that
+contradicts itself is reported, not settled (exit code 4).
+
+### 6.3 Code
+
+| File | Role |
+|---|---|
+| [app/paper/bet.py](../backend/app/paper/bet.py) | `bookmaker_quotes`, `paper_bet` (pure; the live `verify`) |
+| [app/paper/settle.py](../backend/app/paper/settle.py) | `settle_due` |
+| [app/storage/repositories/paper.py](../backend/app/storage/repositories/paper.py) | `settlement_candidates`, `insert_settlement` |
+| [tests/integration/test_paper_bets.py](../backend/tests/integration/test_paper_bets.py) | the bet chosen by the live rule, pending, WIN, no-bet outcomes, a corrected score, the database guards |

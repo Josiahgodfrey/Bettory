@@ -81,6 +81,11 @@ class NewPrediction:
     best_under05_book: str | None = None
     best_draw_odds: float | None = None
     best_draw_book: str | None = None
+    bet_market: str | None = None
+    bet_odds: float | None = None
+    bet_book: str | None = None
+    bet_ev: float | None = None
+    bet_stake: float | None = None
 
 
 _COLUMNS = tuple(NewPrediction.__dataclass_fields__)
@@ -123,6 +128,11 @@ class FrozenPrediction:
     best_draw_odds: float | None
     best_draw_book: str | None
     odds_seen: list[dict[str, Any]]
+    bet_market: str | None
+    bet_odds: float | None
+    bet_book: str | None
+    bet_ev: float | None
+    bet_stake: float | None
 
 
 def frozen(conn: Connection, session_id: str | None = None,
@@ -155,3 +165,73 @@ def verify_chain(conn: Connection) -> ChainStatus:
                              "order by chain_pos desc limit 1")).first()
     count = conn.execute(text("select count(*) from paper.predictions")).scalar_one()
     return ChainStatus(int(count), int(head[0]) if head else None, str(head[1]) if head else None, problems)
+
+
+# --- settlements -----------------------------------------------------------------------------------------------
+
+
+@dataclass(frozen=True)
+class MatchResultState:
+    match_status: str
+    data_status: str
+    h15_home: int | None
+    h15_away: int | None
+    goal_before_15: bool | None
+
+
+@dataclass(frozen=True)
+class SettlementCandidate:
+    prediction_id: UUID
+    prediction_hash: str
+    kickoff_utc: datetime
+    bet_market: str | None
+    bet_odds: float | None
+    bet_stake: float | None
+    now: MatchResultState  # the stored result today
+    last_id: UUID | None  # the latest settlement of this prediction
+    last: MatchResultState | None  # the result it was settled on
+
+
+def settlement_candidates(conn: Connection, kicked_off_before: datetime) -> list[SettlementCandidate]:
+    """Every frozen prediction whose match kicked off before the bound, with its latest settlement (if any)."""
+    rows = conn.execute(text("""
+        select p.id, p.row_hash, p.kickoff_utc, p.bet_market, p.bet_odds, p.bet_stake,
+               m.status::text as m_status, m.data_status::text as m_data, m.h15_home as m_h, m.h15_away as m_a,
+               m.goal_before_15 as m_g,
+               s.id as s_id, s.match_status as s_status, s.data_status as s_data, s.h15_home as s_h,
+               s.h15_away as s_a, s.goal_before_15 as s_g
+        from paper.predictions p
+        join core.matches m on m.id = p.match_id
+        left join lateral (select * from paper.settlements x where x.prediction_id = p.id
+                           order by x.settled_at desc limit 1) s on true
+        where p.kickoff_utc < :before
+        order by p.chain_pos
+    """), {"before": kicked_off_before}).mappings().all()
+    return [SettlementCandidate(
+        r["id"], r["row_hash"], r["kickoff_utc"], r["bet_market"], r["bet_odds"], r["bet_stake"],
+        MatchResultState(r["m_status"], r["m_data"], r["m_h"], r["m_a"], r["m_g"]), r["s_id"],
+        None if r["s_id"] is None else MatchResultState(r["s_status"], r["s_data"], r["s_h"], r["s_a"], r["s_g"]),
+    ) for r in rows]
+
+
+@dataclass(frozen=True)
+class NewSettlement:
+    prediction_id: UUID
+    prediction_hash: str
+    supersedes: UUID | None
+    match_status: str
+    data_status: str
+    h15_home: int | None
+    h15_away: int | None
+    goal_before_15: bool | None
+    under05: bool | None
+    draw: bool | None
+    bet_outcome: str | None
+    profit: float | None
+
+
+def insert_settlement(conn: Connection, s: NewSettlement) -> UUID:
+    cols = tuple(NewSettlement.__dataclass_fields__)
+    return UUID(str(conn.execute(text(
+        f"insert into paper.settlements ({', '.join(cols)}) values ({', '.join(':' + c for c in cols)}) "
+        "returning id"), asdict(s)).scalar_one()))

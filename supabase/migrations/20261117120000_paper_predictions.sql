@@ -1,4 +1,5 @@
--- Paper betting, steps 1-2: predictions and the odds seen, frozen before kick-off (docs/PAPER-BETTING.md).
+-- Paper betting, steps 1-3: predictions, the odds seen and the paper bet, frozen before kick-off; settlements
+-- (docs/PAPER-BETTING.md).
 --
 -- One row per fixture, session and params version, written when the session is analysed and never changed:
 --   - the database stamps the recording time with its own clock and refuses a row whose kick-off is not later;
@@ -48,6 +49,16 @@ create table paper.predictions (
   best_draw_book    text,
   check ((best_under05_odds is null) = (best_under05_book is null)),
   check ((best_draw_odds is null) = (best_draw_book is null)),
+  -- the paper bet, decided at the freeze by the live quote check (verify, quote mode) on each bookmaker's
+  -- complete sealed 15' market; the best qualifying offer (highest EV). Null: no bet.
+  bet_market        text check (bet_market in ('UNDER05', 'DRAW')),
+  bet_odds          double precision check (bet_odds > 1),
+  bet_book          text,
+  bet_ev            double precision,
+  bet_stake         double precision check (bet_stake > 0),
+  check ((bet_market is null) = (bet_odds is null) and (bet_market is null) = (bet_book is null)
+         and (bet_market is null) = (bet_ev is null) and (bet_market is null) = (bet_stake is null)),
+  check (bet_market is null or decision = 'QUALIFIED'),
   unique (match_id, session_id, params_version),
   check (as_of < kickoff_utc),
   check ((chain_pos = 1) = (prev_hash is null))
@@ -72,7 +83,9 @@ language sql immutable as $$
     'p_league_00', p.p_league_00, 'p_league_draw', p.p_league_draw,
     'min_odds_under05', p.min_odds_under05, 'min_odds_draw', p.min_odds_draw,
     'odds_seen', p.odds_seen, 'best_under05_odds', p.best_under05_odds, 'best_under05_book', p.best_under05_book,
-    'best_draw_odds', p.best_draw_odds, 'best_draw_book', p.best_draw_book
+    'best_draw_odds', p.best_draw_odds, 'best_draw_book', p.best_draw_book,
+    'bet_market', p.bet_market, 'bet_odds', p.bet_odds, 'bet_book', p.bet_book, 'bet_ev', p.bet_ev,
+    'bet_stake', p.bet_stake
   )::text, 'UTF8')), 'hex')
 $$;
 
@@ -104,7 +117,7 @@ end $$;
 create function paper.refuse_change() returns trigger
 language plpgsql as $$
 begin
-  raise exception 'paper.predictions is append-only: % refused', tg_op using errcode = 'insufficient_privilege';
+  raise exception '% is append-only: % refused', tg_table_name, tg_op using errcode = 'insufficient_privilege';
 end $$;
 
 create trigger predictions_seal before insert on paper.predictions
@@ -131,8 +144,61 @@ language sql stable as $$
   order by x.chain_pos
 $$;
 
+-- Settlements: the 15' result of every frozen prediction (also those without a bet: calibration needs them) and the
+-- paper bet's outcome. Append-only; a result corrected later adds a row that supersedes the previous one.
+create table paper.settlements (
+  id               uuid primary key default gen_random_uuid(),
+  prediction_id    uuid not null references paper.predictions (id),
+  prediction_hash  text not null,                     -- the sealed row this settles (checked by the trigger)
+  settled_at       timestamptz not null,              -- set by the trigger (database clock)
+  supersedes       uuid unique references paper.settlements (id),
+  match_status     text not null,
+  data_status      text not null,
+  h15_home         smallint,
+  h15_away         smallint,
+  goal_before_15   boolean,
+  under05          boolean,                           -- null: not known (only for a VOID, never-played match)
+  draw             boolean,
+  bet_outcome      text check (bet_outcome in ('WIN', 'LOSE', 'VOID')),
+  profit           double precision,
+  check ((bet_outcome is null) = (profit is null)),
+  check (under05 is not null or bet_outcome is null or bet_outcome = 'VOID')
+);
+create index settlements_prediction on paper.settlements (prediction_id, settled_at desc);
+
+create function paper.seal_settlement() returns trigger
+language plpgsql as $$
+declare
+  p_hash text;
+  p_kickoff timestamptz;
+  p_bet text;
+begin
+  new.settled_at := clock_timestamp();
+  select row_hash, kickoff_utc, bet_market into p_hash, p_kickoff, p_bet
+    from paper.predictions where id = new.prediction_id;
+  if new.prediction_hash is distinct from p_hash then
+    raise exception 'paper.settlements: prediction hash does not match the sealed row' using errcode = 'check_violation';
+  end if;
+  if p_kickoff >= new.settled_at then
+    raise exception 'paper.settlements: the match has not kicked off yet' using errcode = 'check_violation';
+  end if;
+  if (p_bet is null) <> (new.bet_outcome is null) then
+    raise exception 'paper.settlements: bet outcome must be given exactly when the prediction has a bet'
+      using errcode = 'check_violation';
+  end if;
+  return new;
+end $$;
+
+create trigger settlements_seal before insert on paper.settlements
+  for each row execute function paper.seal_settlement();
+create trigger settlements_no_change before update or delete on paper.settlements
+  for each row execute function paper.refuse_change();
+create trigger settlements_no_truncate before truncate on paper.settlements
+  for each statement execute function paper.refuse_change();
+
 -- Security: backend only (service role), like every raw/core table. RLS on, no policies.
 alter table paper.predictions enable row level security;
+alter table paper.settlements enable row level security;
 do $$
 begin
   if exists (select 1 from pg_roles where rolname = 'anon') then

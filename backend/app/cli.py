@@ -52,6 +52,7 @@ from app.jobs.backfill import load_backfill_config, plan, run_daily_backfill
 from app.jobs.scheduler import build_scheduler
 from app.paper.capture import capture_session
 from app.paper.freeze import Provenance, due_sessions, freeze_session, replay_session
+from app.paper.settle import settle_due
 from app.storage.db import get_engine
 from app.storage.raw_store import store_from_settings
 from app.storage.repositories import health as health_repo
@@ -132,6 +133,7 @@ def main(argv: list[str] | None = None) -> int:
     pf.add_argument("--session", action="append", help="session id, e.g. 2026-11-18-NOON (repeatable; default: "
                     "every session that has not ended, yesterday .. tomorrow)")
     pf.add_argument("--params", action="append", help="params version (repeatable; default: the live params)")
+    sub.add_parser("paper-settle", help="settle frozen predictions whose 15' result is known (append-only)")
     pv = sub.add_parser("paper-verify", help="check the hash chain of frozen predictions; --replay recomputes")
     pv.add_argument("--replay", action="append", metavar="SESSION",
                     help="recompute a frozen session and compare (repeatable)")
@@ -412,17 +414,25 @@ def _paper(args: argparse.Namespace, engine: Any, registry: Any, live: Params, s
             sids = [SessionId.parse(x) for x in args.session] if args.session else due_sessions(cal, now)
             for sid in sids:
                 r = freeze_session(engine, params, registry, sid, now=now, competitions=competitions,
-                                   provenance=prov)
+                                   provenance=prov, stake=load_backtest_config().estimated_value.stake)
                 line = f"{sid}  params {version}  {r.status}"
                 if r.status == "TOO_EARLY":
                     line += f"  ({r.fixtures} fixtures; data cut-off {r.as_of:%Y-%m-%d %H:%M}Z: freeze after it)"
                 elif r.status == "FROZEN":
                     line += (f"  as_of {r.as_of:%Y-%m-%d %H:%M}Z  fixtures {r.fixtures}  new {r.frozen}  "
-                             f"already {r.already}  started {r.started}  listed {r.qualified}")
+                             f"already {r.already}  started {r.started}  listed {r.qualified}  "
+                             f"paper bets {r.bets}")
                     if r.chain_from is not None:
                         line += f"  chain {r.chain_from}..{r.chain_to}"
                 print(line)
         return 0
+    if args.cmd == "paper-settle":
+        sr = settle_due(engine, datetime.now(UTC))
+        print(f"settled {sr.settled}  corrected {sr.corrected}  pending (15' result not known yet) {sr.pending}  "
+              f"unchanged {sr.unchanged}")
+        for line in sr.inconsistent:
+            print(f"  ! inconsistent stored result, not settled: {line}")
+        return 0 if not sr.inconsistent else 4
     if args.cmd == "paper-verify":
         with engine.connect() as conn:
             chain = paper_repo.verify_chain(conn)
@@ -450,7 +460,9 @@ def _paper(args: argparse.Namespace, engine: Any, registry: Any, live: Params, s
     for fp in rows:
         p = "-" if fp.p_under05 is None else f"{fp.p_under05:.3f}"
         print(f"#{fp.chain_pos:<6} {fp.kickoff_utc:%Y-%m-%d %H:%M}Z {fp.competition_code:<5} {fp.decision:<18} "
-              f"{fp.grade:<5} P(U0.5) {p:<6} params {fp.params_version}  recorded {fp.recorded_at:%H:%M:%S}Z")
+              f"{fp.grade:<5} P(U0.5) {p:<6} params {fp.params_version}  recorded {fp.recorded_at:%H:%M:%S}Z"
+              + (f"  BET {fp.bet_market} @ {fp.bet_odds:.2f} {fp.bet_book} (EV {fp.bet_ev:+.1%})"
+                 if fp.bet_market and fp.bet_odds and fp.bet_ev is not None else ""))
     print(f"{len(rows)} frozen predictions in {args.session}")
     return 0
 

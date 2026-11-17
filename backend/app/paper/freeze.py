@@ -25,6 +25,7 @@ from app.domain.enums import Decision, FixtureStatus, Grade
 from app.domain.params import Params
 from app.domain.registry import Registry
 from app.domain.sessions import SessionCalendar, SessionId
+from app.paper.bet import PaperBet, paper_bet
 from app.paper.odds import SEALED_MARKETS, SeenOdds, seen_odds
 from app.storage.point_in_time import PointInTimeReader
 from app.storage.repositories import paper as paper_repo
@@ -55,6 +56,7 @@ class FreezeResult:
     qualified: int  # listed after the cap, among the fixtures frozen now or earlier
     chain_from: int | None = None  # chain positions of the new rows
     chain_to: int | None = None
+    bets: int = 0  # new rows with a paper bet
 
 
 def due_sessions(cal: SessionCalendar, now: datetime) -> list[SessionId]:
@@ -65,7 +67,7 @@ def due_sessions(cal: SessionCalendar, now: datetime) -> list[SessionId]:
 
 
 def _row(sv: SessionVerdict, f: paper_repo.SessionFixture, sid: SessionId, as_of: datetime, params: Params,
-         prov: Provenance, odds: SeenOdds) -> paper_repo.NewPrediction:
+         prov: Provenance, odds: SeenOdds, bet: PaperBet | None) -> paper_repo.NewPrediction:
     a, v = sv.analysis, sv.verdict
     c = a.model_c if a is not None and a.model_c is not None and a.model_c.available else None
     league_00, league_draw = league_baseline(a, params)
@@ -86,11 +88,15 @@ def _row(sv: SessionVerdict, f: paper_repo.SessionFixture, sid: SessionId, as_of
         best_under05_odds=odds.best_under05[0] if odds.best_under05 else None,
         best_under05_book=odds.best_under05[1] if odds.best_under05 else None,
         best_draw_odds=odds.best_draw[0] if odds.best_draw else None,
-        best_draw_book=odds.best_draw[1] if odds.best_draw else None)
+        best_draw_book=odds.best_draw[1] if odds.best_draw else None,
+        bet_market=bet.market.value if bet else None, bet_odds=bet.odds if bet else None,
+        bet_book=bet.bookmaker if bet else None, bet_ev=bet.ev if bet else None,
+        bet_stake=bet.stake if bet else None)
 
 
 def freeze_session(engine: Engine, params: Params, registry: Registry, sid: SessionId, *, now: datetime,
-                   competitions: Sequence[str] | None = None, provenance: Provenance = Provenance()) -> FreezeResult:
+                   competitions: Sequence[str] | None = None, provenance: Provenance = Provenance(),
+                   stake: float = 1.0) -> FreezeResult:
     cal = SessionCalendar(params)
     times = cal.times(sid)
     codes = tuple(sorted(competitions)) if competitions else tuple(sorted(d.code for d in registry.competitions))
@@ -105,22 +111,25 @@ def freeze_session(engine: Engine, params: Params, registry: Registry, sid: Sess
             return FreezeResult(sid, "TOO_EARLY", as_of, len(fixtures), 0, 0, 0, 0)
         verdicts = evaluate_session(conn, params, registry, as_of, [f.match_id for f in fixtures])
         reader = PointInTimeReader(conn, as_of)  # the same odds read as Model C: captured strictly before as_of
-        frozen = already = started = qualified = 0
+        frozen = already = started = qualified = bets = 0
         positions: list[int] = []
         for f, sv in zip(fixtures, verdicts, strict=True):
             if f.status is not FixtureStatus.SCHEDULED or f.kickoff_utc < now + MIN_LEAD:
                 started += 1
                 continue
-            odds = seen_odds(reader.odds(f.match_id, SEALED_MARKETS))
-            pos = paper_repo.insert_prediction(conn, _row(sv, f, sid, as_of, params, provenance, odds))
+            rows = reader.odds(f.match_id, SEALED_MARKETS)
+            bet = paper_bet(sv.analysis, sv.decision, rows, params, stake)
+            pos = paper_repo.insert_prediction(conn, _row(sv, f, sid, as_of, params, provenance, seen_odds(rows),
+                                                          bet))
             if pos is None:
                 already += 1
             else:
                 frozen += 1
                 positions.append(pos)
+                bets += bet is not None
             qualified += sv.decision is Decision.QUALIFIED
     return FreezeResult(sid, "FROZEN", as_of, len(fixtures), frozen, already, started, qualified,
-                        min(positions, default=None), max(positions, default=None))
+                        min(positions, default=None), max(positions, default=None), bets)
 
 
 @dataclass(frozen=True)
@@ -166,9 +175,16 @@ def replay_session(engine: Engine, params: Params, registry: Registry, session_i
             reader = PointInTimeReader(conn, as_of)
             for r, sv in zip(group, again, strict=True):
                 v = sv.verdict
-                odds = seen_odds(reader.odds(r.match_id, SEALED_MARKETS))
+                odds_rows = reader.odds(r.match_id, SEALED_MARKETS)
+                odds = seen_odds(odds_rows)
                 if odds.rows != r.odds_seen:
                     diffs.append(ReplayDifference(str(r.match_id), "odds_seen", len(r.odds_seen), len(odds.rows)))
+                # the bet with the frozen (post-cap) decision: the cap is not replayed
+                stake = r.bet_stake if r.bet_stake is not None else 1.0
+                bet = paper_bet(sv.analysis, Decision(r.decision), odds_rows, params, stake)
+                again_bet = (bet.market.value, bet.odds, bet.bookmaker) if bet else None
+                if again_bet != ((r.bet_market, r.bet_odds, r.bet_book) if r.bet_market else None):
+                    diffs.append(ReplayDifference(str(r.match_id), "bet", r.bet_market, again_bet))
                 pre_cap = r.decision if r.decision != Decision.QUALIFIED_OVER_CAP.value else Decision.QUALIFIED.value
                 for name, old, new in (("p_under05", r.p_under05, v.p_under05), ("p_draw", r.p_draw, v.p_draw),
                                        ("min_odds_under05", r.min_odds_under05, v.min_odds_under05),
