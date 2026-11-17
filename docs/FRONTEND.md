@@ -32,8 +32,11 @@ npm run dev                     # http://localhost:5173
 | `VITE_SUPABASE_URL`, `VITE_SUPABASE_PUBLISHABLE_KEY` | real login (public values; never the service role key) |
 | `VITE_AUTH_BYPASS=true` | development without login: only in `npm run dev`, and the API must run with `ENVIRONMENT=local` and `AUTH_LOCAL_BYPASS=true` (it then answers only this machine) |
 
-For development the API can run against the local database copy (fast) instead of Supabase (≈ 250 ms per query from
-this PC, SUPABASE.md §4).
+For development, start the API with **`backend/scripts/dev_api.py`** (from `backend/`:
+`venv\Scripts\python scripts\dev_api.py`): local database copy (fast, instead of Supabase at ≈ 250 ms per query from
+this PC, SUPABASE.md §4), login bypass, and Telegram / API-Football / football-data.org / Supabase OFF. It refuses to
+start if any of them is still configured. Do **not** blank variables by hand (`$env:X=""` in PowerShell): on Windows
+that deletes the variable and the real value comes back from `.env`.
 
 | Command | Does |
 |---|---|
