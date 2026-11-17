@@ -85,7 +85,7 @@
 | Step | Content | Status |
 |---|---|---|
 | 1 | Read endpoints: me, settings, bookmakers, sessions, session report, session fixtures, calendar, match, analysis, odds | ✅ §7 |
-| 2 | Paper betting and recorder endpoints, dashboard | ⬜ |
+| 2 | Paper betting and recorder endpoints, dashboard | ✅ §8 |
 | 3 | Odds check, placed bets (new table, settlement), performance — needs the owner decisions in §6 | ⬜ |
 | 4 | OpenAPI schema export and generated TypeScript types for the frontend | ⬜ |
 
@@ -150,3 +150,33 @@ changed in place and re-applied locally.
 
 Import layers: `app.api` is now the top layer (like the command line) and may use `app.paper` and
 `app.backtest`.
+
+## 8. Step 2 — paper betting, recorder, dashboard (done)
+
+### 8.1 `GET /dashboard` (the Today screen)
+
+| Field | Content |
+|---|---|
+| `next_session` | the first session with fixtures that has not ended, looking up to 14 days ahead (same shape as `GET /sessions`) |
+| `sessions` | yesterday .. tomorrow (EAT) |
+| `alerts[]` | `level` (`BLOCKING` / `WARN`), `code`, `message`: `CHAIN_BROKEN`, `SESSION_MISSED`, `FREEZE_LATE` (cut-off passed > 15 min ago, not frozen: the recorder is probably off), `RUN_FAILED` (last 24 h), `DATA_CHECK_FAILED` (a cross-check blocks bets) |
+| `paper` | frozen predictions, last freeze, kicked-off but unsettled, chain intact |
+
+### 8.2 Recorder
+
+`GET /paper/status`: `requests_today` / `requests_daily_bound`, `last_capture`, `last_results` (runs),
+`last_freeze_at`, `last_settlement_at`, `kicked_off_unsettled`, `due_now` (a dry-run cycle: what the next cycle
+would do), `cycle_running`, `manual_cycle` (the latest cycle started from the API: lines, errors).
+
+`POST /paper/cycle` starts one real cycle in the background (`202`; `409` if one started from the API is still
+running) — the same cycle as the worker and `paper-cycle`, with the same lock and request bound.
+`?dry_run=true` answers at once with what is due.
+
+### 8.3 Code
+
+| File | Role |
+|---|---|
+| [app/api/recorder.py](../backend/app/api/recorder.py) | `cycle_inputs` (shared with the CLI and the worker), `recorder_status`, `paper_summary`, `dashboard` |
+| [app/api/routers/paper.py](../backend/app/api/routers/paper.py) | `/paper/report`, `/predictions`, `/chain`, `/replay/{session}`, `/status`, `/cycle` |
+| [app/core/provenance.py](../backend/app/core/provenance.py) | `code_version()` (moved from the CLI) |
+| [tests/integration/test_api_paper.py](../backend/tests/integration/test_api_paper.py) | chain, predictions, replay, report, recorder status and cycle, dashboard alerts over time |

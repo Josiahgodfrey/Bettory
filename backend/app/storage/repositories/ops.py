@@ -58,3 +58,23 @@ def run_statuses_since(engine: Engine, job_prefix: str, since: datetime) -> list
         return [RunStatus(r[0]) for r in conn.execute(text(
             "select status::text from raw.ingestion_runs where starts_with(job_name, :p) and started_at >= :s "
             "order by started_at"), {"p": job_prefix, "s": since})]
+
+
+def latest_run_like(engine: Engine, job_prefix: str) -> dict[str, Any] | None:
+    """The newest run whose job name starts with `job_prefix`."""
+    with engine.connect() as conn:
+        row = conn.execute(text("""
+            select id, job_name, status::text as status, started_at, finished_at, requests_used, error
+            from raw.ingestion_runs where starts_with(job_name, :p) order by started_at desc, id limit 1"""),
+            {"p": job_prefix}).mappings().one_or_none()
+    return dict(row) if row else None
+
+
+def failed_runs_since(engine: Engine, since: datetime) -> list[dict[str, Any]]:
+    """FAILED runs started at or after `since`, newest first."""
+    with engine.connect() as conn:
+        rows = conn.execute(text("""
+            select id, job_name, started_at, error from raw.ingestion_runs
+            where status = 'FAILED' and started_at >= :s order by started_at desc limit 50"""),
+            {"s": since}).mappings().all()
+    return [dict(r) for r in rows]

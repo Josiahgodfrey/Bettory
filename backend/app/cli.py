@@ -27,13 +27,13 @@ from __future__ import annotations
 import argparse
 import json
 import logging
-import subprocess
 import sys
 from datetime import UTC, date, datetime
 from pathlib import Path
 from typing import Any
 from uuid import UUID
 
+from app.api.recorder import cycle_inputs
 from app.backtest.config import load_backtest_config
 from app.backtest.paper_report import paper_json, render_paper, summarise_paper
 from app.backtest.report import render_markdown, rows_csv, summarise, summary_json
@@ -41,6 +41,7 @@ from app.backtest.runner import SessionRun, run_backtest
 from app.backtest.tuning import TuningNotReady, period_of, run_tuning
 from app.backtest.tuning_plan import check_unchanged, current_plan_path, lineage, load_plan, sha256_of, variations
 from app.backtest.tuning_report import render_tuning, tuning_json, variations_csv
+from app.core.provenance import code_version
 from app.core.settings import BACKEND_DIR, get_settings
 from app.domain.params import Params, load_params, params_path
 from app.domain.quality_config import load_quality_config
@@ -54,7 +55,7 @@ from app.jobs.backfill import load_backfill_config, plan, run_daily_backfill
 from app.jobs.scheduler import IntervalJob, build_scheduler
 from app.paper.capture import capture_session
 from app.paper.config import load_paper_config
-from app.paper.cycle import CycleInputs, run_cycle
+from app.paper.cycle import run_cycle
 from app.paper.freeze import Provenance, due_sessions, freeze_session, replay_session
 from app.paper.settle import settle_due
 from app.storage.db import get_engine
@@ -292,7 +293,7 @@ def main(argv: list[str] | None = None) -> int:
                 paper_cfg = load_paper_config()
                 jobs.append(IntervalJob(
                     "paper_cycle", "paper betting cycle",
-                    lambda: run_cycle(_cycle_inputs(engine, registry, live, settings, paper_cfg),
+                    lambda: run_cycle(cycle_inputs(engine, registry, live, settings, paper_cfg),
                                       now=datetime.now(UTC)),
                     paper_cfg.schedule.every_minutes))
             sched = build_scheduler(engine, lambda: store_from_settings(settings), registry, settings, backfill_cfg,
@@ -387,33 +388,12 @@ def main(argv: list[str] | None = None) -> int:
     return 0
 
 
-def _code_version() -> str | None:
-    """Short git commit of the running code, '+dirty' when app/ or config/ has uncommitted changes."""
-    try:
-        head = subprocess.run(["git", "-C", str(BACKEND_DIR), "rev-parse", "--short=12", "HEAD"], check=True,
-                              capture_output=True, text=True, timeout=10).stdout.strip()
-        dirty = subprocess.run(["git", "-C", str(BACKEND_DIR), "status", "--porcelain", "--", "app", "config"],
-                               check=True, capture_output=True, text=True, timeout=10).stdout.strip()
-    except (OSError, subprocess.SubprocessError):
-        return None
-    return head + ("+dirty" if dirty else "")
-
-
-def _cycle_inputs(engine: Any, registry: Any, live: Params, settings: Any, cfg: Any) -> CycleInputs:
-    """Built for every cycle: a new tuning plan or commit is picked up without restarting the worker."""
-    plan_path = current_plan_path()
-    return CycleInputs(engine=engine, store=lambda: store_from_settings(settings), registry=registry,
-                       settings=settings, params=live, cfg=cfg, competitions=load_plan(plan_path).competitions,
-                       provenance=Provenance(plan_path.name, sha256_of(plan_path), _code_version()),
-                       stake=load_backtest_config().estimated_value.stake)
-
-
 def _paper(args: argparse.Namespace, engine: Any, registry: Any, live: Params, settings: Any) -> int:
     plan_path = current_plan_path()
     competitions = load_plan(plan_path).competitions  # paper betting covers the leagues of the plan in force
     if args.cmd == "paper-cycle":
         logging.basicConfig(level=logging.WARNING)
-        res = run_cycle(_cycle_inputs(engine, registry, live, settings, load_paper_config()),
+        res = run_cycle(cycle_inputs(engine, registry, live, settings, load_paper_config()),
                         now=datetime.now(UTC), dry_run=args.dry_run)
         stamp = f"{datetime.now(UTC):%Y-%m-%d %H:%M}Z"
         for line in res.lines or ["nothing due"]:
@@ -443,7 +423,7 @@ def _paper(args: argparse.Namespace, engine: Any, registry: Any, live: Params, s
         return 0
     if args.cmd == "paper-freeze":
         versions = args.params or [live.params_version]
-        prov = Provenance(plan_path.name, sha256_of(plan_path), _code_version())
+        prov = Provenance(plan_path.name, sha256_of(plan_path), code_version())
         now = datetime.now(UTC)
 
         for version in versions:

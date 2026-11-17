@@ -326,3 +326,16 @@ def report_rows(conn: Connection, params_version: str | None = None) -> list[Rep
         order by p.kickoff_utc, p.chain_pos
     """), {"pv": params_version}).mappings().all()
     return [ReportRow(**r) for r in rows]
+
+
+def recorder_marks(conn: Connection) -> dict[str, Any]:
+    """When the recorder last froze and settled, and how many frozen fixtures wait for settlement."""
+    row = conn.execute(text("""
+        select (select max(recorded_at) from paper.predictions) as last_freeze_at,
+               (select count(*) from paper.predictions) as frozen,
+               (select max(settled_at) from paper.settlements) as last_settlement_at,
+               (select count(*) from paper.predictions p where p.kickoff_utc < now()
+                  and not exists (select 1 from paper.settlements s where s.prediction_id = p.id))
+                 as kicked_off_unsettled
+    """)).mappings().one()
+    return dict(row)

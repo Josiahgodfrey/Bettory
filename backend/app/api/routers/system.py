@@ -3,6 +3,7 @@
     GET /me           the owner's identity and two-factor level
     GET /settings     params, sessions and time zone, competitions, recorder and Gate B settings, API plan
     GET /bookmakers   bookmakers known to the system
+    GET /dashboard    the Today screen: sessions of yesterday .. tomorrow, the next session, alerts, recorder
 """
 
 from __future__ import annotations
@@ -11,7 +12,16 @@ from typing import Any
 
 from fastapi import APIRouter
 
-from app.api.deps import EngineDep, OwnerDep, ParamsDep, RegistryDep, ReportCompetitionsDep, SettingsDep
+from app.api.deps import (
+    ClockDep,
+    EngineDep,
+    OwnerDep,
+    ParamsDep,
+    RegistryDep,
+    ReportCompetitionsDep,
+    SettingsDep,
+)
+from app.api.recorder import dashboard
 from app.api.views import jsonable
 from app.backtest.config import load_backtest_config
 from app.backtest.tuning_plan import current_plan_path
@@ -52,3 +62,9 @@ def settings_view(_: OwnerDep, settings: SettingsDep, params: ParamsDep, registr
 def bookmakers(_: OwnerDep, engine: EngineDep) -> list[dict[str, Any]]:
     with engine.connect() as conn:
         return [jsonable(b) for b in fe_repo.bookmakers(conn)]
+
+
+@router.get("/dashboard")
+def today(_: OwnerDep, engine: EngineDep, params: ParamsDep, competitions: ReportCompetitionsDep,
+          now: ClockDep) -> dict[str, Any]:
+    return dashboard(engine, params, competitions, now)

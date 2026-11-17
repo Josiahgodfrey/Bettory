@@ -165,7 +165,7 @@ def info_json(i: SessionInfo, cal: SessionCalendar) -> dict[str, Any]:
             "frozen": i.frozen, "listed": i.listed, "paper_bets": i.paper_bets}
 
 
-def _entry(p: Mapping[str, Any], f: Mapping[str, Any] | None, cal: SessionCalendar) -> dict[str, Any]:
+def entry_json(p: Mapping[str, Any], f: Mapping[str, Any] | None, cal: SessionCalendar) -> dict[str, Any]:
     keep = ("decision", "grade", "failed_checks", "error", "p_under05", "p_draw", "p_model_a", "p_model_b2",
             "p_market", "p_market_draw", "p_league_00", "p_league_draw", "min_odds_under05", "min_odds_draw",
             "fair_under05", "fair_draw", "model_spread_pts", "complete_sample", "checks", "odds_seen",
@@ -195,7 +195,7 @@ def session_entries(conn: Connection, params: Params, registry: Registry, compet
     fixtures = {f["match_id"]: f for f in info.fixtures}
     if info.frozen:
         rows = paper_repo.frozen(conn, str(sid), params.params_version)
-        entries = [_entry(asdict(r), fixtures.get(r.match_id), cal) for r in rows]
+        entries = [entry_json(asdict(r), fixtures.get(r.match_id), cal) for r in rows]
         entries.sort(key=lambda e: (e["fixture"] or {}).get("kickoff_utc") or "")
         return SessionEntries(info, "FROZEN", info.as_of, entries)
     eligible = [f for f in info.fixtures if f["status"] in _ANALYSED]
@@ -210,7 +210,7 @@ def session_entries(conn: Connection, params: Params, registry: Registry, compet
                                        FixtureStatus(f["status"]))
         bet = paper_bet(sv.analysis, sv.decision, odds, params, 1.0)
         row = prediction_row(sv, sf, sid, now, params, Provenance(), seen_odds(odds), bet)
-        entries.append(_entry(asdict(row), f, cal))
+        entries.append(entry_json(asdict(row), f, cal))
     return SessionEntries(info, "PREVIEW", now, entries)
 
 
@@ -255,7 +255,7 @@ def match_analysis(conn: Connection, params: Params, registry: Registry, match_i
         same = all(_close(a, b) for a, b in ((r.p_under05, verdict.p_under05), (r.p_draw, verdict.p_draw),
                                              (r.min_odds_under05, verdict.min_odds_under05),
                                              (r.min_odds_draw, verdict.min_odds_draw)))
-        out["frozen"] = _entry(asdict(r), f, cal)
+        out["frozen"] = entry_json(asdict(r), f, cal)
         out["matches_frozen"] = same  # False: data known before as_of arrived or changed after the freeze
     return out
 
