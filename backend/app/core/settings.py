@@ -26,7 +26,7 @@ class Settings(BaseSettings):
     environment: Literal["local", "production"] = "local"
 
     # Supabase project
-    supabase_project_ref: str = "vhdhqpaxandnuqykjweq"
+    supabase_project_ref: str = ""  # e.g. the "<ref>" in https://<ref>.supabase.co
     supabase_url: str = ""
     supabase_service_role_key: SecretStr = SecretStr("")
 
@@ -87,7 +87,14 @@ class Settings(BaseSettings):
 
     @property
     def resolved_database_user(self) -> str:
-        return self.database_user or f"postgres.{self.supabase_project_ref}"
+        """DATABASE_USER, or postgres.<project ref> (the pooler's user name); the ref is taken from SUPABASE_URL
+        when SUPABASE_PROJECT_REF is not set. No silent default: a missing ref fails the connection."""
+        if self.database_user:
+            return self.database_user
+        ref = self.supabase_project_ref or self.supabase_url.removeprefix("https://").split(".", 1)[0]
+        if not ref:
+            raise ValueError("set SUPABASE_PROJECT_REF (or SUPABASE_URL, or DATABASE_USER) for the database user")
+        return f"postgres.{ref}"
 
 
 @lru_cache

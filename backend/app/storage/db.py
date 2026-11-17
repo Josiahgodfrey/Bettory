@@ -89,15 +89,14 @@ class ConnectionReport:
 def check_connection(engine: Engine) -> ConnectionReport:
     """Run a read-only probe and report what we are connected to."""
     with engine.connect() as conn:
-        row = conn.execute(
-            text(
-                "select version(), current_database(), current_user, "
-                "coalesce((select ssl from pg_stat_ssl where pid = pg_backend_pid()), false)"
-            )
-        ).one()
+        row = conn.execute(text("select version(), current_database(), current_user")).one()
+        # TLS of OUR connection, seen by the client: behind the Supabase pooler the server's pg_stat_ssl describes
+        # the pooler's own connection to the database, not ours.
+        driver = conn.connection.driver_connection
+        ssl = bool(getattr(getattr(driver, "pgconn", None), "ssl_in_use", False))
     return ConnectionReport(
         server_version=str(row[0]).split(",")[0],
         database=str(row[1]),
         user=str(row[2]),
-        ssl=bool(row[3]),
+        ssl=ssl,
     )

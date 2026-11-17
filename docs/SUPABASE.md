@@ -11,7 +11,8 @@
 | Region | eu-west-1 (Ireland), Postgres 17 |
 | Migrations applied | all 8 in `supabase/migrations/` (2026-11-14 .. 2026-11-20), recorded in `supabase_migrations.schema_migrations` |
 | Check 2026-11-17 | schema compared with the local database: 298 columns, 218 constraints, 22 triggers, 14 functions, 61 indexes, 16 enums, 24 tables — identical; RLS on every table; no grants and no schema usage for `anon` / `authenticated`; a rolled-back smoke test confirmed the hash chain and the append-only guards |
-| Data | none yet: the backend still uses the local database (`DATABASE_URL`) |
+| Data | copied 2026-11-17 from the local database (`pg_dump` data-only + `psql` in one transaction): 24 tables, every row identical (checksums by id) |
+| Backend | uses Supabase since 2026-11-17: `.env` `SUPABASE_PROJECT_REF`, `DATABASE_HOST` (pooler), `DATABASE_PORT=5432`, `DATABASE_PASSWORD`; the local database is kept as `LOCAL_DATABASE_URL` (frozen copy, not updated any more) |
 
 ## 2. Connecting
 
@@ -37,8 +38,33 @@ supabase db push --db-url "<pooler url>"                # apply
 `db push` applies only migrations not yet recorded in `supabase_migrations.schema_migrations`. A migration that is
 already applied must never be edited: write a new one.
 
-## 4. Still to decide
+## 4. Latency — the backend must run next to the database
 
-- **Moving the backend to Supabase** (`DATABASE_URL` → the pooler URL): the local database holds the loaded
-  fixtures, goal minutes and run history, and the raw payloads are stored on local disk. Moving needs a data copy
-  and a decision on where raw payloads live (Supabase Storage); the free plan has a 500 MB database limit.
+Measured 2026-11-17 from the owner's PC (Tanzania) to eu-west-1: **≈ 250 ms per query** (local Docker: < 1 ms).
+Everything works, but screens that run an analysis are slow, because an analysis makes hundreds of small queries:
+
+| Endpoint | From the PC to Supabase | Locally before |
+|---|---|---|
+| `GET /sessions/{id}` (preview) | 93 s | 0.4 s |
+| `GET /matches/{id}/analysis` | 72 s | < 1 s |
+| `GET /paper/status` | 31 s | — |
+| `GET /dashboard` | 11 s | — |
+| other screens | 1 – 4 s | — |
+
+The fix is the plan of ARCHITECTURE.md §5 option A: run the backend (API + worker, one container) on a host **in
+or near eu-west-1** (≈ 1–2 ms per query). The nightly backfill and the recorder cycle work from the PC meanwhile
+(slower, still well within their schedules).
+
+## 5. Tests never touch Supabase
+
+`backend/tests/conftest.py` blanks the database, Telegram, API and storage settings before any test runs (environment
+variables win over `.env`); integration tests use `TEST_DATABASE_URL` (local Docker). Checked 2026-11-17: a full run
+left Supabase unchanged.
+
+## 6. Still open
+
+- **Raw payload files** (183 files, 1.5 MB) are still on local disk (`RAW_STORE=local`, `backend/data/raw`); their
+  database rows are in Supabase. Moving them to Supabase Storage needs `SUPABASE_SERVICE_ROLE_KEY` in `.env`
+  (dashboard → Project Settings → API Keys → secret key); then upload and set `RAW_STORE=supabase`.
+- A backfill run of 2026-11-17 00:30 UTC is stuck in RUNNING (0 requests; its process ended without finishing the
+  row). Harmless.
