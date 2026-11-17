@@ -77,8 +77,8 @@
    stored `as_of` (deterministic, as the replay check proves) and returns every model and check.
 3. **Odds entered by hand** are stored like any other odds (append-only, source MANUAL, snapshot `BET_TIME`).
    They are captured after the cut-off, so they never change a frozen prediction.
-4. **Not built here** (other Phase 5 tasks): the lineup re-check and withdrawals (lineup status shows
-   `NOT_CHECKED`), Telegram messages, closing odds and CLV.
+4. **The re-check** about an hour before kick-off can withdraw a listed match (PAPER-BETTING.md §10): every
+   report entry carries `lineup_status` and `recheck`.
 
 ## 5. Build steps
 
@@ -126,7 +126,8 @@
 | `checks[]` | every check: `layer`, `layer_name`, `code`, `passed`, `value`, `threshold`, `detail`, `blocking` |
 | `odds_seen[]`, `best_under05_*`, `best_draw_*` | prices known at the cut-off |
 | `paper_bet` | the forward test's bet, or null |
-| `lineup_status` | `NOT_CHECKED` until the lineup re-check exists |
+| `lineup_status` | `NOT_CHECKED` (no re-check yet), `LINEUPS_PENDING`, `CONFIRMED`, **`WITHDRAWN` — never bet it** |
+| `recheck` | the latest re-check: `status`, `checked_at`, `decision`, `failed_checks`, lineups stored, its probabilities and minimum odds |
 | `chain_pos`, `recorded_at`, `as_of`, `params_version` | the sealed record (null in a preview) |
 
 `source` says where the entries come from: `FROZEN`, `PREVIEW` or `NONE` (`?preview=false`, or nothing to show).
@@ -214,6 +215,7 @@ time zone, a stake above `max_stake` (typing-error guard), unknown fields. Every
 | `BELOW_MIN_ODDS` | odds taken below the frozen minimum odds of that market |
 | `BOTH_MARKETS` | another active bet on the same match is on the other market |
 | `AFTER_KICKOFF` | placed at or after kick-off |
+| `WITHDRAWN` | placed after the re-check withdrew the match |
 
 Each bet: `state` = `PENDING` / `WIN` / `LOSE` / `VOID` / `CANCELLED`, `profit` (in the currency), `result_15`,
 `follows_rules`, the frozen `min_odds`, `grade`, `prediction_id`. The settlement is **not stored**: it is read from
@@ -295,5 +297,10 @@ gives the TypeScript types of every request and response; `src/lib/api.ts` wraps
 
 ### 10.5 Not built yet (later Phase 5 tasks)
 
-Lineup re-check and withdrawals (`lineup_status` stays `NOT_CHECKED`), Telegram notifications, closing odds and
-CLV. The `betting` migration, like the paper migration, still needs the owner's approval for Supabase.
+Telegram notifications, closing odds and CLV (being built). The `betting` migration, like the paper migration, still needs the owner's approval for Supabase.
+
+## 11. Additions after step 4
+
+- **Re-check (2026-11-17):** `lineup_status` / `recheck` on report entries, `withdrawn` on sessions, `lineups` on
+  `GET /matches/{id}` (each team: formation, players with `starter`), the `WITHDRAWN` rule breach, NO_BET in the
+  odds check for a withdrawn match.

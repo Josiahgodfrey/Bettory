@@ -352,3 +352,31 @@ Branch `paper-betting` (commits 4e24d18 .. 39a97ae), **not pushed**, no PR yet. 
 
 - The real `tune --real` once the backfill has finished (BACKTEST-REPORT.md §9).
 - Read `paper-report` regularly; Gate B profit needs months of bets (§7.2).
+
+## 10. The re-check about an hour before kick-off (2026-11-17)
+
+Owner decisions 2026-11-17: the re-check runs the **full verification again with everything known at that
+moment** (fresh odds, stored lineups); a listed match that no longer qualifies is **WITHDRAWN**. Lineups are
+stored and shown; there is **no lineup-specific rule** until one is defined and tested on data. A withdrawn
+match's **paper bet is settled VOID** — the forward test does what the owner does.
+
+| Step | What |
+|---|---|
+| Due | listed (QUALIFIED) predictions kicking off 30 .. 75 min from now (`config/paper.yaml` `recheck`), match still SCHEDULED, no final re-check yet; at most 3 re-checks, 15 min apart |
+| Fetch | API-Football lineups + odds of each due fixture (2 requests), within the recorder's daily bound |
+| Verify | `AnalysisContext(now).evaluate` → `recheck(QUALIFIED, verdict)` (one-way: withdraw only, never add) |
+| Store | `paper.rechecks` (migration `20261119120000_paper_rechecks.sql`): `CONFIRMED` (still qualifies, both lineups stored), `LINEUPS_PENDING` (still qualifies, lineups not announced yet: retried), `WITHDRAWN` (final) |
+
+Database guards: append-only; tied to the sealed prediction by its hash; only a QUALIFIED prediction; stamped by
+the database clock and refused at or after kick-off; nothing can be recorded after a withdrawal.
+
+Effects: the session report shows `lineup_status` and the `recheck` (failed checks of a withdrawal); a real bet
+placed after the withdrawal is flagged `WITHDRAWN`; the odds check answers NO_BET; the paper settlement records
+the 15' outcomes as usual (calibration) but the bet as VOID.
+
+| File | Role |
+|---|---|
+| [app/paper/recheck.py](../backend/app/paper/recheck.py) | `due`, `run_rechecks` |
+| [app/ingestion/pipeline.py](../backend/app/ingestion/pipeline.py) | `api_football_recheck` (lineups + odds) |
+| [app/normalisation/parsers/api_football.py](../backend/app/normalisation/parsers/api_football.py) | `parse_lineups`; stored in `core.match_lineups` by the loader |
+| [tests/integration/test_paper_recheck.py](../backend/tests/integration/test_paper_recheck.py) | withdraw / pending / confirm, the guards, VOID paper bet, flagged real bet, API, the fetch |

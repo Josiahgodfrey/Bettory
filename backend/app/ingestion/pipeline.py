@@ -341,6 +341,34 @@ def api_football_results(engine: Engine, store: RawStore, registry: Registry, ap
                 _close_api_football(client, job))
 
 
+def api_football_recheck(engine: Engine, store: RawStore, registry: Registry, api_key: str,
+                         fixture_keys: Sequence[str], max_requests: int, run_id: UUID | None = None, *,
+                         requests_per_minute: int, job_name: str) -> Counter[str]:
+    """Paper betting re-check (docs/PAPER-BETTING.md 10): for each fixture its announced lineups and its current
+    odds (15' and main markets), 2 requests per fixture, within `max_requests`."""
+    client = ApiFootball(api_key, max_requests=max_requests, requests_per_minute=requests_per_minute)
+    job = Job(engine, store, registry, SourceCode.API_FOOTBALL, job_name, False, run_id)
+    keys = list(dict.fromkeys(fixture_keys))
+
+    def body() -> None:
+        _plan_quota(client, job, max_requests, minimum=2)
+        budget = client.http.max_requests or 0
+        for key in keys:
+            if client.requests_used + 2 > budget:
+                job.stats["stopped_at_request_budget"] = 1
+                job.stats["fixtures_not_requested"] += 1
+                continue
+            lineups = client.lineups(key)
+            parsed = p_af.parse_lineups(lineups.body, key)
+            job.process(lineups, lambda raw: parsed)  # noqa: B023 - used at once, inside this iteration
+            job.stats["lineups_announced"] += len(parsed.lineups)
+            job.process(client.odds_for_fixture(key), lambda raw: p_af.parse_odds(raw, registry))
+            job.stats["fixtures_requested"] += 1
+
+    return _run(job, lambda: client.requests_used, _exclusive(engine, SourceCode.API_FOOTBALL, body),
+                _close_api_football(client, job))
+
+
 def api_football_backfill(engine: Engine, store: RawStore, registry: Registry, api_key: str, comp_code: str,
                           season: str, bulk: bool, max_requests: int, reparse: bool = False,
                           run_id: UUID | None = None, *, requests_per_minute: int,

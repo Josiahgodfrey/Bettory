@@ -76,8 +76,11 @@ def quote_card(conn: Connection, params: Params, registry: Registry, match_id: U
                 for b, prices in quotes.items() for sel, odds in prices.items()]
         stored = bet_repo.insert_manual_odds(conn, match_id, book, rows, now)
 
+    withdrawn = _withdrawn_at(conn, params, match_id)
     if started:
         advice, reason = "NO_BET", "the match has started"
+    elif withdrawn is not None:
+        advice, reason = "NO_BET", f"the match was withdrawn by the re-check at {withdrawn:%H:%M} UTC"
     elif listed is False:
         advice, reason = "NO_BET", "the match is not on the published session report"
     elif v.decision is not Decision.QUALIFIED or v.selected is None:
@@ -137,10 +140,18 @@ def record_bet(conn: Connection, params: Params, cfg: BettingConfig, b: BetInput
         breaches.append("BOTH_MARKETS")
     if placed >= f["kickoff_utc"]:
         breaches.append("AFTER_KICKOFF")
+    w = _withdrawn_at(conn, params, b.match_id)
+    if w is not None and placed >= w:
+        breaches.append("WITHDRAWN")
     return bet_repo.insert_bet(conn, bet_repo.NewBet(
         match_id=b.match_id, session_id=sid, prediction_id=_prediction_id(conn, frozen), market=b.market.value,
         odds=b.odds, stake=b.stake, currency=cfg.currency, bookmaker=b.bookmaker, placed_at=placed,
         min_odds=min_odds, rule_breaches=tuple(breaches), note=b.note))
+
+
+def _withdrawn_at(conn: Connection, params: Params, match_id: UUID) -> datetime | None:
+    r = paper_repo.latest_rechecks(conn, [match_id], params.params_version).get(match_id)
+    return r["checked_at"] if r and r["status"] == "WITHDRAWN" else None
 
 
 def _prediction_id(conn: Connection, frozen: paper_repo.FrozenPrediction | None) -> UUID | None:

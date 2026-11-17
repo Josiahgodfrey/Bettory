@@ -58,7 +58,9 @@ def settle_due(engine: Engine, now: datetime) -> SettleResult:
                 pending += 1
                 continue
             outcome = profit = None
-            if c.bet_market is not None:
+            if c.bet_market is not None and c.withdrawn:  # withdrawn before kick-off: not bet (owner decision)
+                outcome, profit = BetOutcome.VOID.value, 0.0
+            elif c.bet_market is not None:
                 assert c.bet_odds is not None and c.bet_stake is not None
                 st = settle(Bet(c.bet_market), res, c.bet_odds, c.bet_stake)
                 if st.outcome is BetOutcome.PENDING:  # e.g. a draw bet with only "goal before 15'" known

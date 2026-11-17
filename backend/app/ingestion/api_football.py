@@ -81,6 +81,10 @@ class ApiFootball:
     def odds_by_date(self, day: date, page: int = 1) -> Fetched:
         return self._get("/odds", {"date": day.isoformat(), "page": page, "timezone": "UTC"})
 
+    def lineups(self, fixture_id: str) -> Fetched:
+        """Announced lineups of one fixture (about an hour before kick-off; empty before)."""
+        return self._get("/fixtures/lineups", {"fixture": fixture_id})
+
     def odds_for_fixture(self, fixture_id: str) -> Fetched:
         return self._get("/odds", {"fixture": fixture_id})
 

@@ -1524,6 +1524,117 @@
         "title": "JobAccepted",
         "type": "object"
       },
+      "LineupOut": {
+        "additionalProperties": false,
+        "properties": {
+          "fetched_at": {
+            "format": "date-time",
+            "title": "Fetched At",
+            "type": "string"
+          },
+          "formation": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Formation"
+          },
+          "home": {
+            "title": "Home",
+            "type": "boolean"
+          },
+          "players": {
+            "items": {
+              "$ref": "#/components/schemas/LineupPlayerOut"
+            },
+            "title": "Players",
+            "type": "array"
+          },
+          "source": {
+            "title": "Source",
+            "type": "string"
+          },
+          "team": {
+            "title": "Team",
+            "type": "string"
+          },
+          "team_id": {
+            "format": "uuid",
+            "title": "Team Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "team_id",
+          "team",
+          "home",
+          "formation",
+          "players",
+          "source",
+          "fetched_at"
+        ],
+        "title": "LineupOut",
+        "type": "object"
+      },
+      "LineupPlayerOut": {
+        "additionalProperties": false,
+        "properties": {
+          "grid": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Grid"
+          },
+          "name": {
+            "title": "Name",
+            "type": "string"
+          },
+          "number": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Number"
+          },
+          "position": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Position"
+          },
+          "starter": {
+            "title": "Starter",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "name",
+          "number",
+          "position",
+          "grid",
+          "starter"
+        ],
+        "title": "LineupPlayerOut",
+        "type": "object"
+      },
       "ManualCycleOut": {
         "additionalProperties": false,
         "properties": {
@@ -1749,6 +1860,13 @@
             "title": "Kickoff Utc",
             "type": "string"
           },
+          "lineups": {
+            "items": {
+              "$ref": "#/components/schemas/LineupOut"
+            },
+            "title": "Lineups",
+            "type": "array"
+          },
           "match_id": {
             "format": "uuid",
             "title": "Match Id",
@@ -1837,6 +1955,7 @@
           "updated_at",
           "session_id",
           "result_15",
+          "lineups",
           "goals",
           "sources",
           "predictions"
@@ -2422,6 +2541,16 @@
             "title": "Params Version",
             "type": "string"
           },
+          "recheck": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/RecheckOut"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
           "recorded_at": {
             "anyOf": [
               {
@@ -2473,6 +2602,7 @@
           "as_of",
           "paper_bet",
           "lineup_status",
+          "recheck",
           "fixture",
           "session_id",
           "row_hash"
@@ -2772,6 +2902,102 @@
           "bookmaker"
         ],
         "title": "QuoteIn",
+        "type": "object"
+      },
+      "RecheckOut": {
+        "additionalProperties": false,
+        "properties": {
+          "attempts": {
+            "title": "Attempts",
+            "type": "integer"
+          },
+          "checked_at": {
+            "format": "date-time",
+            "title": "Checked At",
+            "type": "string"
+          },
+          "decision": {
+            "title": "Decision",
+            "type": "string"
+          },
+          "failed_checks": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Failed Checks",
+            "type": "array"
+          },
+          "lineups_away": {
+            "title": "Lineups Away",
+            "type": "boolean"
+          },
+          "lineups_home": {
+            "title": "Lineups Home",
+            "type": "boolean"
+          },
+          "min_odds_draw": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Min Odds Draw"
+          },
+          "min_odds_under05": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Min Odds Under05"
+          },
+          "p_draw": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "P Draw"
+          },
+          "p_under05": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "P Under05"
+          },
+          "status": {
+            "title": "Status",
+            "type": "string"
+          }
+        },
+        "required": [
+          "status",
+          "checked_at",
+          "decision",
+          "failed_checks",
+          "lineups_home",
+          "lineups_away",
+          "p_under05",
+          "p_draw",
+          "min_odds_under05",
+          "min_odds_draw",
+          "attempts"
+        ],
+        "title": "RecheckOut",
         "type": "object"
       },
       "RecorderStatusOut": {
@@ -3260,6 +3486,16 @@
             "title": "Params Version",
             "type": "string"
           },
+          "recheck": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/RecheckOut"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
           "recorded_at": {
             "anyOf": [
               {
@@ -3303,6 +3539,7 @@
           "as_of",
           "paper_bet",
           "lineup_status",
+          "recheck",
           "fixture"
         ],
         "title": "ReportEntryOut",
@@ -3871,6 +4108,10 @@
             "format": "date-time",
             "title": "Start Utc",
             "type": "string"
+          },
+          "withdrawn": {
+            "title": "Withdrawn",
+            "type": "integer"
           }
         },
         "required": [
@@ -3888,7 +4129,8 @@
           "fixtures",
           "frozen",
           "listed",
-          "paper_bets"
+          "paper_bets",
+          "withdrawn"
         ],
         "title": "SessionOut",
         "type": "object"

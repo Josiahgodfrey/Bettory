@@ -6,6 +6,7 @@
 #   capture   for each session whose data cut-off (as_of) is less than capture.lead_minutes away: fixtures
 #             of the session's dates + the odds of its upcoming fixtures, once (retried up to capture.attempts)
 #   freeze    for each session past its as_of with upcoming fixtures not frozen yet: freeze them
+#   recheck   listed matches recheck.from_minutes .. to_minutes before kick-off: lineups, fresh odds, verify again
 #   results   at most every results.every_hours: goal minutes of frozen fixtures that kicked off
 #             results.lookback_hours .. 2 h ago and still have no 15' result
 #   settle    every cycle (no request)
@@ -24,6 +25,17 @@ capture:
   attempts: 3                  # runs per session window, failed ones included (e.g. the API lock was held)
   max_requests:                # per session: 1 fixtures listing per date + 1 odds request per fixture
     free: 12
+    pro: 60
+
+recheck:                       # the listed matches about an hour before kick-off (PAPER-BETTING.md 10): fetch the
+                               # lineups and fresh odds, run the full verification again, withdraw if it no
+                               # longer qualifies (never adds). Owner decision 2026-11-17
+  from_minutes: 30             # fixtures kicking off 30 .. 75 minutes from now
+  to_minutes: 75
+  retry_minutes: 15            # lineups not announced yet: try again after this long
+  attempts: 3                  # at most this many re-checks per match (about -75, -60, -45 minutes)
+  max_requests:                # per cycle: 2 per fixture (lineups + odds)
+    free: 6
     pro: 60
 
 results:

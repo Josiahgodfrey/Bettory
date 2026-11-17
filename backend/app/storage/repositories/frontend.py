@@ -101,8 +101,10 @@ def frozen_counts(conn: Connection, session_ids: Sequence[str], params_version: 
     """Per session: frozen rows, listed (QUALIFIED) rows and paper bets for one params version."""
     rows = conn.execute(text("""
         select session_id, count(*) as frozen, count(*) filter (where decision = 'QUALIFIED') as listed,
-               count(bet_market) as paper_bets, min(as_of) as as_of
-        from paper.predictions where session_id = any(:s) and params_version = :v group by session_id
+               count(bet_market) as paper_bets, min(as_of) as as_of,
+               count(*) filter (where exists (select 1 from paper.rechecks r where r.prediction_id = p.id
+                                              and r.status = 'WITHDRAWN')) as withdrawn
+        from paper.predictions p where session_id = any(:s) and params_version = :v group by session_id
     """), {"s": list(session_ids), "v": params_version}).mappings().all()
     return {r["session_id"]: dict(r) for r in rows}
 
@@ -114,3 +116,15 @@ def predictions_for_match(conn: Connection, match_id: UUID) -> list[dict[str, An
         from paper.predictions where match_id = :m order by recorded_at desc
     """), {"m": match_id}).mappings().all()
     return [dict(r) for r in rows]
+
+
+def lineups(conn: Connection, match_id: UUID) -> list[dict[str, Any]]:
+    """The newest stored lineup of each team of the match (home first)."""
+    rows = conn.execute(text("""
+        select distinct on (l.team_id) l.team_id, t.name as team, (l.team_id = m.home_team_id) as home,
+               l.formation, l.players, src.code as source, l.fetched_at
+        from core.match_lineups l join core.matches m on m.id = l.match_id join core.teams t on t.id = l.team_id
+        join core.sources src on src.id = l.source_id
+        where l.match_id = :m order by l.team_id, l.fetched_at desc
+    """), {"m": match_id}).mappings().all()
+    return sorted((dict(r) for r in rows), key=lambda r: not r["home"])

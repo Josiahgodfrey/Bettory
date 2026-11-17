@@ -85,6 +85,20 @@ class PaperBetOut(Out):
     stake: float
 
 
+class RecheckOut(Out):
+    status: str  # CONFIRMED / LINEUPS_PENDING / WITHDRAWN
+    checked_at: datetime
+    decision: str
+    failed_checks: list[str]
+    lineups_home: bool
+    lineups_away: bool
+    p_under05: float | None
+    p_draw: float | None
+    min_odds_under05: float | None
+    min_odds_draw: float | None
+    attempts: int
+
+
 class ReportEntryOut(Out):
     match_id: UUID
     decision: str
@@ -117,7 +131,8 @@ class ReportEntryOut(Out):
     recorded_at: datetime | None = None  # null in a preview
     chain_pos: int | None = None
     paper_bet: PaperBetOut | None
-    lineup_status: str
+    lineup_status: str  # NOT_CHECKED / LINEUPS_PENDING / CONFIRMED / WITHDRAWN
+    recheck: RecheckOut | None
     fixture: FixtureOut | None
 
 
@@ -140,6 +155,7 @@ class SessionOut(Out):
     frozen: int
     listed: int
     paper_bets: int
+    withdrawn: int
 
 
 class SessionReportOut(Out):
@@ -199,7 +215,26 @@ class MatchPredictionOut(Out):
     decision: str
 
 
+class LineupPlayerOut(Out):
+    name: str
+    number: int | None
+    position: str | None
+    grid: str | None
+    starter: bool
+
+
+class LineupOut(Out):
+    team_id: UUID
+    team: str
+    home: bool
+    formation: str | None
+    players: list[LineupPlayerOut]
+    source: str
+    fetched_at: datetime
+
+
 class MatchOut(FixtureOut):
+    lineups: list[LineupOut]
     goals: list[GoalOut]
     sources: list[MatchSourceOut]
     predictions: list[MatchPredictionOut]

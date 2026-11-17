@@ -42,6 +42,20 @@ class Capture(_Strict):
         return timedelta(minutes=self.lead_minutes)
 
 
+class Recheck(_Strict):
+    from_minutes: int = Field(ge=5, le=240)
+    to_minutes: int = Field(ge=10, le=360)
+    retry_minutes: int = Field(ge=5, le=120)
+    attempts: int = Field(ge=1, le=10)
+    max_requests: PerPlan
+
+    @model_validator(mode="after")
+    def _window(self) -> Self:
+        if self.from_minutes >= self.to_minutes:
+            raise ValueError("recheck.from_minutes must be before to_minutes")
+        return self
+
+
 class Results(_Strict):
     every_hours: int = Field(ge=1, le=48)
     lookback_hours: int = Field(ge=3, le=24 * 14)
@@ -52,6 +66,7 @@ class PaperConfig(_Strict):
     schedule: Schedule
     daily_max_requests: PerPlan
     capture: Capture
+    recheck: Recheck
     results: Results
 
     @model_validator(mode="after")

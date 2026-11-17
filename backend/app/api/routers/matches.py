@@ -59,7 +59,8 @@ def match(match_id: UUID, _: OwnerDep, engine: EngineDep, params: ParamsDep) -> 
             raise _not_found(match_id)
         return {**fixture_json(f, cal), "goals": jsonable(fe_repo.goals(conn, match_id)),
                 "sources": jsonable(fe_repo.match_sources(conn, match_id)),
-                "predictions": jsonable(fe_repo.predictions_for_match(conn, match_id))}
+                "predictions": jsonable(fe_repo.predictions_for_match(conn, match_id)),
+                "lineups": jsonable(fe_repo.lineups(conn, match_id))}
 
 
 @router.get("/matches/{match_id}/analysis")

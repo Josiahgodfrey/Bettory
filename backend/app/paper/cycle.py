@@ -8,6 +8,8 @@ any process: a step that is not due does nothing and costs nothing.
               run in that window yet (at most capture.attempts runs): app/paper/capture.py
     freeze    a session past its as_of with upcoming fixtures not frozen yet for the live params version:
               app/paper/freeze.py. A freeze without a capture seals no odds (no paper bet) - reported
+    recheck   listed matches about an hour before kick-off: lineups, fresh odds, the full verification again;
+              withdraw if it no longer qualifies (app/paper/recheck.py)
     results   at most every results.every_hours: goal minutes of the frozen fixtures still without a 15' result
     settle    every cycle, from the stored results (no request): app/paper/settle.py
 
@@ -33,6 +35,8 @@ from app.ingestion import pipeline
 from app.paper.capture import RECORDER_JOB_PREFIX, capture_job, capture_session
 from app.paper.config import PaperConfig
 from app.paper.freeze import MIN_LEAD, Provenance, due_sessions, freeze_session
+from app.paper.recheck import Rechecked, run_rechecks
+from app.paper.recheck import due as recheck_due
 from app.paper.settle import SETTLE_AFTER, settle_due
 from app.storage.raw_store import RawStore
 from app.storage.repositories import ops as ops_repo
@@ -96,6 +100,7 @@ class _Cycle:
         self.plan, self.key, self.rpm = s.api_football_plan, s.api_football_key.get_secret_value(), \
             s.api_football_requests_per_minute
         self.codes = tuple(sorted(x.competitions))
+        self.rechecked: list[Rechecked] = []
 
     def left_today(self) -> int:
         spent = ops_repo.requests_since(self.x.engine, RECORDER_JOB_PREFIX, _quota_day(self.now))
@@ -105,6 +110,7 @@ class _Cycle:
         cal = SessionCalendar(self.x.params)
         for sid in due_sessions(cal, self.now):
             self.session(cal, sid)
+        self.recheck()
         self.results()
         if not self.dry_run:
             self.settle()
@@ -155,6 +161,27 @@ class _Cycle:
                      + (f", chain {r.chain_from}..{r.chain_to}" if r.chain_from is not None else "") + warn)
         except Exception as exc:
             out.fail(f"{sid} freeze failed: {type(exc).__name__}: {exc}")
+
+    def recheck(self) -> None:
+        x, now, out, cfg = self.x, self.now, self.out, self.x.cfg.recheck
+        if self.dry_run:
+            todo = recheck_due(x.engine, x.params, cfg, now)
+            if todo:
+                out.note(f"would re-check {len(todo)} listed matches now (lineups, fresh odds, verify again)")
+            return
+        budget = min(cfg.max_requests.for_plan(self.plan), self.left_today())
+        try:
+            run = run_rechecks(x.engine, x.store, x.registry, x.params, cfg, now=now, api_key=self.key,
+                               max_requests=budget, requests_per_minute=self.rpm)
+        except Exception as exc:
+            out.fail(f"re-check failed: {type(exc).__name__}: {exc}")
+            return
+        if run.fetch_error:
+            out.fail(f"re-check fetch failed (verified with the data known): {run.fetch_error}")
+        for r in run.results:
+            failed = f" ({', '.join(r.failed_checks)})" if r.status == "WITHDRAWN" and r.failed_checks else ""
+            out.note(f"{r.session_id} re-check {r.match_id[:8]} kick-off {r.kickoff_utc:%H:%M}Z: {r.status}{failed}")
+        self.rechecked.extend(run.results)
 
     def results(self) -> None:
         x, now, out, cfg = self.x, self.now, self.out, self.x.cfg.results

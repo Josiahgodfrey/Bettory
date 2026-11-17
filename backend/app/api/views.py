@@ -35,7 +35,7 @@ from app.storage.repositories import frontend as fe_repo
 from app.storage.repositories import paper as paper_repo
 
 MAX_RANGE_DAYS = 31
-LINEUP_NOT_CHECKED = "NOT_CHECKED"  # the lineup re-check (ARCHITECTURE.md 12.7) is not built yet
+LINEUP_NOT_CHECKED = "NOT_CHECKED"  # no re-check yet (it runs about an hour before kick-off)
 
 
 # --- JSON ------------------------------------------------------------------------------------------------------
@@ -102,6 +102,7 @@ class SessionInfo:
     frozen: int
     listed: int
     paper_bets: int
+    withdrawn: int = 0
 
 
 _ANALYSED = {s.value for s in paper_repo.IN_SESSION}
@@ -129,7 +130,8 @@ def _info(cal: SessionCalendar, sid: SessionId, fixtures: list[dict[str, Any]], 
         state = "MISSED"
     phase = "UPCOMING" if now < first else "IN_PROGRESS" if now < times.end_utc else "ENDED"
     return SessionInfo(sid, fixtures, as_of, ready_by, state, phase, frozen,
-                       int(counts["listed"]) if counts else 0, int(counts["paper_bets"]) if counts else 0)
+                       int(counts["listed"]) if counts else 0, int(counts["paper_bets"]) if counts else 0,
+                       int(counts.get("withdrawn") or 0) if counts else 0)
 
 
 def session_infos(conn: Connection, params: Params, competitions: Sequence[str], first: date, last: date,
@@ -164,10 +166,21 @@ def info_json(i: SessionInfo, cal: SessionCalendar) -> dict[str, Any]:
             "first_kickoff_utc": jsonable(next((f["kickoff_utc"] for f in i.fixtures
                                                 if f["status"] in _ANALYSED), None)),
             "report_state": i.report_state, "phase": i.phase, "fixtures": len(i.fixtures),
-            "frozen": i.frozen, "listed": i.listed, "paper_bets": i.paper_bets}
+            "frozen": i.frozen, "listed": i.listed, "paper_bets": i.paper_bets, "withdrawn": i.withdrawn}
 
 
-def entry_json(p: Mapping[str, Any], f: Mapping[str, Any] | None, cal: SessionCalendar) -> dict[str, Any]:
+def recheck_json(r: Mapping[str, Any] | None) -> dict[str, Any] | None:
+    if r is None:
+        return None
+    return {"status": r["status"], "checked_at": jsonable(r["checked_at"]), "decision": r["decision"],
+            "failed_checks": list(r["failed_checks"]), "lineups_home": r["lineups_home"],
+            "lineups_away": r["lineups_away"], "p_under05": r["p_under05"], "p_draw": r["p_draw"],
+            "min_odds_under05": r["min_odds_under05"], "min_odds_draw": r["min_odds_draw"],
+            "attempts": int(r["attempts"])}
+
+
+def entry_json(p: Mapping[str, Any], f: Mapping[str, Any] | None, cal: SessionCalendar,
+               recheck: Mapping[str, Any] | None = None) -> dict[str, Any]:
     keep = ("decision", "grade", "failed_checks", "error", "p_under05", "p_draw", "p_model_a", "p_model_b2",
             "p_market", "p_market_draw", "p_league_00", "p_league_draw", "min_odds_under05", "min_odds_draw",
             "fair_under05", "fair_draw", "model_spread_pts", "complete_sample", "checks", "odds_seen",
@@ -177,7 +190,8 @@ def entry_json(p: Mapping[str, Any], f: Mapping[str, Any] | None, cal: SessionCa
     out["match_id"] = jsonable(p["match_id"])
     out["paper_bet"] = ({"market": p["bet_market"], "odds": p["bet_odds"], "bookmaker": p["bet_book"],
                          "ev": p["bet_ev"], "stake": p["bet_stake"]} if p.get("bet_market") else None)
-    out["lineup_status"] = LINEUP_NOT_CHECKED
+    out["lineup_status"] = recheck["status"] if recheck else LINEUP_NOT_CHECKED
+    out["recheck"] = recheck_json(recheck)
     out["fixture"] = fixture_json(f, cal) if f is not None else None
     return out
 
@@ -197,7 +211,8 @@ def session_entries(conn: Connection, params: Params, registry: Registry, compet
     fixtures = {f["match_id"]: f for f in info.fixtures}
     if info.frozen:
         rows = paper_repo.frozen(conn, str(sid), params.params_version)
-        entries = [entry_json(asdict(r), fixtures.get(r.match_id), cal) for r in rows]
+        rechecks = paper_repo.latest_rechecks(conn, [r.match_id for r in rows], params.params_version)
+        entries = [entry_json(asdict(r), fixtures.get(r.match_id), cal, rechecks.get(r.match_id)) for r in rows]
         entries.sort(key=lambda e: (e["fixture"] or {}).get("kickoff_utc") or "")
         return SessionEntries(info, "FROZEN", info.as_of, entries)
     eligible = [f for f in info.fixtures if f["status"] in _ANALYSED]
@@ -227,7 +242,7 @@ def report_json(se: SessionEntries, cal: SessionCalendar, *, listed_only: bool) 
         out["decisions"] = by_decision
         out["how_to_bet"] = ("Bet a listed match only if the bookmaker's odds are at or above the minimum odds. "
                              "Choose one market per match: the one where offered odds / minimum odds is higher. "
-                             "Never bet both.")
+                             "Never bet both. Never bet a match whose lineup_status is WITHDRAWN.")
     else:
         analysed = {e["match_id"] for e in se.entries}
         out["not_analysed"] = [fixture_json(f, cal) for f in se.info.fixtures if str(f["match_id"]) not in analysed]
@@ -257,7 +272,8 @@ def match_analysis(conn: Connection, params: Params, registry: Registry, match_i
         same = all(_close(a, b) for a, b in ((r.p_under05, verdict.p_under05), (r.p_draw, verdict.p_draw),
                                              (r.min_odds_under05, verdict.min_odds_under05),
                                              (r.min_odds_draw, verdict.min_odds_draw)))
-        out["frozen"] = entry_json(asdict(r), f, cal)
+        out["frozen"] = entry_json(asdict(r), f, cal,
+                                   paper_repo.latest_rechecks(conn, [match_id], params.params_version).get(match_id))
         out["matches_frozen"] = same  # False: data known before as_of arrived or changed after the freeze
     return out
 

@@ -232,6 +232,7 @@ class SettlementCandidate:
     now: MatchResultState  # the stored result today
     last_id: UUID | None  # the latest settlement of this prediction
     last: MatchResultState | None  # the result it was settled on
+    withdrawn: bool = False  # withdrawn by the re-check before kick-off: its paper bet is VOID
 
 
 def settlement_candidates(conn: Connection, kicked_off_before: datetime) -> list[SettlementCandidate]:
@@ -241,7 +242,9 @@ def settlement_candidates(conn: Connection, kicked_off_before: datetime) -> list
                m.status::text as m_status, m.data_status::text as m_data, m.h15_home as m_h, m.h15_away as m_a,
                m.goal_before_15 as m_g,
                s.id as s_id, s.match_status as s_status, s.data_status as s_data, s.h15_home as s_h,
-               s.h15_away as s_a, s.goal_before_15 as s_g
+               s.h15_away as s_a, s.goal_before_15 as s_g,
+               exists (select 1 from paper.rechecks r where r.prediction_id = p.id and r.status = 'WITHDRAWN')
+                 as withdrawn
         from paper.predictions p
         join core.matches m on m.id = p.match_id
         left join lateral (select * from paper.settlements x where x.prediction_id = p.id
@@ -253,6 +256,7 @@ def settlement_candidates(conn: Connection, kicked_off_before: datetime) -> list
         r["id"], r["row_hash"], r["kickoff_utc"], r["bet_market"], r["bet_odds"], r["bet_stake"],
         MatchResultState(r["m_status"], r["m_data"], r["m_h"], r["m_a"], r["m_g"]), r["s_id"],
         None if r["s_id"] is None else MatchResultState(r["s_status"], r["s_data"], r["s_h"], r["s_a"], r["s_g"]),
+        bool(r["withdrawn"]),
     ) for r in rows]
 
 
@@ -345,3 +349,97 @@ def prediction_id(conn: Connection, chain_pos: int) -> UUID:
     found: UUID = conn.execute(text("select id from paper.predictions where chain_pos = :p"),
                                {"p": chain_pos}).scalar_one()
     return found
+
+
+
+# --- re-checks (docs/PAPER-BETTING.md 10) ----------------------------------------------------------------------
+
+
+@dataclass(frozen=True)
+class RecheckCandidate:
+    prediction_id: UUID
+    prediction_hash: str
+    match_id: UUID
+    kickoff_utc: datetime
+    session_id: str
+    provider_key: str | None  # API-Football fixture id (None: cannot fetch lineups / odds)
+    attempts: int
+    last_checked_at: datetime | None
+    seconds_since_last: float | None  # by the database clock, which stamps the re-checks
+
+
+def recheck_candidates(conn: Connection, params_version: str, kickoff_from: datetime,
+                       kickoff_to: datetime) -> list[RecheckCandidate]:
+    """Listed predictions kicking off in [from, to) whose match is still SCHEDULED and that have no final
+    re-check (CONFIRMED or WITHDRAWN) yet."""
+    rows = conn.execute(text("""
+        select p.id, p.row_hash, p.match_id, p.kickoff_utc, p.session_id,
+               (select r.provider_match_key from core.match_source_records r
+                 where r.match_id = p.match_id and r.source_id = :src order by r.parsed_at desc limit 1) as key,
+               (select count(*) from paper.rechecks c where c.prediction_id = p.id) as attempts,
+               (select max(c.checked_at) from paper.rechecks c where c.prediction_id = p.id) as last_at,
+               extract(epoch from clock_timestamp() - (select max(c.checked_at) from paper.rechecks c
+                                                       where c.prediction_id = p.id)) as since_last
+        from paper.predictions p join core.matches m on m.id = p.match_id
+        where p.params_version = :v and p.decision = 'QUALIFIED' and m.status = 'SCHEDULED'
+          and p.kickoff_utc >= :a and p.kickoff_utc < :b
+          and not exists (select 1 from paper.rechecks c where c.prediction_id = p.id
+                          and c.status in ('CONFIRMED', 'WITHDRAWN'))
+        order by p.kickoff_utc, p.chain_pos
+    """), {"src": SOURCE_IDS[SourceCode.API_FOOTBALL], "v": params_version, "a": kickoff_from,
+           "b": kickoff_to}).mappings().all()
+    return [RecheckCandidate(r["id"], r["row_hash"], r["match_id"], r["kickoff_utc"], r["session_id"], r["key"],
+                             int(r["attempts"]), r["last_at"],
+                             None if r["since_last"] is None else float(r["since_last"])) for r in rows]
+
+
+def lineups_stored(conn: Connection, match_id: UUID) -> tuple[bool, bool]:
+    """(home, away): a lineup of the team is stored for the match."""
+    row = conn.execute(text("""
+        select exists (select 1 from core.match_lineups l where l.match_id = m.id and l.team_id = m.home_team_id),
+               exists (select 1 from core.match_lineups l where l.match_id = m.id and l.team_id = m.away_team_id)
+        from core.matches m where m.id = :m"""), {"m": match_id}).one()
+    return bool(row[0]), bool(row[1])
+
+
+@dataclass(frozen=True)
+class NewRecheck:
+    prediction_id: UUID
+    prediction_hash: str
+    status: str
+    lineups_home: bool
+    lineups_away: bool
+    decision: str
+    failed_checks: tuple[str, ...]
+    checks: tuple[dict[str, Any], ...]
+    p_under05: float | None
+    p_draw: float | None
+    min_odds_under05: float | None
+    min_odds_draw: float | None
+
+
+def insert_recheck(conn: Connection, r: NewRecheck) -> datetime:
+    values: dict[str, Any] = asdict(r)
+    values["failed_checks"] = list(r.failed_checks)
+    values["checks"] = json.dumps(list(r.checks))
+    cols = ", ".join(values)
+    binds = ", ".join("cast(:checks as jsonb)" if c == "checks" else f":{c}" for c in values)
+    at: datetime = conn.execute(text(f"insert into paper.rechecks ({cols}) values ({binds}) returning checked_at"),
+                                values).scalar_one()
+    return at
+
+
+def latest_rechecks(conn: Connection, match_ids: Sequence[UUID],
+                    params_version: str | None = None) -> dict[UUID, dict[str, Any]]:
+    """The newest re-check of each match's listed prediction (by match id)."""
+    if not match_ids:
+        return {}
+    rows = conn.execute(text("""
+        select distinct on (p.match_id) p.match_id, r.status, r.checked_at, r.decision, r.failed_checks,
+               r.lineups_home, r.lineups_away, r.p_under05, r.p_draw, r.min_odds_under05, r.min_odds_draw,
+               (select count(*) from paper.rechecks c where c.prediction_id = p.id) as attempts
+        from paper.rechecks r join paper.predictions p on p.id = r.prediction_id
+        where p.match_id = any(:m) and (cast(:v as text) is null or p.params_version = :v)
+        order by p.match_id, r.checked_at desc
+    """), {"m": list(match_ids), "v": params_version}).mappings().all()
+    return {r["match_id"]: dict(r) for r in rows}

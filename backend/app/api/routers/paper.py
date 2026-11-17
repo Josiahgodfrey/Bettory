@@ -71,7 +71,9 @@ def predictions(_: OwnerDep, engine: EngineDep, params: ParamsDep, session: str 
     with engine.connect() as conn:
         rows = paper_repo.frozen(conn, session, version)[::-1][:limit]
         fixtures = fe_repo.fixtures_by_ids(conn, [r.match_id for r in rows])
-    return [{**entry_json(asdict(r), fixtures.get(r.match_id), cal), "session_id": r.session_id,
+        rechecks = paper_repo.latest_rechecks(conn, [r.match_id for r in rows], version)
+    return [{**entry_json(asdict(r), fixtures.get(r.match_id), cal, rechecks.get(r.match_id)),
+             "session_id": r.session_id,
              "row_hash": r.row_hash} for r in rows]
 
 
