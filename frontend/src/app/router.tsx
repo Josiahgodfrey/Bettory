@@ -4,6 +4,8 @@ import { AppLayout } from '@/app/app-layout'
 import { ComingSoon, PageHeader } from '@/components/page'
 import { Button } from '@/components/ui/button'
 import { LoginPage } from '@/features/auth/login-page'
+import { BetsPage } from '@/features/bets/bets-page'
+import { MatchPage } from '@/features/match/match-page'
 import { SessionPage, SessionsIndex } from '@/features/sessions/session-page'
 import { TodayPage } from '@/features/today/today-page'
 
@@ -26,11 +28,8 @@ export const router = createBrowserRouter([
       { index: true, element: <TodayPage /> },
       { path: 'sessions', element: <SessionsIndex /> },
       { path: 'sessions/:sessionId', element: <SessionPage /> },
-      {
-        path: 'matches/:matchId',
-        element: <ComingSoon title="Match analysis" step={3} endpoints={['GET /matches/{id}', 'GET /matches/{id}/analysis', 'POST /matches/{id}/quotes']} />,
-      },
-      { path: 'bets', element: <ComingSoon title="My bets" step={3} endpoints={['GET /bets', 'POST /bets', 'POST /bets/{id}/cancel']} /> },
+      { path: 'matches/:matchId', element: <MatchPage /> },
+      { path: 'bets', element: <BetsPage /> },
       { path: 'performance', element: <ComingSoon title="Performance" step={4} endpoints={['GET /performance']} /> },
       { path: 'paper', element: <ComingSoon title="Paper betting" step={4} endpoints={['GET /paper/report', 'GET /paper/predictions', 'GET /paper/chain']} /> },
       { path: 'recorder', element: <ComingSoon title="Recorder" step={5} endpoints={['GET /paper/status', 'POST /paper/cycle']} /> },

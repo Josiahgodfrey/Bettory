@@ -28,6 +28,7 @@ from app.api.responses import BookmakerOut, DashboardOut, MeOut, NotificationsOu
 from app.api.views import jsonable
 from app.backtest.config import load_backtest_config
 from app.backtest.tuning_plan import current_plan_path
+from app.domain.betting_config import load_betting_config
 from app.domain.sessions import SessionCalendar
 from app.notifications import messages, outbox
 from app.paper.config import load_paper_config
@@ -84,6 +85,7 @@ def settings_view(_: OwnerDep, settings: SettingsDep, params: ParamsDep, registr
                    "calibration": jsonable(bt.calibration.model_dump()),
                    "min_qualified": bt.gate_b.min_qualified},
         "stake": bt.estimated_value.stake,
+        "betting": jsonable(load_betting_config().model_dump()),  # real bets: currency, max_stake
         "recorder": jsonable(load_paper_config().model_dump()),
         "api_football_plan": settings.api_football_plan,
     }

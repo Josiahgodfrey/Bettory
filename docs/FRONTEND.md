@@ -59,7 +59,7 @@ Until step 3 is done, the API refuses every real login (503 "authentication is n
 |---|---|---|
 | 1 | Project, preset, typed API client, login (password + code, QR enrolment), layout and navigation, theme | ✅ 2026-11-17 |
 | 2 | Today (dashboard) and Bets section (sessions, report, all fixtures) | ✅ 2026-11-18 |
-| 3 | Match analysis, odds check, record a bet, My bets (cancel) | ⬜ |
+| 3 | Match analysis, odds check, record a bet, My bets (cancel) | ✅ 2026-11-18 |
 | 4 | Performance, Paper betting (report, predictions, chain, replay) | ⬜ |
 | 5 | Recorder, Calendar, Data health, Notifications, Settings | ⬜ |
 | 6 | Whole-application tests (Playwright on the real API), phone layout pass | ⬜ |
@@ -86,3 +86,23 @@ Until step 3 is done, the API refuses every real login (503 "authentication is n
 - Checked on the local database (real fixtures, all "not enough data" before the Pro backfill) and with a mocked
   published report for the listed cards; navigation driven in a phone-sized browser; no console errors; unit tests
   (`npm test`) for formatting, EAT times and check names.
+
+### Step 3 checks (2026-11-18)
+
+- **Match analysis** (`/matches/{id}?session=`): header with scores and the 15′ result, the verdict (sealed record or
+  preview, versions, decision, grade, lineup status, minimum odds of both markets), then tabs: **Checks** by layer
+  (value vs threshold, what blocks the bet, repeated reasons shown once), **Models** (BETTORY, A, B v2, market, league
+  baseline for both markets), **Teams** (the four last-10 windows and head to head, rates as "count/n", never divided
+  in the frontend), **Odds** (stored prices, yours marked), **Match** (goals, lineups, sources).
+- **Odds check** (`#odds`, linked from the Bets section): bookmaker (remembered in this browser), "Goal in minutes 1–15"
+  Yes / No (= Under 0.5) and the 15′ result Home / Draw / Away; a market must be complete or empty. The decision card
+  shows BET / NO BET / WAIT, the reason, the market to bet with offered odds and EV, and the price checks; "Record
+  this bet" opens the bet form already filled in.
+- **Record a placed bet**: market, odds, stake in the currency from `GET /settings` (`betting`, added to the API for
+  this), bookmaker, placed now or at a time in EAT, note. Odds below the minimum show a warning before saving; the
+  saved bet's rule breaches come back from the API and show as a warning notification.
+- **My bets** (`/bets`): All / Open / Settled / Cancelled, each bet with result and profit, odds vs minimum, stake,
+  bookmaker, 15′ outcome, CLV once closing odds exist, rule breaches, note; **Cancel bet…** asks for a reason.
+- Checked in a phone-sized browser: the whole flow match → odds check → record → My bets → cancel (writes mocked,
+  because bets are append-only; real writes are tested in step 6 on a throwaway database), all tabs, desktop and
+  dark mode; no console errors; 8 unit tests.

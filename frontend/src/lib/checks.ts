@@ -54,3 +54,12 @@ export function checkLabel(code: string): string {
   if (m) return `${humanize(m[1])} available`
   return humanize(code)
 }
+
+const MARKET_WORDS: Record<string, string> = { UNDER05: 'Under 0.5 at 15′', DRAW: 'Draw at 15′' }
+
+/** A check value or reason from the API made readable: market codes and bare status codes in words. */
+export function readable(text: string): string {
+  if (/^[A-Z][A-Z0-9_]+$/.test(text)) return MARKET_WORDS[text] ?? humanize(text)
+  // inside a sentence ("bet UNDER05 at 1.40 or more") the short form reads better
+  return text.replace(/\b(UNDER05|DRAW)\b/g, (m) => (m === 'UNDER05' ? 'Under 0.5 (15′)' : 'the draw (15′)'))
+}

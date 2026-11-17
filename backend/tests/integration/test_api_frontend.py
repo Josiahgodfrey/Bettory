@@ -125,6 +125,7 @@ def test_settings_me_bookmakers_and_bad_input(league: Any) -> None:  # noqa: F81
     s = c.get("/settings").json()
     assert s["timezone"] == PARAMS.sessions.timezone and s["params"]["params_version"] == PARAMS.params_version
     assert s["report_competitions"] == ["TST1"] and s["gate_b"]["paper_betting"]["min_bets"] >= 1
+    assert s["betting"]["currency"] == "TZS" and s["betting"]["max_stake"] > 0  # the bet form uses both
     assert c.get("/bookmakers").json() == []
     assert c.get("/sessions/2026-11-21-EVENING").status_code == 422
     assert c.get("/sessions", params={"from": "2026-11-01", "to": "2026-12-31"}).status_code == 422

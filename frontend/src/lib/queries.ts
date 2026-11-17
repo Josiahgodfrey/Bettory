@@ -38,3 +38,50 @@ export function shiftDate(date: string, days: number): string {
   d.setUTCDate(d.getUTCDate() + days)
   return d.toISOString().slice(0, 10)
 }
+
+// --- match, odds, bets (step 3) -----------------------------------------------------------------
+
+export const matchQuery = (id: string) =>
+  queryOptions({
+    queryKey: ['match', id],
+    queryFn: () => unwrap(api.GET('/matches/{match_id}', { params: { path: { match_id: id } } })),
+  })
+
+/** The full analysis at the session's cut-off: recomputed by the server (deterministic), so cached for long. */
+export const analysisQuery = (id: string, session: string | null) =>
+  queryOptions({
+    queryKey: ['match', id, 'analysis', session],
+    queryFn: () =>
+      unwrap(api.GET('/matches/{match_id}/analysis', { params: { path: { match_id: id }, query: { session } } })),
+    staleTime: 10 * 60_000,
+    refetchOnWindowFocus: false,
+  })
+
+export const matchOddsQuery = (id: string) =>
+  queryOptions({
+    queryKey: ['match', id, 'odds'],
+    queryFn: () => unwrap(api.GET('/matches/{match_id}/odds', { params: { path: { match_id: id } } })),
+  })
+
+export const bookmakersQuery = queryOptions({
+  queryKey: ['bookmakers'],
+  queryFn: () => unwrap(api.GET('/bookmakers')),
+  staleTime: 10 * 60_000,
+})
+
+export interface SettingsView {
+  timezone: string
+  betting: { currency: string; max_stake: number }
+  [key: string]: unknown
+}
+
+export const settingsQuery = queryOptions({
+  queryKey: ['settings'],
+  queryFn: async () => (await unwrap(api.GET('/settings'))) as SettingsView,
+  staleTime: 30 * 60_000,
+})
+
+export const betsQuery = queryOptions({
+  queryKey: ['bets'],
+  queryFn: () => unwrap(api.GET('/bets', { params: { query: { include_cancelled: true } } })),
+})

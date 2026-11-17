@@ -52,3 +52,13 @@ describe('check labels', () => {
     expect(checkLabel('SOMETHING_NEW')).toBe('Something new') // unknown codes stay readable
   })
 })
+
+describe('readable API text', () => {
+  it('turns codes into words', async () => {
+    const { readable } = await import('@/lib/checks')
+    expect(readable('bet UNDER05 at 1.40 or more')).toBe('bet Under 0.5 (15′) at 1.40 or more')
+    expect(readable('INSUFFICIENT_DATA')).toBe('Insufficient data')
+    expect(readable('DRAW')).toBe('Draw at 15′')
+    expect(readable('10 matches, 2 complete')).toBe('10 matches, 2 complete')
+  })
+})
