@@ -8,9 +8,9 @@
 
 | Step | What | Status |
 |---|---|---|
-| 0 | Check that the free API-Football plan returns 15' odds (`Goal in 1-15 minutes`, `1x2 - 15 minutes`) for upcoming ENG1 / GER1 fixtures | ⏳ quota: 95/100 used by the backfill on 2026-11-17; runs after the next reset with the new split |
+| 0 | Check that the free API-Football plan returns 15' odds (`Goal in 1-15 minutes`, `1x2 - 15 minutes`) for upcoming ENG1 / GER1 fixtures | ⏳ 2026-11-17 (still Free): the free plan refuses `next` ("Free plans do not have access to the Next parameter"; 2 requests). On Free it works only by date (yesterday .. tomorrow) - the first ENG1 matches after the international break are on Sat 21 Nov, so `paper-capture` on Fri 20 / Sat 21 Nov is step 0. On Pro any time |
 | 1 | **Frozen predictions**: append-only, hash-chained, stamped by the database clock | ✅ this document §2 |
-| 2 | Odds snapshot at the same moment: offered 15' odds **and** main-market odds (Model C) | ⬜ |
+| 2 | Odds snapshot at the same moment: offered 15' odds **and** main-market odds (Model C) | ✅ §5 |
 | 3 | Paper bets (qualified, offered odds ≥ minimum odds, 1 unit) and settlement WIN / LOSE / VOID | ⬜ |
 | 4 | `paper-report`: calibration, ROI with session-bootstrap interval, sequential e-value vs the bookmaker's de-vigged 15' price | ⬜ |
 | 5 | Jobs in the worker / Task Scheduler | ⬜ |
@@ -100,7 +100,7 @@ owner chose to upgrade API-Football to **Pro**. Prepared in the code:
 ### After paying (owner, about 5 minutes)
 
 1. Upgrade on the API-Football dashboard; the key normally stays the same. Note the plan's **requests per minute**.
-2. In `backend/.env` set:
+2. In the repo root `.env` (`BETTORY/.env`, the file the settings read) set or add:
    ```
    API_FOOTBALL_PLAN=pro
    API_FOOTBALL_REQUESTS_PER_MINUTE=<the dashboard value, e.g. 300>
@@ -110,3 +110,50 @@ owner chose to upgrade API-Football to **Pro**. Prepared in the code:
 4. `python -m app.cli backfill-daily --run` once (instead of waiting for the night): this season's goal minutes
    and the 2022-23 .. 2024-25 backlog.
 5. Then steps 0 and 2 – 5 of §1 continue (step 0 no longer competes with the backfill for the quota).
+
+## 5. Step 2 — the odds seen, sealed with the prediction
+
+### 5.1 Flow per session
+
+```
+as_of - ~20 min   python -m app.cli paper-capture --session 2026-11-21-NOON     (step 5 will schedule it)
+                    1 request per UTC date the session covers: all fixtures of the day (gives the API-Football
+                      ids, also for leagues loaded from other sources, and the results of matches already played)
+                    then 1 request per upcoming fixture of the plan's leagues in the session: its odds
+                      (15' markets and main markets), into core.odds_snapshots (append-only)
+                    stops at --max-requests (default 12) - the fixtures left out are counted
+>= as_of          python -m app.cli paper-freeze --session 2026-11-21-NOON
+                    seals with every prediction the prices known at as_of
+```
+
+Capture **before** as_of: a price captured after it (status `LATE`) is stored but never sealed with that
+session — it is information the analysis did not have. A snapshot's time is the bookmaker's own update time
+(API-Football `update`).
+
+### 5.2 What is sealed
+
+New columns of `paper.predictions`, inside the hash chain:
+
+| Column | Content |
+|---|---|
+| `odds_seen` | every price known at as_of: latest snapshot per bookmaker, market, line and selection captured strictly before as_of — the same read Model C uses (`PointInTimeReader.odds`) — for `Goal in 1-15 minutes`, `1x2 - 15 minutes`, FT and HT totals, FT 1X2 |
+| `best_under05_odds`, `best_under05_book` | the highest `Goal in 1-15 minutes: No` (= 0-0 after 15') among them, and its bookmaker |
+| `best_draw_odds`, `best_draw_book` | the highest `1x2 - 15 minutes: Draw`, and its bookmaker |
+
+The paper bet of step 3 is taken at these sealed prices, never at a price seen later. `paper-verify --replay`
+also compares the sealed odds with a fresh read.
+
+### 5.3 Daily budget
+
+`config/backfill.yaml` `daily_max_requests` is now a bound per **quota day** (from 00:00 UTC): earlier backfill
+runs of the same day count (2026-11-17: a manual run and the night job each took their full 70 before).
+The capture's requests come out of what is left (the quota guard keeps the reserve of 5).
+
+### 5.4 Code
+
+| File | Role |
+|---|---|
+| [app/ingestion/pipeline.py](../backend/app/ingestion/pipeline.py) `api_football_session_odds` | the capture run (cross-checked and audited like every ingestion run) |
+| [app/paper/capture.py](../backend/app/paper/capture.py) | `capture_session`: window, run, status CAPTURED / LATE / ENDED |
+| [app/paper/odds.py](../backend/app/paper/odds.py) | `seen_odds`: the sealed list and the best 15' prices |
+| [tests/integration/test_paper_capture.py](../backend/tests/integration/test_paper_capture.py) | only the session's paper fixtures, the budget, sealing only what was known at as_of |

@@ -19,6 +19,7 @@ from app.domain.enums import SourceCode
 from app.domain.registry import CompetitionDef, Registry
 from app.ingestion import pipeline
 from app.ingestion.base import Fetched
+from app.jobs import backfill as backfill_module
 from app.jobs.backfill import BackfillConfig, Mode, TargetState, plan, run_daily_backfill
 from app.jobs.scheduler import build_scheduler
 from app.storage.raw_store import LocalRawStore
@@ -124,11 +125,18 @@ def day(engine: Engine, tmp_path: Path, cfg: BackfillConfig, settings: Settings 
     return run_daily_backfill(engine, lambda: LocalRawStore(tmp_path), REG, settings, cfg)
 
 
+@pytest.fixture
+def separate_days(monkeypatch: pytest.MonkeyPatch) -> None:
+    """These tests simulate several quota days within one real day: earlier runs are not 'today'."""
+    monkeypatch.setattr(backfill_module.ops_repo, "requests_since", lambda *_a, **_k: 0)
+
+
 def listed(q: Quota) -> list[str]:
     return [c["league"] for c in q.calls if "league" in c]
 
 
-def test_targets_in_order_within_the_daily_budget(engine: Engine, tmp_path: Path, quota: Quota) -> None:
+def test_targets_in_order_within_the_daily_budget(engine: Engine, tmp_path: Path, quota: Quota,
+                                                  separate_days: None) -> None:
     first = day(engine, tmp_path, config(daily=8))
     # TST1: listing + its 5 unknown fixtures (history mode) -> finished; TST2: the 2 requests left
     assert first.requests_used == 8 and first.stopped == "request budget reached"
@@ -146,7 +154,8 @@ def test_targets_in_order_within_the_daily_budget(engine: Engine, tmp_path: Path
     assert quota.calls == [] and third.runs == [] and third.stopped == "all targets finished or attempted"
 
 
-def test_crosscheck_mode_also_fetches_known_results(engine: Engine, tmp_path: Path, quota: Quota) -> None:
+def test_crosscheck_mode_also_fetches_known_results(engine: Engine, tmp_path: Path, quota: Quota,
+                                                     separate_days: None) -> None:
     day(engine, tmp_path, config(daily=100))                                 # history: unknown ones only
     assert all(s.state is TargetState.FINISHED for s in plan(engine, config(daily=100)))
     assert [s.state for s in plan(engine, config(daily=100, mode=Mode.CROSSCHECK))] == [TargetState.IN_PROGRESS] * 2
@@ -201,7 +210,8 @@ def test_real_config_and_schedule(engine: Engine) -> None:
     assert (fields["hour"], fields["minute"]) == tuple(str(x) for x in cfg.schedule.hour_minute)
 
 
-def test_current_season_mode_needs_pro_and_never_finishes(engine: Engine, tmp_path: Path, quota: Quota) -> None:
+def test_current_season_mode_needs_pro_and_never_finishes(engine: Engine, tmp_path: Path, quota: Quota,
+                                                           separate_days: None) -> None:
     cfg = config(daily=100, mode=Mode.CURRENT)
     free = day(engine, tmp_path, cfg)                                       # free plan: skipped, nothing spent
     assert quota.calls == [] and all(r["outcome"].startswith("skipped") and r["requests"] == 0 for r in free.runs)
@@ -222,3 +232,11 @@ def test_pro_setting_with_a_free_key_spends_nothing(engine: Engine, tmp_path: Pa
     result = day(engine, tmp_path, config(daily=100), PRO)                  # /status still says Free
     assert result.stopped == "plan mismatch" and quota.calls == []
     assert result.runs[0]["outcome"].startswith("plan: API_FOOTBALL_PLAN=pro")
+
+
+def test_the_daily_bound_counts_earlier_runs_of_the_same_day(engine: Engine, tmp_path: Path, quota: Quota) -> None:
+    first = day(engine, tmp_path, config(daily=8))                         # e.g. a manual run
+    assert first.requests_used == 8
+    second = day(engine, tmp_path, config(daily=8))                        # the night job, same quota day
+    assert second.earlier_today == 8 and second.requests_used == 0 and second.stopped == "daily budget used"
+    assert quota.calls[8:] == []

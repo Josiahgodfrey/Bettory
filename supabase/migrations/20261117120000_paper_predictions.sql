@@ -1,4 +1,4 @@
--- Paper betting, step 1: predictions frozen before kick-off (docs/PAPER-BETTING.md).
+-- Paper betting, steps 1-2: predictions and the odds seen, frozen before kick-off (docs/PAPER-BETTING.md).
 --
 -- One row per fixture, session and params version, written when the session is analysed and never changed:
 --   - the database stamps the recording time with its own clock and refuses a row whose kick-off is not later;
@@ -39,6 +39,15 @@ create table paper.predictions (
   p_league_draw     double precision check (p_league_draw between 0 and 1),
   min_odds_under05  double precision check (min_odds_under05 > 1),
   min_odds_draw     double precision check (min_odds_draw > 1),
+  -- the prices known at as_of (latest snapshot per bookmaker, market, line, selection captured before as_of):
+  -- the offered 15' odds next to the main-market odds Model C used, sealed with the prediction
+  odds_seen         jsonb not null default '[]'::jsonb check (jsonb_typeof(odds_seen) = 'array'),
+  best_under05_odds double precision check (best_under05_odds > 1),   -- "Goal in 1-15 minutes: No"
+  best_under05_book text,
+  best_draw_odds    double precision check (best_draw_odds > 1),      -- "1x2 - 15 minutes: Draw"
+  best_draw_book    text,
+  check ((best_under05_odds is null) = (best_under05_book is null)),
+  check ((best_draw_odds is null) = (best_draw_book is null)),
   unique (match_id, session_id, params_version),
   check (as_of < kickoff_utc),
   check ((chain_pos = 1) = (prev_hash is null))
@@ -61,7 +70,9 @@ language sql immutable as $$
     'p_under05', p.p_under05, 'p_draw', p.p_draw, 'p_model_a', p.p_model_a, 'p_model_b2', p.p_model_b2,
     'p_market', p.p_market, 'p_market_draw', p.p_market_draw,
     'p_league_00', p.p_league_00, 'p_league_draw', p.p_league_draw,
-    'min_odds_under05', p.min_odds_under05, 'min_odds_draw', p.min_odds_draw
+    'min_odds_under05', p.min_odds_under05, 'min_odds_draw', p.min_odds_draw,
+    'odds_seen', p.odds_seen, 'best_under05_odds', p.best_under05_odds, 'best_under05_book', p.best_under05_book,
+    'best_draw_odds', p.best_draw_odds, 'best_draw_book', p.best_draw_book
   )::text, 'UTF8')), 'hex')
 $$;
 

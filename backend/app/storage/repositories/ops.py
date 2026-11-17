@@ -5,6 +5,7 @@ from __future__ import annotations
 import hashlib
 from collections.abc import Iterator
 from contextlib import contextmanager
+from datetime import datetime
 from typing import Any
 
 from sqlalchemy import Engine, text
@@ -41,3 +42,11 @@ def latest_run(engine: Engine, job_name: str, status: RunStatus | None = None) -
             order by started_at desc, id limit 1"""),
             {"j": job_name, "st": status.value if status else None}).mappings().one_or_none()
     return dict(row) if row else None
+
+
+def requests_since(engine: Engine, job_prefix: str, since: datetime) -> int:
+    """API requests spent by runs whose job name starts with `job_prefix`, started at or after `since`."""
+    with engine.connect() as conn:
+        return int(conn.execute(text(
+            "select coalesce(sum(requests_used), 0) from raw.ingestion_runs "
+            "where starts_with(job_name, :p) and started_at >= :s"), {"p": job_prefix, "s": since}).scalar_one())

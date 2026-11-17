@@ -6,6 +6,7 @@ refuses UPDATE / DELETE / TRUNCATE. This module only inserts and reads.
 
 from __future__ import annotations
 
+import json
 from collections.abc import Sequence
 from dataclasses import asdict, dataclass
 from datetime import datetime
@@ -75,6 +76,11 @@ class NewPrediction:
     p_league_draw: float | None
     min_odds_under05: float | None
     min_odds_draw: float | None
+    odds_seen: tuple[dict[str, Any], ...] = ()
+    best_under05_odds: float | None = None
+    best_under05_book: str | None = None
+    best_draw_odds: float | None = None
+    best_draw_book: str | None = None
 
 
 _COLUMNS = tuple(NewPrediction.__dataclass_fields__)
@@ -85,8 +91,9 @@ def insert_prediction(conn: Connection, p: NewPrediction) -> int | None:
     was already frozen (nothing is changed then)."""
     values: dict[str, Any] = asdict(p)
     values["failed_checks"] = list(p.failed_checks)
+    values["odds_seen"] = json.dumps(list(p.odds_seen))
     cols = ", ".join(_COLUMNS)
-    binds = ", ".join(f":{c}" for c in _COLUMNS)
+    binds = ", ".join("cast(:odds_seen as jsonb)" if c == "odds_seen" else f":{c}" for c in _COLUMNS)
     return conn.execute(text(f"""
         insert into paper.predictions ({cols}) values ({binds})
         on conflict (match_id, session_id, params_version) do nothing
@@ -111,6 +118,11 @@ class FrozenPrediction:
     p_draw: float | None
     min_odds_under05: float | None
     min_odds_draw: float | None
+    best_under05_odds: float | None
+    best_under05_book: str | None
+    best_draw_odds: float | None
+    best_draw_book: str | None
+    odds_seen: list[dict[str, Any]]
 
 
 def frozen(conn: Connection, session_id: str | None = None,

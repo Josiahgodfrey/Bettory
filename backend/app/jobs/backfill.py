@@ -17,6 +17,7 @@ from __future__ import annotations
 import logging
 from collections.abc import Callable
 from dataclasses import dataclass, field
+from datetime import UTC, datetime
 from enum import StrEnum
 from pathlib import Path
 from typing import Any, Self
@@ -154,9 +155,11 @@ class DayResult:
     runs: list[dict[str, Any]] = field(default_factory=list)  # per target: requests, outcome, key statistics
     requests_used: int = 0
     stopped: str = ""  # why the day ended
+    earlier_today: int = 0  # backfill requests of earlier runs the same quota day
 
     def as_dict(self) -> dict[str, Any]:
-        return {"runs": self.runs, "requests_used": self.requests_used, "stopped": self.stopped}
+        return {"runs": self.runs, "requests_used": self.requests_used, "earlier_today": self.earlier_today,
+                "stopped": self.stopped}
 
 
 def run_daily_backfill(engine: Engine, store: Callable[[], RawStore], registry: Registry, settings: Settings,
@@ -167,7 +170,11 @@ def run_daily_backfill(engine: Engine, store: Callable[[], RawStore], registry: 
         raise ValueError("API_FOOTBALL_KEY is not configured")
     day = DayResult()
     plan_name = settings.api_football_plan
-    daily_max = cfg.daily_max_requests.for_plan(plan_name)
+    # the bound is per DAY (quota day: 00:00 UTC): runs earlier today - a manual run, the night job - count too
+    today = datetime.now(UTC).replace(hour=0, minute=0, second=0, microsecond=0)
+    earlier = ops_repo.requests_since(engine, "api_football_backfill:", today)
+    daily_max = cfg.daily_max_requests.for_plan(plan_name) - earlier
+    day.earlier_today = earlier
     for target in cfg.targets:
         status = target_status(engine, target)
         if status.state is TargetState.FINISHED:

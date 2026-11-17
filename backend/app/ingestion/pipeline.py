@@ -12,8 +12,8 @@ from __future__ import annotations
 import json
 import logging
 from collections import Counter
-from collections.abc import Callable
-from datetime import date
+from collections.abc import Callable, Sequence
+from datetime import UTC, date, datetime, timedelta
 from uuid import UUID
 
 from sqlalchemy import Engine
@@ -263,6 +263,46 @@ def api_football_day(engine: Engine, store: RawStore, registry: Registry, api_ke
                 break
             job.process(client.odds_for_fixture(m.provider_match_key),
                         lambda raw: p_af.parse_odds(raw, registry))
+
+    return _run(job, lambda: client.requests_used, _exclusive(engine, SourceCode.API_FOOTBALL, body),
+                _close_api_football(client, job))
+
+
+def api_football_session_odds(engine: Engine, store: RawStore, registry: Registry, api_key: str,
+                              start_utc: datetime, end_utc: datetime, competitions: Sequence[str],
+                              max_requests: int, run_id: UUID | None = None, *,
+                              requests_per_minute: int) -> Counter[str]:
+    """Paper betting capture (docs/PAPER-BETTING.md §5): the fixtures of the UTC dates the window covers (all
+    leagues in one request per date; this also gives the API-Football ids of fixtures loaded from other sources,
+    and the results of matches already played), then the odds - 15' markets and main markets - of every
+    SCHEDULED fixture of `competitions` kicking off in [start_utc, end_utc), within `max_requests`."""
+    if start_utc.utcoffset() is None or end_utc.utcoffset() is None or end_utc <= start_utc:
+        raise ValueError("timezone-aware window with end after start required")
+    days = sorted({start_utc.astimezone(UTC).date(), (end_utc - timedelta(microseconds=1)).astimezone(UTC).date()})
+    wanted = set(competitions)
+    client = ApiFootball(api_key, max_requests=max_requests, requests_per_minute=requests_per_minute)
+    job = Job(engine, store, registry, SourceCode.API_FOOTBALL,
+              f"api_football_session_odds:{start_utc:%Y-%m-%dT%H:%M}", False, run_id)
+
+    def body() -> None:
+        _plan_quota(client, job, max_requests, minimum=len(days) + 1)
+        budget = client.http.max_requests or 0
+        upcoming: list[str] = []
+        for day in days:
+            listing = client.fixtures_by_date(day)
+            parsed = p_af.parse_fixtures(listing.body, registry)  # parsed here too: needed even if the payload is old
+            job.process(listing, lambda raw: parsed)  # noqa: B023 - used at once, inside this iteration
+            upcoming += [m.provider_match_key for m in parsed.matches
+                         if m.status is FixtureStatus.SCHEDULED and m.competition_code in wanted
+                         and m.kickoff_utc is not None and start_utc <= m.kickoff_utc < end_utc]
+        job.stats["session_fixtures"] = len(upcoming)
+        for key in upcoming:
+            if client.requests_used >= budget:
+                job.stats["stopped_at_request_budget"] = 1
+                job.stats["fixtures_without_odds_request"] += 1
+                continue
+            job.process(client.odds_for_fixture(key), lambda raw: p_af.parse_odds(raw, registry))
+            job.stats["odds_requests"] += 1
 
     return _run(job, lambda: client.requests_used, _exclusive(engine, SourceCode.API_FOOTBALL, body),
                 _close_api_football(client, job))

@@ -50,6 +50,7 @@ from app.ingestion.health_view import render_text, snapshot
 from app.ingestion.quality import crosscheck_season
 from app.jobs.backfill import load_backfill_config, plan, run_daily_backfill
 from app.jobs.scheduler import build_scheduler
+from app.paper.capture import capture_session
 from app.paper.freeze import Provenance, due_sessions, freeze_session, replay_session
 from app.storage.db import get_engine
 from app.storage.raw_store import store_from_settings
@@ -123,6 +124,10 @@ def main(argv: list[str] | None = None) -> int:
     tp = sub.add_parser("tuning-plan", help="show and validate a pre-registered tuning plan")
     tp.add_argument("--plan", type=Path, default=None, help="plan file (default: the newest registered plan)")
 
+    pc = sub.add_parser("paper-capture", help="capture the odds of upcoming sessions before their data cut-off")
+    pc.add_argument("--session", action="append", help="session id (repeatable; default: every session that "
+                    "has not started yet, today .. tomorrow)")
+    pc.add_argument("--max-requests", type=int, default=12, help="API-Football requests per session (default 12)")
     pf = sub.add_parser("paper-freeze", help="freeze the predictions of due sessions before kick-off")
     pf.add_argument("--session", action="append", help="session id, e.g. 2026-11-18-NOON (repeatable; default: "
                     "every session that has not ended, yesterday .. tomorrow)")
@@ -145,7 +150,7 @@ def main(argv: list[str] | None = None) -> int:
     settings, engine, registry = get_settings(), get_engine(), load_registry()
 
     if args.cmd.startswith("paper-"):
-        return _paper(args, engine, registry, load_params(BACKEND_DIR / settings.params_file))
+        return _paper(args, engine, registry, load_params(BACKEND_DIR / settings.params_file), settings)
 
     if args.cmd == "backtest":
         params, cfg = load_params(BACKEND_DIR / settings.params_file), load_backtest_config()
@@ -371,10 +376,33 @@ def _code_version() -> str | None:
     return head + ("+dirty" if dirty else "")
 
 
-def _paper(args: argparse.Namespace, engine: Any, registry: Any, live: Params) -> int:
+def _paper(args: argparse.Namespace, engine: Any, registry: Any, live: Params, settings: Any) -> int:
+    plan_path = current_plan_path()
+    competitions = load_plan(plan_path).competitions  # paper betting covers the leagues of the plan in force
+    if args.cmd == "paper-capture":
+        key = settings.api_football_key.get_secret_value()
+        if not key:
+            print("API_FOOTBALL_KEY is not configured", file=sys.stderr)
+            return 2
+        now = datetime.now(UTC)
+        cal = SessionCalendar(live)
+        sids = ([SessionId.parse(x) for x in args.session] if args.session
+                else [s for s in due_sessions(cal, now) if cal.times(s).start_utc > now])
+        for sid in sids:
+            try:
+                c = capture_session(engine, lambda: store_from_settings(settings), registry, key, live, sid,
+                                    competitions, now=now, max_requests=args.max_requests,
+                                    requests_per_minute=settings.api_football_requests_per_minute)
+            except (pipeline.QuotaError, pipeline.ConcurrentRunError) as e:
+                print(f"{sid}  NOT CAPTURED: {e}")
+                return 3
+            keys = ("session_fixtures", "odds_requests", "fixtures_without_odds_request")
+            detail = "  ".join(f"{k} {c.stats.get(k, 0)}" for k in keys)
+            cut = f"  as_of {c.as_of:%Y-%m-%d %H:%M}Z" if c.as_of else ""
+            print(f"{sid}  {c.status}{cut}  {detail}")
+        return 0
     if args.cmd == "paper-freeze":
         versions = args.params or [live.params_version]
-        plan_path = current_plan_path()
         prov = Provenance(plan_path.name, sha256_of(plan_path), _code_version())
         now = datetime.now(UTC)
 
@@ -383,7 +411,8 @@ def _paper(args: argparse.Namespace, engine: Any, registry: Any, live: Params) -
             cal = SessionCalendar(params)
             sids = [SessionId.parse(x) for x in args.session] if args.session else due_sessions(cal, now)
             for sid in sids:
-                r = freeze_session(engine, params, registry, sid, now=now, provenance=prov)
+                r = freeze_session(engine, params, registry, sid, now=now, competitions=competitions,
+                                   provenance=prov)
                 line = f"{sid}  params {version}  {r.status}"
                 if r.status == "TOO_EARLY":
                     line += f"  ({r.fixtures} fixtures; data cut-off {r.as_of:%Y-%m-%d %H:%M}Z: freeze after it)"
