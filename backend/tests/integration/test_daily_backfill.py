@@ -21,7 +21,7 @@ from app.ingestion import pipeline
 from app.ingestion.base import Fetched
 from app.jobs import backfill as backfill_module
 from app.jobs.backfill import BackfillConfig, Mode, TargetState, plan, run_daily_backfill
-from app.jobs.scheduler import build_scheduler
+from app.jobs.scheduler import IntervalJob, build_scheduler
 from app.storage.raw_store import LocalRawStore
 from app.storage.repositories import ops as ops_repo
 from tests.integration.conftest import ADMIN_URL
@@ -208,6 +208,11 @@ def test_real_config_and_schedule(engine: Engine) -> None:
     assert job.id == "daily_backfill" and job.coalesce and job.max_instances == 1
     fields = {f.name: str(f) for f in job.trigger.fields}
     assert (fields["hour"], fields["minute"]) == tuple(str(x) for x in cfg.schedule.hour_minute)
+    with_paper = build_scheduler(engine, lambda: LocalRawStore(Path(".")), load_registry(), SETTINGS, cfg,
+                                 BackgroundScheduler(timezone="UTC"),
+                                 interval_jobs=[IntervalJob("paper_cycle", "paper betting cycle", lambda: None, 5)])
+    paper = with_paper.get_job("paper_cycle")
+    assert paper is not None and paper.coalesce and paper.max_instances == 1 and paper.misfire_grace_time == 300
 
 
 def test_current_season_mode_needs_pro_and_never_finishes(engine: Engine, tmp_path: Path, quota: Quota,

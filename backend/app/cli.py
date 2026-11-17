@@ -14,7 +14,8 @@ Examples (from backend/, venv active):
   python -m app.cli health --runs 10 --quota
   python -m app.cli backfill-daily              # where every target stands (no request)
   python -m app.cli backfill-daily --run        # run today's backfill now
-  python -m app.cli worker                      # start the scheduler (foreground)
+  python -m app.cli worker                      # start the scheduler (foreground): backfill + paper cycle
+  python -m app.cli paper-cycle [--dry-run]     # one paper betting cycle: capture, freeze, results, settle
   python -m app.cli tuning-plan                 # the pre-registered tuning plan (config/tuning_v1.yaml)
   python -m app.cli tune --tuning 2025-08-01 2026-01-31 --holdout 2026-02-01 2026-05-31   # dry run
   python -m app.cli tune --real                 # the real run: locks the plan, may write a new params file
@@ -50,8 +51,10 @@ from app.ingestion.api_football import ApiFootball
 from app.ingestion.health_view import render_text, snapshot
 from app.ingestion.quality import crosscheck_season
 from app.jobs.backfill import load_backfill_config, plan, run_daily_backfill
-from app.jobs.scheduler import build_scheduler
+from app.jobs.scheduler import IntervalJob, build_scheduler
 from app.paper.capture import capture_session
+from app.paper.config import load_paper_config
+from app.paper.cycle import CycleInputs, run_cycle
 from app.paper.freeze import Provenance, due_sessions, freeze_session, replay_session
 from app.paper.settle import settle_due
 from app.storage.db import get_engine
@@ -113,7 +116,8 @@ def main(argv: list[str] | None = None) -> int:
 
     bd = sub.add_parser("backfill-daily", help="automatic API-Football backfill (config/backfill.yaml)")
     bd.add_argument("--run", action="store_true", help="run today's backfill now (otherwise: show the plan)")
-    sub.add_parser("worker", help="start the scheduler in the foreground (Ctrl+C to stop)")
+    wk = sub.add_parser("worker", help="start the scheduler in the foreground (Ctrl+C to stop)")
+    wk.add_argument("--no-paper", action="store_true", help="without the paper betting cycle")
     tn = sub.add_parser("tune", help="run a pre-registered tuning plan (dry run unless --real)")
     tn.add_argument("--plan", type=Path, default=None, help="plan file (default: the newest registered plan)")
     tn.add_argument("--real", action="store_true",
@@ -135,6 +139,8 @@ def main(argv: list[str] | None = None) -> int:
                     "every session that has not ended, yesterday .. tomorrow)")
     pf.add_argument("--params", action="append", help="params version (repeatable; default: the live params)")
     sub.add_parser("paper-settle", help="settle frozen predictions whose 15' result is known (append-only)")
+    pcy = sub.add_parser("paper-cycle", help="one recorder cycle: capture, freeze, results, settle (when due)")
+    pcy.add_argument("--dry-run", action="store_true", help="show what is due now; no request, nothing stored")
     prp = sub.add_parser("paper-report", help="the forward test: forecasts, paper bets, e-values, Gate B")
     prp.add_argument("--params", default=None, help="one params version (default: all frozen versions)")
     prp.add_argument("--json", action="store_true")
@@ -280,7 +286,17 @@ def main(argv: list[str] | None = None) -> int:
         backfill_cfg = load_backfill_config()
         backfill_cfg.check_registry(registry)
         if args.cmd == "worker":
-            sched = build_scheduler(engine, lambda: store_from_settings(settings), registry, settings, backfill_cfg)
+            jobs: list[IntervalJob] = []
+            if not args.no_paper:
+                live = load_params(BACKEND_DIR / settings.params_file)
+                paper_cfg = load_paper_config()
+                jobs.append(IntervalJob(
+                    "paper_cycle", "paper betting cycle",
+                    lambda: run_cycle(_cycle_inputs(engine, registry, live, settings, paper_cfg),
+                                      now=datetime.now(UTC)),
+                    paper_cfg.schedule.every_minutes))
+            sched = build_scheduler(engine, lambda: store_from_settings(settings), registry, settings, backfill_cfg,
+                                    interval_jobs=jobs)
             for j in sched.get_jobs():
                 print(f"scheduled: {j.name} ({j.trigger})")
             print("worker running - Ctrl+C to stop")
@@ -383,9 +399,26 @@ def _code_version() -> str | None:
     return head + ("+dirty" if dirty else "")
 
 
+def _cycle_inputs(engine: Any, registry: Any, live: Params, settings: Any, cfg: Any) -> CycleInputs:
+    """Built for every cycle: a new tuning plan or commit is picked up without restarting the worker."""
+    plan_path = current_plan_path()
+    return CycleInputs(engine=engine, store=lambda: store_from_settings(settings), registry=registry,
+                       settings=settings, params=live, cfg=cfg, competitions=load_plan(plan_path).competitions,
+                       provenance=Provenance(plan_path.name, sha256_of(plan_path), _code_version()),
+                       stake=load_backtest_config().estimated_value.stake)
+
+
 def _paper(args: argparse.Namespace, engine: Any, registry: Any, live: Params, settings: Any) -> int:
     plan_path = current_plan_path()
     competitions = load_plan(plan_path).competitions  # paper betting covers the leagues of the plan in force
+    if args.cmd == "paper-cycle":
+        logging.basicConfig(level=logging.WARNING)
+        res = run_cycle(_cycle_inputs(engine, registry, live, settings, load_paper_config()),
+                        now=datetime.now(UTC), dry_run=args.dry_run)
+        stamp = f"{datetime.now(UTC):%Y-%m-%d %H:%M}Z"
+        for line in res.lines or ["nothing due"]:
+            print(f"{stamp}  {line}")
+        return 4 if res.errors else 0
     if args.cmd == "paper-capture":
         key = settings.api_football_key.get_secret_value()
         if not key:

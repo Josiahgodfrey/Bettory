@@ -13,7 +13,7 @@
 | 2 | Odds snapshot at the same moment: offered 15' odds **and** main-market odds (Model C) | ✅ §5 |
 | 3 | Paper bets (qualified, offered odds ≥ minimum odds, 1 unit) and settlement WIN / LOSE / VOID | ✅ §6 |
 | 4 | `paper-report`: calibration, ROI with session-bootstrap interval, sequential e-value vs the bookmaker's de-vigged 15' price | ✅ §7 |
-| 5 | Jobs in the worker / Task Scheduler | ⬜ |
+| 5 | Jobs in the worker / Task Scheduler: one cycle (capture → freeze → results → settle) every 5 minutes | ✅ §8 |
 
 **Daily API-Football quota (owner decision 2026-11-17):** backfill 70 / recorder 25 / reserve 5
 (`config/backfill.yaml` `daily_max_requests: 70`). The backfill finishes about a week later (≈ 5 weeks).
@@ -254,3 +254,69 @@ forecast e-value and the paired Brier usually give an earlier signal of whether 
 | [app/storage/repositories/paper.py](../backend/app/storage/repositories/paper.py) | `report_rows` (each prediction with its latest settlement) |
 | [tests/unit/test_evalues.py](../backend/tests/unit/test_evalues.py) | arithmetic, validity under no edge (simulated, looking after every bet), power with an edge |
 | [tests/unit/test_paper_report.py](../backend/tests/unit/test_paper_report.py) | the profit verdict, min_bets, the market probability, integrity, the outputs |
+
+## 8. Step 5 — the recorder runs by itself
+
+### 8.1 One cycle, every 5 minutes
+
+`python -m app.cli paper-cycle` runs one cycle. The worker runs it every `schedule.every_minutes` (5), or Windows
+Task Scheduler does. Each step decides **from the database alone** whether it is due, so a cycle can run at any time,
+as often as wanted, from any process: a step that is not due does nothing and costs nothing. Two cycles never overlap
+(a database lock across processes).
+
+| Step | Due when | Requests |
+|---|---|---|
+| Capture | the session's `as_of` is less than `capture.lead_minutes` (20) away and the session has no successful capture run in that window yet; at most `capture.attempts` (3) runs, failed ones included | fixtures listing per date + 1 odds request per fixture, ≤ `capture.max_requests` (free 12 / Pro 60) |
+| Freeze | `as_of` has passed and the session has upcoming fixtures not frozen yet (live params version) | none |
+| Results | at most every `results.every_hours` (6): frozen fixtures that kicked off 2 h .. `lookback_hours` (48 h) ago and still have no 15' result | free: 1 per fixture; Pro: 20 fixtures per request; ≤ `results.max_requests` (free 8 / Pro 10) |
+| Settle | every cycle | none |
+
+All recorder runs (`paper_capture:<session>`, `paper_results:<time>`) share one bound per quota day (00:00 UTC):
+`daily_max_requests` free **25** / Pro 1,000, the owner's split of 2026-11-17 (backfill 70 / recorder 25 /
+reserve 5); the quota guard still applies on top. A manual `paper-capture` counts too (same run name).
+
+A freeze without a capture in the window still freezes the predictions, but no odds are sealed and so no paper bet
+is placed; the cycle reports it ("no capture before as_of"). The freeze happens at most 5 minutes after `as_of`.
+
+The tuning plan, its SHA-256 and the git commit are read again for every cycle (a new commit is picked up without a
+restart); the **params file is read when the worker starts**: restart the worker after changing `PARAMS_FILE`.
+
+### 8.2 Running it
+
+Docker Desktop with `bettory-pg` must be running in both cases.
+
+| Way | How |
+|---|---|
+| Worker (terminal open) | `python -m app.cli worker` runs the nightly backfill **and** the paper cycle; `--no-paper` without it |
+| Task Scheduler (no terminal) | a task every 5 minutes: `backend\venv\Scripts\python.exe -m app.cli paper-cycle`, "Start in" = `backend`; next to the nightly `backfill-daily --run` task. Use one of the two ways, not both (both would be safe because of the lock, just pointless) |
+
+To register the Task Scheduler task (PowerShell, as the owner; adjust the path):
+
+```powershell
+$b = "C:\Users\<you>\Documents\BETTORY\backend"
+$a = New-ScheduledTaskAction -Execute "$b\venv\Scripts\python.exe" -Argument "-m app.cli paper-cycle" -WorkingDirectory $b
+$t = New-ScheduledTaskTrigger -Once -At (Get-Date) -RepetitionInterval (New-TimeSpan -Minutes 5)
+$s = New-ScheduledTaskSettingsSet -StartWhenAvailable -MultipleInstances IgnoreNew -ExecutionTimeLimit (New-TimeSpan -Minutes 30)
+Register-ScheduledTask -TaskName "BETTORY paper cycle" -Action $a -Trigger $t -Settings $s
+```
+
+Check what is due without doing anything: `python -m app.cli paper-cycle --dry-run` (no request, nothing stored).
+Exit code 4 when a step failed (the line starts with `!`; the failure is also a FAILED run in `health`).
+
+### 8.3 Open points
+
+- **Results on the free plan:** whether `fixtures?id=` returns a current-season fixture on the free plan is not
+  confirmed yet (the first Saturday shows it). If not, results come from the nightly backfill (`mode: current`,
+  Pro), and settlement simply waits (PENDING).
+- On Pro, the nightly backfill also loads every result, so the results step usually finds nothing to do.
+
+### 8.4 Code
+
+| File | Role |
+|---|---|
+| [app/paper/cycle.py](../backend/app/paper/cycle.py) | `run_cycle`: the four steps, the daily bound, the lock, dry run |
+| [app/paper/config.py](../backend/app/paper/config.py), [config/paper.yaml](../backend/config/paper.yaml) | schedule and request bounds, validated (the capture window must be longer than the cycle) |
+| [app/ingestion/pipeline.py](../backend/app/ingestion/pipeline.py) | `api_football_results`; `api_football_session_odds(job_name=...)` |
+| [app/jobs/scheduler.py](../backend/app/jobs/scheduler.py) | `IntervalJob`: the worker runs the cycle (built in the CLI: `app.jobs` must not import `app.paper`) |
+| [app/storage/repositories/paper.py](../backend/app/storage/repositories/paper.py) | `frozen_match_ids`, `results_wanted` |
+| [tests/integration/test_paper_cycle.py](../backend/tests/integration/test_paper_cycle.py) | capture once inside the window, freeze once after as_of, freeze without capture reported, results fetched once, dry run does nothing |

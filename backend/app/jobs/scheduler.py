@@ -3,6 +3,8 @@
 `python -m app.cli worker` starts it in the foreground. Jobs so far:
 
     daily_backfill   config/backfill.yaml: schedule   API-Football goal-minute backfill (docs/DAILY-BACKFILL.md)
+    paper_cycle      config/paper.yaml: every N min   paper betting recorder (docs/PAPER-BETTING.md 8), passed in
+                                                       by the caller as an IntervalJob (app.paper is a sibling layer)
 
 Every job is coalesced (a missed run is run once, not repeatedly), never overlaps itself, and logs its
 outcome; the runs it starts are stored, cross-checked and audited like any other ingestion run.
@@ -12,12 +14,14 @@ Phase 5 adds the session planner, session runs, the lineup re-check and settleme
 from __future__ import annotations
 
 import logging
-from collections.abc import Callable
+from collections.abc import Callable, Sequence
+from dataclasses import dataclass
 from zoneinfo import ZoneInfo
 
 from apscheduler.schedulers.base import BaseScheduler
 from apscheduler.schedulers.blocking import BlockingScheduler
 from apscheduler.triggers.cron import CronTrigger
+from apscheduler.triggers.interval import IntervalTrigger
 from sqlalchemy import Engine
 
 from app.core.settings import Settings
@@ -38,8 +42,27 @@ def daily_backfill_job(engine: Engine, store: Callable[[], RawStore], registry: 
         log.exception("daily backfill failed")
 
 
+@dataclass(frozen=True)
+class IntervalJob:
+    """A job run every `every_minutes`, e.g. the paper betting cycle (built by the caller: app.jobs must not
+    import app.paper)."""
+
+    id: str
+    name: str
+    func: Callable[[], object]
+    every_minutes: int
+
+
+def _guarded(job: IntervalJob) -> None:
+    try:
+        job.func()
+    except Exception:  # the scheduler must keep running; the next interval tries again
+        log.exception("%s failed", job.name)
+
+
 def build_scheduler(engine: Engine, store: Callable[[], RawStore], registry: Registry, settings: Settings,
-                    backfill: BackfillConfig, scheduler: BaseScheduler | None = None) -> BaseScheduler:
+                    backfill: BackfillConfig, scheduler: BaseScheduler | None = None,
+                    interval_jobs: Sequence[IntervalJob] = ()) -> BaseScheduler:
     backfill.check_registry(registry)  # a broken config fails at start, not at 00:30
     tz = ZoneInfo(backfill.schedule.timezone)
     sched = scheduler or BlockingScheduler(timezone=tz)
@@ -49,4 +72,8 @@ def build_scheduler(engine: Engine, store: Callable[[], RawStore], registry: Reg
                                                                "registry": registry, "settings": settings,
                                                                "cfg": backfill},
                   coalesce=True, max_instances=1, misfire_grace_time=MISFIRE_GRACE_S, replace_existing=True)
+    for job in interval_jobs:
+        sched.add_job(_guarded, IntervalTrigger(minutes=job.every_minutes, timezone=tz), id=job.id, name=job.name,
+                      args=[job], coalesce=True, max_instances=1, misfire_grace_time=job.every_minutes * 60,
+                      replace_existing=True)
     return sched

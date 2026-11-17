@@ -1,0 +1,35 @@
+# BETTORY paper betting recorder (docs/PAPER-BETTING.md 8). Loaded and validated by app/paper/config.py
+# (unknown or missing keys are rejected). Decides WHEN the recorder captures, freezes, fetches results and
+# settles - never how a fixture is priced (config/params_v*.yaml) or judged (config/backtest.yaml).
+#
+# One "cycle" (python -m app.cli paper-cycle, or the worker every schedule.every_minutes):
+#   capture   for each session whose data cut-off (as_of) is less than capture.lead_minutes away: fixtures
+#             of the session's dates + the odds of its upcoming fixtures, once (retried up to capture.attempts)
+#   freeze    for each session past its as_of with upcoming fixtures not frozen yet: freeze them
+#   results   at most every results.every_hours: goal minutes of frozen fixtures that kicked off
+#             results.lookback_hours .. 2 h ago and still have no 15' result
+#   settle    every cycle (no request)
+
+schedule:
+  every_minutes: 5             # the freeze happens at most this long after as_of; the capture window must be
+                               # longer (lead_minutes), so at least one cycle falls inside it
+
+daily_max_requests:            # all recorder runs together (capture + results), per quota day (00:00 UTC)
+  free: 25                     # owner decision 2026-11-17: backfill 70 / recorder 25 / reserve 5
+  pro: 1000
+
+capture:
+  lead_minutes: 20             # capture at most this long before as_of: prices as fresh as possible, and
+                               # still before the cut-off (a price captured after as_of is never sealed)
+  attempts: 3                  # runs per session window, failed ones included (e.g. the API lock was held)
+  max_requests:                # per session: 1 fixtures listing per date + 1 odds request per fixture
+    free: 12
+    pro: 60
+
+results:
+  every_hours: 6
+  lookback_hours: 48           # the free plan only reaches fixtures around today (to confirm on the first
+                               # Saturday); older ones come from the nightly backfill (mode current, Pro)
+  max_requests:
+    free: 8                    # 1 fixture per request
+    pro: 10                    # 20 fixtures per request

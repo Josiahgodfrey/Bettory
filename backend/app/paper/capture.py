@@ -24,6 +24,13 @@ from app.ingestion import pipeline
 from app.storage.raw_store import RawStore
 from app.storage.repositories import paper as paper_repo
 
+RECORDER_JOB_PREFIX = "paper_"  # every recorder run (capture, results): counted together for the daily bound
+
+
+def capture_job(sid: SessionId) -> str:
+    """Run name of a session's capture (manual and scheduled runs alike)."""
+    return f"paper_capture:{sid}"
+
 
 @dataclass(frozen=True)
 class CaptureResult:
@@ -42,7 +49,8 @@ def capture_session(engine: Engine, store: Callable[[], RawStore], registry: Reg
         return CaptureResult(sid, "ENDED", None, {})
     start = max(times.start_utc, now)
     stats = pipeline.api_football_session_odds(engine, store(), registry, api_key, start, times.end_utc,
-                                               competitions, max_requests, requests_per_minute=requests_per_minute)
+                                               competitions, max_requests, requests_per_minute=requests_per_minute,
+                                               job_name=capture_job(sid))
     with engine.connect() as conn:
         fixtures = paper_repo.session_fixtures(conn, times.start_utc, times.end_utc, competitions)
     as_of = cal.run_start(sid, fixtures[0].kickoff_utc) if fixtures else None

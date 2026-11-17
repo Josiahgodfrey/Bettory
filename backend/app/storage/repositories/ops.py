@@ -50,3 +50,11 @@ def requests_since(engine: Engine, job_prefix: str, since: datetime) -> int:
         return int(conn.execute(text(
             "select coalesce(sum(requests_used), 0) from raw.ingestion_runs "
             "where starts_with(job_name, :p) and started_at >= :s"), {"p": job_prefix, "s": since}).scalar_one())
+
+
+def run_statuses_since(engine: Engine, job_prefix: str, since: datetime) -> list[RunStatus]:
+    """Statuses of the runs whose job name starts with `job_prefix`, started at or after `since`, oldest first."""
+    with engine.connect() as conn:
+        return [RunStatus(r[0]) for r in conn.execute(text(
+            "select status::text from raw.ingestion_runs where starts_with(job_name, :p) and started_at >= :s "
+            "order by started_at"), {"p": job_prefix, "s": since})]

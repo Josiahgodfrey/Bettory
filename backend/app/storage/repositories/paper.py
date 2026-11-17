@@ -15,7 +15,7 @@ from uuid import UUID
 
 from sqlalchemy import Connection, text
 
-from app.domain.enums import FixtureStatus
+from app.domain.enums import SOURCE_IDS, FixtureStatus, SourceCode
 
 
 @dataclass(frozen=True)
@@ -157,6 +157,27 @@ class ChainStatus:
     @property
     def intact(self) -> bool:
         return not self.problems
+
+
+def frozen_match_ids(conn: Connection, session_id: str, params_version: str) -> set[UUID]:
+    """Fixtures of the session already frozen for this params version."""
+    return {r[0] for r in conn.execute(text(
+        "select match_id from paper.predictions where session_id = :s and params_version = :v"),
+        {"s": session_id, "v": params_version})}
+
+
+def results_wanted(conn: Connection, kicked_off_after: datetime, kicked_off_before: datetime,
+                   limit: int = 200) -> list[str]:
+    """API-Football fixture ids of frozen fixtures that kicked off in the window and still have no 15' result
+    (not cancelled, postponed or abandoned), earliest kick-off first."""
+    return [r[0] for r in conn.execute(text("""
+        select r.provider_match_key from paper.predictions p
+        join core.matches m on m.id = p.match_id
+        join core.match_source_records r on r.match_id = m.id and r.source_id = :src
+        where p.kickoff_utc >= :a and p.kickoff_utc < :b and m.goal_before_15 is null
+          and m.status::text not in ('ABANDONED', 'POSTPONED', 'CANCELLED')
+        group by r.provider_match_key order by min(p.kickoff_utc), r.provider_match_key limit :n"""),
+        {"src": SOURCE_IDS[SourceCode.API_FOOTBALL], "a": kicked_off_after, "b": kicked_off_before, "n": limit})]
 
 
 def verify_chain(conn: Connection) -> ChainStatus:

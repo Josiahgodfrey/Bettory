@@ -271,7 +271,7 @@ def api_football_day(engine: Engine, store: RawStore, registry: Registry, api_ke
 def api_football_session_odds(engine: Engine, store: RawStore, registry: Registry, api_key: str,
                               start_utc: datetime, end_utc: datetime, competitions: Sequence[str],
                               max_requests: int, run_id: UUID | None = None, *,
-                              requests_per_minute: int) -> Counter[str]:
+                              requests_per_minute: int, job_name: str | None = None) -> Counter[str]:
     """Paper betting capture (docs/PAPER-BETTING.md §5): the fixtures of the UTC dates the window covers (all
     leagues in one request per date; this also gives the API-Football ids of fixtures loaded from other sources,
     and the results of matches already played), then the odds - 15' markets and main markets - of every
@@ -282,7 +282,7 @@ def api_football_session_odds(engine: Engine, store: RawStore, registry: Registr
     wanted = set(competitions)
     client = ApiFootball(api_key, max_requests=max_requests, requests_per_minute=requests_per_minute)
     job = Job(engine, store, registry, SourceCode.API_FOOTBALL,
-              f"api_football_session_odds:{start_utc:%Y-%m-%dT%H:%M}", False, run_id)
+              job_name or f"api_football_session_odds:{start_utc:%Y-%m-%dT%H:%M}", False, run_id)
 
     def body() -> None:
         _plan_quota(client, job, max_requests, minimum=len(days) + 1)
@@ -303,6 +303,39 @@ def api_football_session_odds(engine: Engine, store: RawStore, registry: Registr
                 continue
             job.process(client.odds_for_fixture(key), lambda raw: p_af.parse_odds(raw, registry))
             job.stats["odds_requests"] += 1
+
+    return _run(job, lambda: client.requests_used, _exclusive(engine, SourceCode.API_FOOTBALL, body),
+                _close_api_football(client, job))
+
+
+def api_football_results(engine: Engine, store: RawStore, registry: Registry, api_key: str,
+                         fixture_keys: Sequence[str], bulk: bool, max_requests: int, run_id: UUID | None = None, *,
+                         requests_per_minute: int, job_name: str) -> Counter[str]:
+    """Paper betting results (docs/PAPER-BETTING.md 8): the fixtures incl. events (goal minutes) of the given
+    API-Football fixture ids - the frozen fixtures still waiting for their 15' result - 20 per request with `bulk`
+    (paid plans), otherwise 1 per request, within `max_requests`."""
+    client = ApiFootball(api_key, max_requests=max_requests, requests_per_minute=requests_per_minute)
+    job = Job(engine, store, registry, SourceCode.API_FOOTBALL, job_name, False, run_id)
+    keys = list(dict.fromkeys(fixture_keys))
+
+    def body() -> None:
+        _plan_quota(client, job, max_requests, minimum=1)
+        actual = getattr(client, "subscription_plan", None)
+        if bulk and actual is not None and actual.strip().lower() == "free":
+            raise PlanError("API_FOOTBALL_PLAN=pro but the key is on the Free plan (/status)")
+        budget = client.http.max_requests or 0
+        size = BULK_IDS_MAX if bulk else 1
+        requested = 0
+        for i in range(0, len(keys), size):
+            if client.requests_used >= budget:
+                job.stats["stopped_at_request_budget"] = 1
+                break
+            chunk = keys[i:i + size]
+            fetched = client.fixtures_by_ids(chunk) if bulk else client.fixture_with_events(chunk[0])
+            job.process(fetched, lambda raw: p_af.parse_fixtures(raw, registry))
+            requested += len(chunk)
+        job.stats["fixtures_requested"] += requested
+        job.stats["fixtures_not_requested"] += len(keys) - requested
 
     return _run(job, lambda: client.requests_used, _exclusive(engine, SourceCode.API_FOOTBALL, body),
                 _close_api_football(client, job))
