@@ -380,3 +380,21 @@ the 15' outcomes as usual (calibration) but the bet as VOID.
 | [app/ingestion/pipeline.py](../backend/app/ingestion/pipeline.py) | `api_football_recheck` (lineups + odds) |
 | [app/normalisation/parsers/api_football.py](../backend/app/normalisation/parsers/api_football.py) | `parse_lineups`; stored in `core.match_lineups` by the loader |
 | [tests/integration/test_paper_recheck.py](../backend/tests/integration/test_paper_recheck.py) | withdraw / pending / confirm, the guards, VOID paper bet, flagged real bet, API, the fetch |
+
+## 11. Closing odds and CLV (2026-11-17)
+
+**Closing capture.** Every cycle, the matches kicking off within `closing.minutes_before` (12) that are listed
+(and not withdrawn) or carry a real bet get their odds fetched once more (1 request each, `CLOSING` snapshots;
+`config/paper.yaml` `closing`). The **closing line** of a match is the latest price of each bookmaker captured
+before kick-off; odds entered by hand are excluded (they are the owner's own records).
+
+**CLV** ([app/settlement/clv.py](../backend/app/settlement/clv.py)):
+
+| Measure | Formula | Meaning |
+|---|---|---|
+| fair closing P | mean over bookmakers with a complete closing 15' market of the de-vigged P of the selection | the market's final, margin-free view |
+| **CLV (fair)** | taken odds × fair closing P − 1 | > 0: the bet beat the closing line — the earliest sign of an edge, no results needed |
+| CLV (book) | taken odds / that bookmaker's closing odds − 1 | only when the bet's bookmaker is among the captured ones |
+
+Shown: the paper report's bets (`clv_mean`, `clv_beat` = share beating the line, over settled bets with a
+usable closing line), each real bet once kicked off (`GET /bets` → `clv`), and `GET /performance` per group.

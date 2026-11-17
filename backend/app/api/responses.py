@@ -405,6 +405,15 @@ class QuoteCardOut(Out):
     stored_prices: int
 
 
+class BetClvOut(Out):
+    fair_closing_p: float  # mean de-vigged closing probability of the selection
+    fair_closing_odds: float
+    books: int  # bookmakers with a complete closing market
+    book_closing_odds: float | None  # the bet's own bookmaker's closing price, if known
+    clv_fair: float  # taken odds x fair closing P - 1 (> 0: beat the closing line)
+    clv_book: float | None
+
+
 class BetOut(Out):
     id: UUID
     recorded_at: datetime
@@ -438,6 +447,7 @@ class BetOut(Out):
     profit: float | None
     result_15: Result15Out | None
     follows_rules: bool
+    clv: BetClvOut | None  # once kicked off, with a usable closing line
 
 
 class RoiIntervalOut(Out):
@@ -458,6 +468,9 @@ class RoiOut(Out):
     hit_rate: float | None
     break_even: float | None
     roi_interval: RoiIntervalOut | None
+    clv_n: int
+    clv_mean: float | None
+    clv_beat: float | None
 
 
 class CurvePointOut(Out):

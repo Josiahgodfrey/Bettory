@@ -10,6 +10,7 @@ any process: a step that is not due does nothing and costs nothing.
               app/paper/freeze.py. A freeze without a capture seals no odds (no paper bet) - reported
     recheck   listed matches about an hour before kick-off: lineups, fresh odds, the full verification again;
               withdraw if it no longer qualifies (app/paper/recheck.py)
+    closing   listed (not withdrawn) or bet matches just before kick-off: the closing odds, for CLV
     results   at most every results.every_hours: goal minutes of the frozen fixtures still without a 15' result
     settle    every cycle, from the stored results (no request): app/paper/settle.py
 
@@ -45,6 +46,7 @@ from app.storage.repositories import paper as paper_repo
 log = logging.getLogger(__name__)
 CYCLE_LOCK = "paper_cycle"
 RESULTS_JOB = "paper_results:"
+CLOSING_JOB = "paper_closing:"
 
 
 @dataclass
@@ -111,6 +113,7 @@ class _Cycle:
         for sid in due_sessions(cal, self.now):
             self.session(cal, sid)
         self.recheck()
+        self.closing()
         self.results()
         if not self.dry_run:
             self.settle()
@@ -182,6 +185,28 @@ class _Cycle:
             failed = f" ({', '.join(r.failed_checks)})" if r.status == "WITHDRAWN" and r.failed_checks else ""
             out.note(f"{r.session_id} re-check {r.match_id[:8]} kick-off {r.kickoff_utc:%H:%M}Z: {r.status}{failed}")
         self.rechecked.extend(run.results)
+
+    def closing(self) -> None:
+        x, now, out, cfg = self.x, self.now, self.out, self.x.cfg.closing
+        with x.engine.connect() as conn:
+            todo = paper_repo.closing_candidates(conn, x.params.params_version, now,
+                                                 now + timedelta(minutes=cfg.minutes_before))
+        if not todo or not self.key:
+            return
+        budget = min(cfg.max_requests.for_plan(self.plan), self.left_today())
+        if budget < 1:
+            out.fail(f"closing odds of {len(todo)} matches due but the recorder's daily request bound is used up")
+        elif self.dry_run:
+            out.note(f"would capture the closing odds of {len(todo)} matches now")
+        else:
+            try:
+                st = pipeline.api_football_closing(x.engine, x.store(), x.registry, self.key,
+                                                   [c.provider_key for c in todo], budget,
+                                                   requests_per_minute=self.rpm,
+                                                   job_name=f"{CLOSING_JOB}{now.astimezone(UTC):%Y-%m-%dT%H:%M}")
+                out.note(f"closing odds: {st.get('fixtures_requested', 0)} of {len(todo)} matches")
+            except Exception as exc:
+                out.fail(f"closing odds failed: {type(exc).__name__}: {exc}")
 
     def results(self) -> None:
         x, now, out, cfg = self.x, self.now, self.out, self.x.cfg.results

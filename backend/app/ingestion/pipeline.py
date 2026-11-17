@@ -19,7 +19,7 @@ from uuid import UUID
 from sqlalchemy import Engine
 
 from app.core.settings import BACKEND_DIR, get_settings
-from app.domain.enums import FixtureStatus, RunStatus, SourceCode
+from app.domain.enums import FixtureStatus, RunStatus, SnapshotType, SourceCode
 from app.domain.params import load_params
 from app.domain.quality_config import load_quality_config
 from app.domain.registry import Registry, fdcouk_season_code, season_start_year
@@ -363,6 +363,31 @@ def api_football_recheck(engine: Engine, store: RawStore, registry: Registry, ap
             job.process(lineups, lambda raw: parsed)  # noqa: B023 - used at once, inside this iteration
             job.stats["lineups_announced"] += len(parsed.lineups)
             job.process(client.odds_for_fixture(key), lambda raw: p_af.parse_odds(raw, registry))
+            job.stats["fixtures_requested"] += 1
+
+    return _run(job, lambda: client.requests_used, _exclusive(engine, SourceCode.API_FOOTBALL, body),
+                _close_api_football(client, job))
+
+
+def api_football_closing(engine: Engine, store: RawStore, registry: Registry, api_key: str,
+                         fixture_keys: Sequence[str], max_requests: int, run_id: UUID | None = None, *,
+                         requests_per_minute: int, job_name: str) -> Counter[str]:
+    """Closing odds (docs/PAPER-BETTING.md 11): the odds of each fixture just before kick-off, stored as CLOSING
+    snapshots - the closing line against which CLV is measured. 1 request per fixture, within `max_requests`."""
+    client = ApiFootball(api_key, max_requests=max_requests, requests_per_minute=requests_per_minute)
+    job = Job(engine, store, registry, SourceCode.API_FOOTBALL, job_name, False, run_id)
+    keys = list(dict.fromkeys(fixture_keys))
+
+    def body() -> None:
+        _plan_quota(client, job, max_requests, minimum=1)
+        budget = client.http.max_requests or 0
+        for key in keys:
+            if client.requests_used >= budget:
+                job.stats["stopped_at_request_budget"] = 1
+                job.stats["fixtures_not_requested"] += 1
+                continue
+            job.process(client.odds_for_fixture(key),
+                        lambda raw: p_af.parse_odds(raw, registry, SnapshotType.CLOSING))
             job.stats["fixtures_requested"] += 1
 
     return _run(job, lambda: client.requests_used, _exclusive(engine, SourceCode.API_FOOTBALL, body),

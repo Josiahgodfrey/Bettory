@@ -232,7 +232,7 @@ Applied to the local database only; **Supabase needs the owner's approval** like
 `overall` and `by_market`, `by_competition`, `by_grade`, `by_rules` (`FOLLOWED` / `BROKEN`): settled, wins, voids,
 pending, staked, profit, `roi` with `roi_interval` (bootstrap over whole sessions, `reliable` from 30 sessions),
 `hit_rate` vs `break_even`; `profit_curve` (cumulative, by kick-off). Cancelled bets are excluded and counted.
-CLV needs closing odds (not captured yet).
+CLV: `clv_n`, `clv_mean`, `clv_beat` per group (PAPER-BETTING.md §11).
 
 ### 9.4 Code
 
@@ -297,10 +297,13 @@ gives the TypeScript types of every request and response; `src/lib/api.ts` wraps
 
 ### 10.5 Not built yet (later Phase 5 tasks)
 
-Telegram notifications, closing odds and CLV (being built). The `betting` migration, like the paper migration, still needs the owner's approval for Supabase.
+Telegram notifications (being built). The `betting` migration, like the paper migration, still needs the owner's approval for Supabase.
 
 ## 11. Additions after step 4
 
 - **Re-check (2026-11-17):** `lineup_status` / `recheck` on report entries, `withdrawn` on sessions, `lineups` on
   `GET /matches/{id}` (each team: formation, players with `starter`), the `WITHDRAWN` rule breach, NO_BET in the
   odds check for a withdrawn match.
+- **Closing odds and CLV (2026-11-17):** each bet's `clv` (`fair_closing_p`, `fair_closing_odds`, `books`,
+  `book_closing_odds`, `clv_fair`, `clv_book`) once its match has kicked off; `clv_n`, `clv_mean`, `clv_beat` in
+  every performance group; the paper report's bets carry the same three figures.

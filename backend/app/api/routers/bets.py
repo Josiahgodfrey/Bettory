@@ -16,7 +16,15 @@ from uuid import UUID
 
 from fastapi import APIRouter, HTTPException, Query, status
 
-from app.api.betting import BetInput, BetRefused, bet_json, performance, quote_card, record_bet
+from app.api.betting import (
+    BetInput,
+    BetRefused,
+    ClosingContext,
+    bet_json,
+    performance,
+    quote_card,
+    record_bet,
+)
 from app.api.deps import ClockDep, EngineDep, OwnerDep, ParamsDep, RegistryDep
 from app.api.responses import BetOut, PerformanceOut, QuoteCardOut
 from app.api.routers.sessions import parse_session
@@ -27,8 +35,13 @@ from app.domain.betting_config import load_betting_config
 from app.domain.params import Params
 from app.domain.sessions import SessionCalendar
 from app.storage.repositories import betting as bet_repo
+from app.storage.repositories import paper as paper_repo
 
 router = APIRouter(tags=["bets"])
+
+
+def _closing(conn: Any, rows: list[dict[str, Any]], params: Params, now: datetime) -> ClosingContext:
+    return ClosingContext(paper_repo.closing_odds(conn, sorted({r["match_id"] for r in rows})), params, now)
 
 
 def _not_found(what: str) -> HTTPException:
@@ -76,7 +89,7 @@ def place(body: BetIn, _: OwnerDep, engine: EngineDep, params: ParamsDep, now: C
 
 
 @router.get("/bets", response_model=list[BetOut])
-def list_bets(_: OwnerDep, engine: EngineDep, params: ParamsDep, session: str | None = None,
+def list_bets(_: OwnerDep, engine: EngineDep, params: ParamsDep, now: ClockDep, session: str | None = None,
               first: Annotated[date | None, Query(alias="from")] = None,
               last: Annotated[date | None, Query(alias="to")] = None,
               include_cancelled: bool = True) -> list[dict[str, Any]]:
@@ -86,16 +99,17 @@ def list_bets(_: OwnerDep, engine: EngineDep, params: ParamsDep, session: str | 
     with engine.connect() as conn:
         rows = bet_repo.bets(conn, session_id=session, placed_from=lo, placed_to=hi,
                              include_cancelled=include_cancelled)
-    return [bet_json(r) for r in rows]
+        ctx = _closing(conn, rows, params, now)
+    return [bet_json(r, ctx) for r in rows]
 
 
 @router.get("/bets/{bet_id}", response_model=BetOut)
-def one_bet(bet_id: UUID, _: OwnerDep, engine: EngineDep) -> dict[str, Any]:
+def one_bet(bet_id: UUID, _: OwnerDep, engine: EngineDep, params: ParamsDep, now: ClockDep) -> dict[str, Any]:
     with engine.connect() as conn:
         row = bet_repo.bet(conn, bet_id)
-    if row is None:
-        raise _not_found(f"unknown bet {bet_id}")
-    return bet_json(row)
+        if row is None:
+            raise _not_found(f"unknown bet {bet_id}")
+        return bet_json(row, _closing(conn, [row], params, now))
 
 
 @router.post("/bets/{bet_id}/cancel", response_model=BetOut)
@@ -113,10 +127,11 @@ def cancel(bet_id: UUID, body: CancelBet, _: OwnerDep, engine: EngineDep) -> dic
 
 
 @router.get("/performance", response_model=PerformanceOut)
-def perf(_: OwnerDep, engine: EngineDep, params: ParamsDep,
+def perf(_: OwnerDep, engine: EngineDep, params: ParamsDep, now: ClockDep,
          first: Annotated[date | None, Query(alias="from")] = None,
          last: Annotated[date | None, Query(alias="to")] = None) -> dict[str, Any]:
     lo, hi = _local_range(params, first, last)
     with engine.connect() as conn:
         rows = bet_repo.bets(conn, placed_from=lo, placed_to=hi)
-    return performance(rows, load_betting_config(), load_backtest_config())
+        ctx = _closing(conn, rows, params, now)
+    return performance(rows, load_betting_config(), load_backtest_config(), ctx)

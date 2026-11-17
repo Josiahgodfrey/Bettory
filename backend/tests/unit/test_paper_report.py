@@ -73,3 +73,13 @@ def test_unsettled_and_no_bet_rows_and_integrity() -> None:
     assert "## Sequential evidence" in md and "## Paper bets" in md and "Gate B" in md
     js = paper_json(s)
     assert js["bets"]["settled"] == 1 and js["chain"]["intact"] and js["e_profit"]["n"] == 1
+
+
+def test_closing_line_value_of_paper_bets() -> None:
+    closing = [{"bookmaker": "Good", "market": "FIRST15_GOAL", "selection": "NO", "odds": 1.30, "captured_at": "x"},
+               {"bookmaker": "Good", "market": "FIRST15_GOAL", "selection": "YES", "odds": 3.60, "captured_at": "x"}]
+    rows = [row(0, True, closing=closing), row(1, False, closing=closing), row(2, True)]   # the last: no line
+    s = summarise_paper(rows, INTACT, CFG, PARAMS)
+    assert s.bets.clv_n == 2 and s.bets.clv_beat == 1.0                    # 1.40 taken vs ~1.36 fair closing
+    assert s.bets.clv_mean is not None and 0 < s.bets.clv_mean < 0.06
+    assert "Closing line value" in render_paper(s, CFG) and paper_json(s)["bets"]["clv_n"] == 2

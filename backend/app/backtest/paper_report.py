@@ -35,6 +35,7 @@ from app.backtest.report import (
 from app.calculation.devig import devig
 from app.calculation.ev import Bet
 from app.domain.params import Params
+from app.settlement.clv import closing_line, clv_fair
 from app.settlement.evalues import EProcess, e_process, forecast_ratio, profit_ratio
 from app.settlement.performance import Bucket, Pair, Score, calibration, score
 from app.settlement.statistics import Interval, block_bootstrap
@@ -54,6 +55,9 @@ class BetSummary:
     mean_odds: float | None
     break_even: float | None  # mean 1 / odds: the hit rate needed to break even
     roi_interval: Interval | None
+    clv_n: int = 0  # settled bets with a usable closing line
+    clv_mean: float | None = None  # mean of taken odds x fair closing P - 1 (app/settlement/clv.py)
+    clv_beat: float | None = None  # share of those bets that beat the fair closing price
 
     @property
     def roi(self) -> float | None:
@@ -128,7 +132,17 @@ def _paired(rows: Sequence[ReportRow], cfg: BacktestConfig) -> Paired | None:
                   block_bootstrap(list(blocks.values()), u.bootstrap_samples, u.confidence, u.seed), None)
 
 
-def _bets(rows: Sequence[ReportRow], cfg: BacktestConfig) -> BetSummary:
+def _clv(rows: Sequence[ReportRow], params: Params) -> list[float]:
+    out = []
+    for r in rows:
+        assert r.bet_market is not None and r.bet_odds is not None
+        line = closing_line(r.closing, Bet(r.bet_market), r.bet_book, params)
+        if line is not None:
+            out.append(clv_fair(r.bet_odds, line))
+    return out
+
+
+def _bets(rows: Sequence[ReportRow], cfg: BacktestConfig, params: Params) -> BetSummary:
     with_bet = [r for r in rows if r.bet_market is not None]
     done = [r for r in with_bet if r.bet_outcome in ("WIN", "LOSE")]
     blocks: dict[str, list[tuple[float, float]]] = defaultdict(list)
@@ -143,7 +157,9 @@ def _bets(rows: Sequence[ReportRow], cfg: BacktestConfig) -> BetSummary:
         staked=sum(r.bet_stake or 0.0 for r in done), profit=sum(r.profit or 0.0 for r in done),
         mean_odds=sum(odds) / len(odds) if odds else None,
         break_even=sum(1 / o for o in odds) / len(odds) if odds else None,
-        roi_interval=block_bootstrap(list(blocks.values()), u.bootstrap_samples, u.confidence, u.seed))
+        roi_interval=block_bootstrap(list(blocks.values()), u.bootstrap_samples, u.confidence, u.seed),
+        clv_n=len(clv := _clv(done, params)), clv_mean=sum(clv) / len(clv) if clv else None,
+        clv_beat=sum(c > 0 for c in clv) / len(clv) if clv else None)
 
 
 def _profit_criterion(b: BetSummary, e: EProcess, cfg: BacktestConfig) -> Criterion:
@@ -169,7 +185,7 @@ def summarise_paper(rows: Sequence[ReportRow], chain: ChainStatus, cfg: Backtest
         pairs = _pairs(priced, p, bet)
         forecasts[bet.value] = (score(pairs), calibration(pairs, width))
 
-    bets = _bets(rows, cfg)
+    bets = _bets(rows, cfg, params)
     ordered = sorted((r for r in rows if r.bet_outcome in ("WIN", "LOSE") and r.bet_odds is not None),
                      key=lambda r: (r.kickoff_utc, r.chain_pos))
     e_profit = e_process([profit_ratio(r.bet_odds or 0.0, r.bet_outcome == "WIN") for r in ordered])
@@ -246,7 +262,9 @@ def render_paper(s: PaperSummary, cfg: BacktestConfig) -> str:
             f"{b.bets} settled ({b.wins} won), {b.voids} void, {b.pending} pending · staked {b.staked:g} · "
             f"profit {b.profit:+.2f} · ROI {_pct(b.roi, '+.1%')} · interval {_ci(b.roi_interval, '+.1%')}",
             f"Hit rate {_pct(b.hit_rate)} vs break-even {_pct(b.break_even)} at mean odds "
-            f"{'—' if b.mean_odds is None else f'{b.mean_odds:.2f}'}."]
+            f"{'—' if b.mean_odds is None else f'{b.mean_odds:.2f}'}.",
+            f"Closing line value: {_pct(b.clv_mean, '+.1%')} on average over {b.clv_n} bets with a closing line; "
+            f"{_pct(b.clv_beat)} beat the fair closing price."]
 
     out += ["", "## Sequential evidence (valid at every look)", "",
             "| Test | Observations | E now | E peak | Bar 1/alpha | Reached |", "|---|---|---|---|---|---|",
@@ -278,7 +296,8 @@ def paper_json(s: PaperSummary) -> dict[str, Any]:
         "paired_brier": iv(s.paired.brier) if s.paired else None,
         "bets": {"settled": s.bets.bets, "wins": s.bets.wins, "voids": s.bets.voids, "pending": s.bets.pending,
                  "staked": s.bets.staked, "profit": s.bets.profit, "roi": s.bets.roi,
-                 "roi_interval": iv(s.bets.roi_interval), "break_even": s.bets.break_even},
+                 "roi_interval": iv(s.bets.roi_interval), "break_even": s.bets.break_even,
+                 "clv_n": s.bets.clv_n, "clv_mean": s.bets.clv_mean, "clv_beat": s.bets.clv_beat},
         "e_profit": {"n": s.e_profit.n, "value": s.e_profit.value, "peak": s.e_profit.peak},
         "e_forecast": {"n": s.e_forecast.n, "value": s.e_forecast.value, "peak": s.e_forecast.peak},
         "market_gap_pts": s.market_gap_pts, "alpha": s.alpha,

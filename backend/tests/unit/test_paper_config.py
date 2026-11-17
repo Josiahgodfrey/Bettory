@@ -43,3 +43,10 @@ def test_interval_job_failure_does_not_stop_the_scheduler() -> None:
     sched = BackgroundScheduler(timezone="UTC")
     sched.add_job(_guarded, "interval", minutes=5, args=[IntervalJob("j", "job", boom, 5)])
     assert len(sched.get_jobs()) == 1
+
+
+def test_closing_window_must_be_longer_than_the_cycle() -> None:
+    raw = load_paper_config().model_dump()
+    raw["closing"]["minutes_before"] = raw["schedule"]["every_minutes"]
+    with pytest.raises(ValidationError, match="closing.minutes_before"):
+        PaperConfig.model_validate(raw)

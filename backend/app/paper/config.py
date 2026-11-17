@@ -56,6 +56,11 @@ class Recheck(_Strict):
         return self
 
 
+class Closing(_Strict):
+    minutes_before: int = Field(ge=2, le=60)
+    max_requests: PerPlan
+
+
 class Results(_Strict):
     every_hours: int = Field(ge=1, le=48)
     lookback_hours: int = Field(ge=3, le=24 * 14)
@@ -67,6 +72,7 @@ class PaperConfig(_Strict):
     daily_max_requests: PerPlan
     capture: Capture
     recheck: Recheck
+    closing: Closing
     results: Results
 
     @model_validator(mode="after")
@@ -74,6 +80,9 @@ class PaperConfig(_Strict):
         if self.capture.lead_minutes <= self.schedule.every_minutes:
             raise ValueError("capture.lead_minutes must be longer than schedule.every_minutes, or a cycle can "
                              "miss the capture window")
+        if self.closing.minutes_before <= self.schedule.every_minutes:
+            raise ValueError("closing.minutes_before must be longer than schedule.every_minutes, or a cycle can "
+                             "miss the closing capture")
         return self
 
 

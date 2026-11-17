@@ -157,6 +157,59 @@
         "title": "ApiFootballDayIngest",
         "type": "object"
       },
+      "BetClvOut": {
+        "additionalProperties": false,
+        "properties": {
+          "book_closing_odds": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Book Closing Odds"
+          },
+          "books": {
+            "title": "Books",
+            "type": "integer"
+          },
+          "clv_book": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Clv Book"
+          },
+          "clv_fair": {
+            "title": "Clv Fair",
+            "type": "number"
+          },
+          "fair_closing_odds": {
+            "title": "Fair Closing Odds",
+            "type": "number"
+          },
+          "fair_closing_p": {
+            "title": "Fair Closing P",
+            "type": "number"
+          }
+        },
+        "required": [
+          "fair_closing_p",
+          "fair_closing_odds",
+          "books",
+          "book_closing_odds",
+          "clv_fair",
+          "clv_book"
+        ],
+        "title": "BetClvOut",
+        "type": "object"
+      },
       "BetIn": {
         "additionalProperties": false,
         "properties": {
@@ -256,6 +309,16 @@
               }
             ],
             "title": "Cancelled At"
+          },
+          "clv": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/BetClvOut"
+              },
+              {
+                "type": "null"
+              }
+            ]
           },
           "competition_code": {
             "title": "Competition Code",
@@ -487,7 +550,8 @@
           "state",
           "profit",
           "result_15",
-          "follows_rules"
+          "follows_rules",
+          "clv"
         ],
         "title": "BetOut",
         "type": "object"
@@ -3710,6 +3774,32 @@
             ],
             "title": "Break Even"
           },
+          "clv_beat": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Clv Beat"
+          },
+          "clv_mean": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Clv Mean"
+          },
+          "clv_n": {
+            "title": "Clv N",
+            "type": "integer"
+          },
           "hit_rate": {
             "anyOf": [
               {
@@ -3777,7 +3867,10 @@
           "roi",
           "hit_rate",
           "break_even",
-          "roi_interval"
+          "roi_interval",
+          "clv_n",
+          "clv_mean",
+          "clv_beat"
         ],
         "title": "RoiOut",
         "type": "object"

@@ -8,7 +8,7 @@ from __future__ import annotations
 
 import json
 from collections.abc import Sequence
-from dataclasses import asdict, dataclass
+from dataclasses import asdict, dataclass, field
 from datetime import datetime
 from typing import Any
 from uuid import UUID
@@ -313,22 +313,24 @@ class ReportRow:
     bet_outcome: str | None
     profit: float | None
     corrections: int  # settlements superseded for this prediction
+    closing: list[dict[str, Any]] = field(default_factory=list)  # the closing line (latest prices before kick-off)
 
 
 def report_rows(conn: Connection, params_version: str | None = None) -> list[ReportRow]:
-    rows = conn.execute(text("""
+    rows = conn.execute(text(f"""
         select p.chain_pos, p.session_id, p.competition_code, p.kickoff_utc, p.params_version, p.decision, p.grade,
                p.p_under05, p.p_draw, p.p_league_00, p.p_league_draw, p.odds_seen,
                p.bet_market, p.bet_odds, p.bet_book, p.bet_ev, p.bet_stake,
                s.id is not null as settled, s.under05, s.draw, s.bet_outcome, s.profit,
                (select count(*) from paper.settlements x where x.prediction_id = p.id) - (s.id is not null)::int
-                 as corrections
+                 as corrections,
+               {closing_sql("p.match_id", "p.kickoff_utc")} as closing
         from paper.predictions p
         left join lateral (select * from paper.settlements x where x.prediction_id = p.id
                            order by x.settled_at desc limit 1) s on true
         where cast(:pv as text) is null or p.params_version = :pv
         order by p.kickoff_utc, p.chain_pos
-    """), {"pv": params_version}).mappings().all()
+    """), {"pv": params_version, "manual": SOURCE_IDS[SourceCode.MANUAL]}).mappings().all()
     return [ReportRow(**r) for r in rows]
 
 
@@ -443,3 +445,62 @@ def latest_rechecks(conn: Connection, match_ids: Sequence[UUID],
         order by p.match_id, r.checked_at desc
     """), {"m": list(match_ids), "v": params_version}).mappings().all()
     return {r["match_id"]: dict(r) for r in rows}
+
+
+
+# --- closing odds (docs/PAPER-BETTING.md 11) -------------------------------------------------------------------
+
+CLOSING_MARKETS = ("FIRST15_GOAL", "FIRST15_RESULT")
+
+
+def closing_sql(match_col: str, kickoff_col: str) -> str:
+    """A jsonb array of the closing line of one match: the latest price per bookmaker, 15' market and selection
+    captured before kick-off, odds entered by hand excluded. Needs the bind parameter :manual."""
+    return f"""coalesce((select jsonb_agg(jsonb_build_object('bookmaker', c.bookmaker, 'market', c.market,
+                    'selection', c.selection, 'odds', c.odds, 'captured_at', c.captured_at))
+               from (select distinct on (o.bookmaker_id, o.market, o.selection) b.name as bookmaker,
+                            o.market::text as market, o.selection, o.odds::float as odds, o.captured_at
+                     from core.odds_snapshots o join core.bookmakers b on b.id = o.bookmaker_id
+                     where o.match_id = {match_col} and o.captured_at < {kickoff_col} and o.source_id <> :manual
+                       and o.market::text in ('FIRST15_GOAL', 'FIRST15_RESULT') and o.line is null
+                     order by o.bookmaker_id, o.market, o.selection, o.captured_at desc) c), '[]'::jsonb)"""
+
+
+def closing_odds(conn: Connection, match_ids: Sequence[UUID]) -> dict[UUID, list[dict[str, Any]]]:
+    if not match_ids:
+        return {}
+    rows = conn.execute(text(f"""
+        select m.id, {closing_sql("m.id", "m.kickoff_utc")} as closing from core.matches m where m.id = any(:ids)
+    """), {"ids": list(match_ids), "manual": SOURCE_IDS[SourceCode.MANUAL]}).all()
+    return {r[0]: list(r[1]) for r in rows}
+
+
+@dataclass(frozen=True)
+class ClosingCandidate:
+    match_id: UUID
+    kickoff_utc: datetime
+    provider_key: str
+
+
+def closing_candidates(conn: Connection, params_version: str, kickoff_from: datetime,
+                       kickoff_to: datetime) -> list[ClosingCandidate]:
+    """SCHEDULED matches kicking off in [from, to) that are listed (and not withdrawn) or carry an active real
+    bet, have an API-Football id and no CLOSING snapshot yet."""
+    rows = conn.execute(text("""
+        select m.id, m.kickoff_utc,
+               (select r.provider_match_key from core.match_source_records r
+                 where r.match_id = m.id and r.source_id = :src order by r.parsed_at desc limit 1) as key
+        from core.matches m
+        where m.status = 'SCHEDULED' and m.kickoff_utc >= :a and m.kickoff_utc < :b
+          and (exists (select 1 from paper.predictions p where p.match_id = m.id and p.params_version = :v
+                         and p.decision = 'QUALIFIED'
+                         and not exists (select 1 from paper.rechecks r where r.prediction_id = p.id
+                                         and r.status = 'WITHDRAWN'))
+               or exists (select 1 from betting.placed_bets b where b.match_id = m.id
+                          and not exists (select 1 from betting.bet_cancellations x where x.bet_id = b.id)))
+          and not exists (select 1 from core.odds_snapshots o where o.match_id = m.id
+                          and o.snapshot_type = 'CLOSING' and o.source_id = :src)
+        order by m.kickoff_utc, m.id
+    """), {"src": SOURCE_IDS[SourceCode.API_FOOTBALL], "a": kickoff_from, "b": kickoff_to,
+           "v": params_version}).all()
+    return [ClosingCandidate(r[0], r[1], r[2]) for r in rows if r[2]]

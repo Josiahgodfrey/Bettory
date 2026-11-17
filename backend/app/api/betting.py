@@ -3,7 +3,8 @@
     quote_card    the owner enters one bookmaker's 15' prices -> the live quote check at the session's cut-off:
                   which market to bet (never both), EV, pass / fail with reasons; the prices are stored
     record_bet    a placed bet; rule breaches are recorded with it, never refused (owner decision 2026-11-17)
-    bet_json      a bet with its settlement, read from the match's stored 15' result every time
+    bet_json      a bet with its settlement, read from the match's stored 15' result every time, and its CLV
+                  against the fair closing price once the match has kicked off
     performance   ROI with a session-bootstrap interval, hit rate vs break-even, by market / competition / grade /
                   rule-following, the profit curve
 """
@@ -29,6 +30,7 @@ from app.domain.params import Params
 from app.domain.registry import Registry
 from app.domain.sessions import SessionCalendar
 from app.paper.freeze import checks_json
+from app.settlement.clv import closing_line, clv_book, clv_fair
 from app.settlement.performance import Roi, roi
 from app.settlement.settle import Settlement, result_15, settle
 from app.settlement.statistics import block_bootstrap
@@ -172,7 +174,28 @@ def settlement_of(row: Mapping[str, Any]) -> Settlement | None:
     return settle(Bet(row["market"]), r, float(row["odds"]), float(row["stake"]))
 
 
-def bet_json(row: Mapping[str, Any]) -> dict[str, Any]:
+@dataclass(frozen=True)
+class ClosingContext:
+    """The closing lines of the bets' matches (paper_repo.closing_odds), and when 'now' is."""
+
+    lines: Mapping[UUID, Sequence[Mapping[str, Any]]]
+    params: Params
+    now: datetime
+
+
+def bet_clv(row: Mapping[str, Any], ctx: ClosingContext | None) -> dict[str, Any] | None:
+    """CLV once the match has kicked off (the closing line is final then); None without a usable closing line."""
+    if ctx is None or row["kickoff_utc"] > ctx.now:
+        return None
+    line = closing_line(ctx.lines.get(row["match_id"], ()), Bet(row["market"]), row["bookmaker"], ctx.params)
+    if line is None:
+        return None
+    taken = float(row["odds"])
+    return {"fair_closing_p": line.fair_p, "fair_closing_odds": line.fair_odds, "books": line.books,
+            "book_closing_odds": line.book_odds, "clv_fair": clv_fair(taken, line), "clv_book": clv_book(taken, line)}
+
+
+def bet_json(row: Mapping[str, Any], ctx: ClosingContext | None = None) -> dict[str, Any]:
     s = settlement_of(row)
     out: dict[str, Any] = jsonable({k: v for k, v in row.items()
                                     if k not in ("h15_home", "h15_away", "goal_before_15", "data_status")})
@@ -181,6 +204,7 @@ def bet_json(row: Mapping[str, Any]) -> dict[str, Any]:
     out["profit"] = None if s is None else s.profit
     out["result_15"] = result_of(row)
     out["follows_rules"] = not row["rule_breaches"]
+    out["clv"] = bet_clv(row, ctx)
     return out
 
 
@@ -192,12 +216,17 @@ def _roi_json(r: Roi) -> dict[str, Any]:
             "profit": r.profit, "roi": r.roi, "hit_rate": r.hit_rate, "break_even": r.break_even}
 
 
-def performance(rows: Sequence[Mapping[str, Any]], cfg: BettingConfig, bt: BacktestConfig) -> dict[str, Any]:
+def performance(rows: Sequence[Mapping[str, Any]], cfg: BettingConfig, bt: BacktestConfig,
+                ctx: ClosingContext | None = None) -> dict[str, Any]:
     active = [(r, s) for r in rows if (s := settlement_of(r)) is not None]
     u = bt.uncertainty
 
     def summary(items: Sequence[tuple[Mapping[str, Any], Settlement]]) -> dict[str, Any]:
         out = _roi_json(roi([s for _, s in items]))
+        clv = [c["clv_fair"] for r, s in items if s.outcome is not BetOutcome.VOID and (c := bet_clv(r, ctx))]
+        out["clv_n"] = len(clv)
+        out["clv_mean"] = sum(clv) / len(clv) if clv else None
+        out["clv_beat"] = sum(c > 0 for c in clv) / len(clv) if clv else None
         blocks: dict[str, list[tuple[float, float]]] = {}
         for r, s in items:
             if s.outcome in (BetOutcome.WIN, BetOutcome.LOSE):

@@ -120,7 +120,8 @@ def parse_fixtures(raw: bytes, registry: Registry) -> ParseResult:
     return result
 
 
-def parse_odds(raw: bytes, registry: Registry) -> ParseResult:
+def parse_odds(raw: bytes, registry: Registry, snapshot: SnapshotType = SnapshotType.ANALYSIS) -> ParseResult:
+    """`snapshot`: CLOSING for the capture just before kick-off (the closing line of CLV)."""
     result = ParseResult()
     for item in _body(raw):
         if registry.by_provider(SOURCE, str(item["league"]["id"])) is None:
@@ -152,7 +153,7 @@ def parse_odds(raw: bytes, registry: Registry) -> ParseResult:
                             source=SOURCE, provider_match_key=str(item["fixture"]["id"]),
                             bookmaker=bookmaker["name"], market=market, provider_market_name=bet["name"],
                             selection=selection, line=line, odds=float(value["odd"]),
-                            snapshot_type=SnapshotType.ANALYSIS, captured_at=captured,
+                            snapshot_type=snapshot, captured_at=captured,
                         ))
                     except (ValidationError, ValueError):
                         result.skipped["invalid_odds"] += 1
