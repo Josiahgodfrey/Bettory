@@ -383,6 +383,9 @@ A task is done when:
 
 ## 15. Progress tracker
 
+Changes of 17–18 Nov 2026 (paper betting, re-check, CLV, real bets, API, Telegram, Supabase, frontend steps 1–4):
+what, how and the effect on the system in [CHANGES-2026-11.md](CHANGES-2026-11.md).
+
 | Phase | Status | Started | Finished | Notes |
 |---|---|---|---|---|
 | 0 — Verify assumptions | 🟡 In progress | | | Open: your bookmaker's 15' rules (V6), 15' market per league |
@@ -391,7 +394,7 @@ A task is done when:
 | 3 — Data pipeline | 🟡 In progress | | | Infrastructure done; 15'-vs-15' cross-check and multi-season goal minutes wait for API-Football Pro |
 | 4 — Backtest (Gate B) | 🟡 In progress | 2026-11-16 | | Runner and tuning tool done (BACKTEST-REPORT.md); real tuning waits for the backfill. Paper betting (forward test, PAPER-BETTING.md): steps 1–5 done (frozen predictions, sealed odds, paper bets + settlement, report with e-values, recorder cycle in the worker / Task Scheduler) — **built, not live yet (unfinished)**: waits for the Pro upgrade, the alpha / min_bets confirmation, migration approval and switching the recorder on (PAPER-BETTING.md §9) |
 | 5 — Session pipeline + API | 🟡 In progress | 2026-11-17 | | 5.7 FastAPI endpoints for the frontend done (docs/API.md, branch `frontend-api`): sessions and report, match analysis, odds check, real bets (append-only, TZS), performance, paper betting, recorder, dashboard; typed contract docs/api/openapi.json. Also done: lineup re-check with withdrawals, closing odds and CLV, Telegram notifications (PAPER-BETTING.md §10–12) |
-| 6 — Frontend | 🟡 In progress | 2026-11-17 | | Step 1 done (docs/FRONTEND.md): React + shadcn preset, typed API client, login with authenticator code, layout |
+| 6 — Frontend | 🟡 In progress | 2026-11-17 | | Steps 1–4 done (docs/FRONTEND.md): login, Today, Bets section, match analysis, odds check, bets, performance and paper charts; next: step 5 (recorder, calendar, data health, notifications, settings), step 6 (whole-application tests) |
 | 7 — Deployment + go-live | ⬜ Not started | | | |
 
 Status values: ⬜ Not started · 🟡 In progress · ✅ Done · ⛔ Blocked
