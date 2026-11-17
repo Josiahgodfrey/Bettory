@@ -60,7 +60,7 @@ Until step 3 is done, the API refuses every real login (503 "authentication is n
 | 1 | Project, preset, typed API client, login (password + code, QR enrolment), layout and navigation, theme | ✅ 2026-11-17 |
 | 2 | Today (dashboard) and Bets section (sessions, report, all fixtures) | ✅ 2026-11-18 |
 | 3 | Match analysis, odds check, record a bet, My bets (cancel) | ✅ 2026-11-18 |
-| 4 | Performance, Paper betting (report, predictions, chain, replay) | ⬜ |
+| 4 | Performance, Paper betting (report, predictions, chain, replay) — with charts | ✅ 2026-11-18 |
 | 5 | Recorder, Calendar, Data health, Notifications, Settings | ⬜ |
 | 6 | Whole-application tests (Playwright on the real API), phone layout pass | ⬜ |
 
@@ -106,3 +106,24 @@ Until step 3 is done, the API refuses every real login (503 "authentication is n
 - Checked in a phone-sized browser: the whole flow match → odds check → record → My bets → cancel (writes mocked,
   because bets are append-only; real writes are tested in step 6 on a throwaway database), all tabs, desktop and
   dark mode; no console errors; 8 unit tests.
+
+### Step 4 checks (2026-11-18) — the visual metrics
+
+Charts are hand-written SVG (`src/components/charts/`, no chart library), following the dataviz rules: one series
+colour, the preset's orange `--chart-3` (validated: lightness band, chroma and ≥ 3:1 contrast on both card surfaces;
+the brighter `--chart-2` failed the dark band), grey reference lines, 1px solid grid, 2px lines, ringed end dots,
+a crosshair tooltip (pointer, touch, arrow keys) and "Show the numbers" (the data table) under every chart. The
+frontend only maps numbers to pixels; every figure comes from the API.
+
+- **Performance** (`/performance?range=`): All time / 90 / 30 / 7 days; stat tiles (profit, ROI with its 95 % range,
+  hit rate vs break-even, settled, CLV); **profit over time** (cumulative, zero line); ROI **by market, rules followed
+  vs broken, grade and league** as bars on one zero baseline with the uncertainty whisker.
+- **Paper betting** (`/paper`): **Gate B** checklist; sealed / settled; record chain with **Verify now**; **Replay a
+  session**; **profit evidence** and **forecast evidence** (e-values over time, log scale, with the bar 1/alpha = 20
+  and the neutral 1); **calibration** per market (predicted vs happened, ±1 standard error, hollow = too few to
+  judge) with Brier and the comparison to the league-only price; **paper bets** (tiles + profit curve); the sealed
+  listed predictions.
+- API additions (`GET /paper/report`): `forecasts.*.buckets`, `e_profit.path` / `e_forecast.path`,
+  `bets.profit_curve`, `bets.hit_rate` (tests in `tests/unit/test_paper_report.py`).
+- Checked with simulated histories (260 paper bets, 40 real bets) at desktop and phone width, light and dark, and
+  with the real (still empty) records; tooltips by mouse and keyboard; no console errors.

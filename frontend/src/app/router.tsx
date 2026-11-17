@@ -6,6 +6,8 @@ import { Button } from '@/components/ui/button'
 import { LoginPage } from '@/features/auth/login-page'
 import { BetsPage } from '@/features/bets/bets-page'
 import { MatchPage } from '@/features/match/match-page'
+import { PaperPage } from '@/features/paper/paper-page'
+import { PerformancePage } from '@/features/performance/performance-page'
 import { SessionPage, SessionsIndex } from '@/features/sessions/session-page'
 import { TodayPage } from '@/features/today/today-page'
 
@@ -30,8 +32,8 @@ export const router = createBrowserRouter([
       { path: 'sessions/:sessionId', element: <SessionPage /> },
       { path: 'matches/:matchId', element: <MatchPage /> },
       { path: 'bets', element: <BetsPage /> },
-      { path: 'performance', element: <ComingSoon title="Performance" step={4} endpoints={['GET /performance']} /> },
-      { path: 'paper', element: <ComingSoon title="Paper betting" step={4} endpoints={['GET /paper/report', 'GET /paper/predictions', 'GET /paper/chain']} /> },
+      { path: 'performance', element: <PerformancePage /> },
+      { path: 'paper', element: <PaperPage /> },
       { path: 'recorder', element: <ComingSoon title="Recorder" step={5} endpoints={['GET /paper/status', 'POST /paper/cycle']} /> },
       { path: 'calendar', element: <ComingSoon title="Calendar" step={5} endpoints={['GET /fixtures?date=']} /> },
       { path: 'data-health', element: <ComingSoon title="Data health" step={5} endpoints={['GET /data-health/…']} /> },

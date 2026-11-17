@@ -17,9 +17,11 @@ Reads only sealed predictions and their latest settlements, and judges them with
 
 from __future__ import annotations
 
+import math
 from collections import defaultdict
 from collections.abc import Callable, Sequence
 from dataclasses import dataclass
+from datetime import datetime
 from typing import Any
 
 from app.backtest.config import BacktestConfig
@@ -86,6 +88,7 @@ class PaperSummary:
     e_forecast: EProcess
     alpha: float
     gate: list[Criterion]
+    profit_curve: tuple[tuple[datetime, float], ...] = ()  # settled paper bets by kick-off: cumulative profit
 
 
 def _outcome(r: ReportRow, bet: Bet) -> bool | None:
@@ -189,6 +192,11 @@ def summarise_paper(rows: Sequence[ReportRow], chain: ChainStatus, cfg: Backtest
     ordered = sorted((r for r in rows if r.bet_outcome in ("WIN", "LOSE") and r.bet_odds is not None),
                      key=lambda r: (r.kickoff_utc, r.chain_pos))
     e_profit = e_process([profit_ratio(r.bet_odds or 0.0, r.bet_outcome == "WIN") for r in ordered])
+    curve: list[tuple[datetime, float]] = []
+    total = 0.0
+    for r in ordered:
+        total += r.profit or 0.0
+        curve.append((r.kickoff_utc, total))
 
     gaps: list[float] = []
     ratios: list[float] = []
@@ -215,7 +223,7 @@ def summarise_paper(rows: Sequence[ReportRow], chain: ChainStatus, cfg: Backtest
         settled=len(settled), pending=len(rows) - len(settled), corrections=sum(r.corrections for r in rows),
         listed=len(listed), forecasts=forecasts, paired=paired, bets=bets,
         market_gap_pts=sum(gaps) / len(gaps) if gaps else None, e_profit=e_profit, e_forecast=e_forecast,
-        alpha=cfg.paper_betting.alpha, gate=gate)
+        alpha=cfg.paper_betting.alpha, gate=gate, profit_curve=tuple(curve))
 
 
 # --- output ----------------------------------------------------------------------------------------------------
@@ -280,6 +288,16 @@ def render_paper(s: PaperSummary, cfg: BacktestConfig) -> str:
     return "\n".join(out) + "\n"
 
 
+def _bucket(b: Bucket) -> dict[str, Any]:
+    return {"lo_pts": b.lo_pts, "hi_pts": b.hi_pts, "n": b.n, "mean_p": b.mean_p, "actual": b.actual,
+            "gap_pts": b.gap_pts, "se_pts": b.se_pts}
+
+
+def _evalue(e: EProcess) -> dict[str, Any]:
+    """Now, peak, and the value after each observation (for the evidence chart)."""
+    return {"n": e.n, "value": e.value, "peak": e.peak, "path": [math.exp(x) for x in e.log_path]}
+
+
 def paper_json(s: PaperSummary) -> dict[str, Any]:
     def iv(i: Interval | None) -> dict[str, Any] | None:
         return None if i is None else {"estimate": i.estimate, "low": i.low, "high": i.high, "sessions": i.blocks}
@@ -291,14 +309,16 @@ def paper_json(s: PaperSummary) -> dict[str, Any]:
                   "head_hash": s.chain.head_hash},
         "gate": [{"name": c.name, "status": c.status, "detail": c.detail} for c in s.gate],
         "forecasts": {m: None if sc is None else {"n": sc.n, "mean_p": sc.mean_p, "actual": sc.actual,
-                                                  "brier": sc.brier, "log_loss": sc.log_loss}
-                      for m, (sc, _) in s.forecasts.items()},
+                                                  "brier": sc.brier, "log_loss": sc.log_loss,
+                                                  "buckets": [_bucket(b) for b in buckets]}
+                      for m, (sc, buckets) in s.forecasts.items()},
         "paired_brier": iv(s.paired.brier) if s.paired else None,
         "bets": {"settled": s.bets.bets, "wins": s.bets.wins, "voids": s.bets.voids, "pending": s.bets.pending,
-                 "staked": s.bets.staked, "profit": s.bets.profit, "roi": s.bets.roi,
+                 "staked": s.bets.staked, "profit": s.bets.profit, "roi": s.bets.roi, "hit_rate": s.bets.hit_rate,
                  "roi_interval": iv(s.bets.roi_interval), "break_even": s.bets.break_even,
-                 "clv_n": s.bets.clv_n, "clv_mean": s.bets.clv_mean, "clv_beat": s.bets.clv_beat},
-        "e_profit": {"n": s.e_profit.n, "value": s.e_profit.value, "peak": s.e_profit.peak},
-        "e_forecast": {"n": s.e_forecast.n, "value": s.e_forecast.value, "peak": s.e_forecast.peak},
+                 "clv_n": s.bets.clv_n, "clv_mean": s.bets.clv_mean, "clv_beat": s.bets.clv_beat,
+                 "profit_curve": [{"kickoff_utc": k.isoformat(), "cumulative": c} for k, c in s.profit_curve]},
+        "e_profit": _evalue(s.e_profit),
+        "e_forecast": _evalue(s.e_forecast),
         "market_gap_pts": s.market_gap_pts, "alpha": s.alpha,
     }

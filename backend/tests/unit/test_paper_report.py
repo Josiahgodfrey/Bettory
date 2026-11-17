@@ -83,3 +83,20 @@ def test_closing_line_value_of_paper_bets() -> None:
     assert s.bets.clv_n == 2 and s.bets.clv_beat == 1.0                    # 1.40 taken vs ~1.36 fair closing
     assert s.bets.clv_mean is not None and 0 < s.bets.clv_mean < 0.06
     assert "Closing line value" in render_paper(s, CFG) and paper_json(s)["bets"]["clv_n"] == 2
+
+
+def test_chart_series_in_the_json() -> None:
+    """The frontend draws the profit curve, the e-value paths and calibration from these series (no maths there)."""
+    rows = [row(0, True), row(1, False), row(2, True), row(3, True, bet=False)]
+    js = paper_json(summarise_paper(rows, INTACT, CFG, PARAMS))
+    curve = js["bets"]["profit_curve"]
+    assert [round(p["cumulative"], 2) for p in curve] == [0.40, -0.60, -0.20]             # by kick-off, bets only
+    assert curve[0]["kickoff_utc"].startswith("2026-11-21T12:00")
+    assert abs(js["bets"]["hit_rate"] - 2 / 3) < 1e-9
+    e = js["e_profit"]
+    assert len(e["path"]) == e["n"] == 3 and abs(e["path"][-1] - e["value"]) < 1e-9
+    assert max(e["path"]) <= e["peak"] + 1e-9
+    buckets = js["forecasts"]["UNDER05"]["buckets"]
+    assert sum(b["n"] for b in buckets) == 4 and {"mean_p", "actual", "gap_pts", "se_pts"} <= set(buckets[0])
+    empty = paper_json(summarise_paper([], INTACT, CFG, PARAMS))
+    assert empty["bets"]["profit_curve"] == [] and empty["e_profit"]["path"] == []

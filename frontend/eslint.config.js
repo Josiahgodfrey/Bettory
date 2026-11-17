@@ -27,7 +27,7 @@ export default tseslint.config(
   },
   {
     // shadcn components and providers export helpers next to components (fast refresh hint only)
-    files: ['src/components/ui/**', 'src/app/router.tsx', 'src/features/auth/auth-context.tsx', 'src/lib/theme.tsx', 'src/components/status.tsx'],
+    files: ['src/components/ui/**', 'src/app/router.tsx', 'src/features/auth/auth-context.tsx', 'src/lib/theme.tsx', 'src/components/status.tsx', 'src/components/charts/chart-kit.tsx'],
     rules: { 'react-refresh/only-export-components': 'off' },
   },
 )
