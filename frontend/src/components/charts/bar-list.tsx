@@ -34,7 +34,7 @@ export function BarList({ rows, format, emptyText }: { rows: BarRow[]; format: (
         return (
           <li
             key={r.key}
-            className="grid grid-cols-[minmax(0,7rem)_1fr_auto] items-center gap-x-3 gap-y-0.5 sm:grid-cols-[minmax(0,10rem)_1fr_auto]"
+            className="grid grid-cols-[minmax(0,7rem)_1fr_auto] items-center gap-x-3 gap-y-0.5 sm:grid-cols-[minmax(0,15rem)_1fr_auto]"
             onPointerEnter={() => setHover(r.key)}
             onPointerLeave={() => setHover(null)}
           >

@@ -173,3 +173,25 @@ What the 31 tests cover:
 | `e2e/system.spec.ts` | Paper betting: 2 sealed predictions, **Verify now** (chain intact), **Replay** (identical to the seal); Recorder: a **real cycle** from the app (confirm → started → finished, status reported); Notifications: Telegram off, the test message refused (409); Calendar shows the sealed fixtures; Settings show the betting rules |
 
 Last run 2026-11-18: **31 passed** (about 1 minute), twice in a row from a fresh database.
+
+## 6. Every backend feature connected (2026-11-19)
+
+Audit of the contract (`docs/api/openapi.json`) against the calls in `frontend/src`: **45 of 49 endpoints are called
+by a screen**. The other 4 need no screen of their own: `GET /bets/{id}` (the list already carries every field) and
+`GET /data-health/coverage`, `/crosschecks`, `/runs` (their data is inside `GET /data-health`).
+
+Added for the audit:
+
+| Screen | Endpoints |
+|---|---|
+| **Data loading** (`/data-loading`, new) | `GET /jobs/competitions`; `POST /jobs/ingest/{openfootball, football-data-org, football-data-co-uk, api-football-season, api-football-backfill, api-football-day}` (API-Football ones confirm first: they spend quota); `GET /jobs/runs/{id}` (the started run, followed live); `GET /reviews`, `GET /teams`, `POST /reviews/{id}/resolve` (link a name to an existing team), `POST /reviews/{id}/new-team` (create a club; "create anyway" only when the API says it looks like an existing team) |
+| Data health | `GET /data-health/crosschecks/{id}` (**Details…**: the disagreeing matches, per source, before accepting), `POST /data-health/crosschecks` (**Run again** / run a missing one) |
+| **Backtest** (`/data-health/backtests/{name}`, new) | `GET /data-health/backtests/{name}`: Gate B, decisions by league, what blocked most, calibration (listed / all priced), models, betting at the minimum odds |
+| Settings | `GET /health` (API status) |
+
+Backend fix found by these tests: `GET /teams` searched only the team aliases, so a team without aliases could not be
+found by its own name (`app/storage/repositories/reference.py`; test in `tests/integration/test_api_jobs.py`).
+
+Whole-application tests: `e2e/data.spec.ts` (link a review, create a club, the load form reaching the API and its
+refusal without an API-Football key, run a cross-check and read its details, a stored backtest, API status) —
+**37 passed** with the rest of the suite.

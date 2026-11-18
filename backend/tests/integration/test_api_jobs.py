@@ -153,3 +153,11 @@ def test_review_new_team_flow(client: TestClient, engine: Engine, offline_openfo
     assert taken.status_code == 409 and "already a name of team" in taken.json()["detail"]
     assert [r["provider_name"] for r in client.get("/reviews").json()] == [spurs["name"]]  # still open
     assert client.post(f"/reviews/{reviews['Coventry City FC']}/new-team", json={}).status_code == 404  # resolved
+
+
+def test_team_search_finds_a_team_by_its_name_without_aliases(client: TestClient, engine: Engine) -> None:
+    """GET /teams matches the team's own name too, not only its aliases (found by the e2e tests 2026-11-19)."""
+    with engine.begin() as c:
+        c.execute(text("insert into core.teams (name, country) values ('Team Without Alias', 'Testland')"))
+    assert [t["name"] for t in client.get("/teams", params={"q": "without ali"}).json()] == ["Team Without Alias"]
+    assert client.get("/teams", params={"q": "no such club"}).json() == []

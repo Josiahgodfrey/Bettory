@@ -1,6 +1,7 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { AlertTriangle, CheckCircle2 } from 'lucide-react'
 import { useState, type FormEvent } from 'react'
+import { Link } from 'react-router'
 import { toast } from 'sonner'
 
 import { StatTile } from '@/components/charts/stat-tile'
@@ -17,6 +18,7 @@ import {
   AlertDialogTitle,
 } from '@/components/ui/alert-dialog'
 import { Button } from '@/components/ui/button'
+import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from '@/components/ui/dialog'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Skeleton } from '@/components/ui/skeleton'
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
@@ -186,7 +188,14 @@ function CoverageTable({ rows }: { rows: Coverage[] }) {
                   {c.complete} / {c.derived} / {c.partial}
                   {c.conflicts > 0 && <span className="ml-1 text-destructive">· {c.conflicts} conflicts</span>}
                 </TableCell>
-                <TableCell className="min-w-40 whitespace-normal">{c.crosscheck ? <CrossCheckCell c={c.crosscheck} /> : <ToneBadge tone="muted">not run</ToneBadge>}</TableCell>
+                <TableCell className="min-w-40 whitespace-normal">{c.crosscheck ? (
+                    <CrossCheckCell c={c.crosscheck} />
+                  ) : (
+                    <div className="flex flex-wrap items-center gap-1.5">
+                      <ToneBadge tone="muted">not run</ToneBadge>
+                      <RunCrossCheck competition={c.competition} season={c.season} />
+                    </div>
+                  )}</TableCell>
                 <TableCell className="hidden text-xs text-muted-foreground lg:table-cell">
                   {Object.entries(c.sources)
                     .map(([s, v]) => `${humanize(s)} ${v.matches}`)
@@ -215,8 +224,110 @@ function CrossCheckCell({ c }: { c: CrossCheck }) {
         FT {a.ft.agreed}/{a.ft.compared} · HT {a.ht.agreed}/{a.ht.compared} · 15′ {a.h15.agreed}/{a.h15.compared}
       </div>
       {c.accepted_note && <div className="text-xs text-muted-foreground">“{c.accepted_note}”</div>}
-      {failed && !c.accepted && <AcceptCrossCheck c={c} />}
+      <div className="flex flex-wrap gap-1.5">
+        <CrossCheckDetails c={c} />
+        <RunCrossCheck competition={c.competition} season={c.season} />
+        {failed && !c.accepted && <AcceptCrossCheck c={c} />}
+      </div>
     </div>
+  )
+}
+
+/** Run the cross-check of one league-season now (POST /data-health/crosschecks). */
+function RunCrossCheck({ competition, season }: { competition: string; season: string }) {
+  const qc = useQueryClient()
+  const run = useMutation({
+    mutationFn: () => unwrap(api.POST('/data-health/crosschecks', { body: { competition, season } })),
+    onSuccess: (r) => {
+      const st = (r as { status?: string }).status
+      toast.success(`${competition} ${season}: cross-check ${st ? humanize(st).toLowerCase() : 'done'}`)
+      void qc.invalidateQueries({ queryKey: ['data-health'] })
+      void qc.invalidateQueries({ queryKey: ['dashboard'] })
+    },
+  })
+  return (
+    <Button size="xs" variant="ghost" className="w-fit" onClick={() => run.mutate()} disabled={run.isPending}>
+      {run.isPending ? 'Checking…' : 'Run again'}
+    </Button>
+  )
+}
+
+/** The matches the sources disagree on (GET /data-health/crosschecks/{id}): what to look at before accepting. */
+function CrossCheckDetails({ c }: { c: CrossCheck }) {
+  const [open, setOpen] = useState(false)
+  const q = useQuery({
+    queryKey: ['data-health', 'crosscheck', c.id],
+    queryFn: async () =>
+      (await unwrap(api.GET('/data-health/crosschecks/{crosscheck_id}', { params: { path: { crosscheck_id: c.id } } }))) as unknown as CrossCheck & {
+        disagreements: { match: string; kind: string; values: Record<string, string> }[]
+      },
+    enabled: open,
+  })
+  const a = c.agreement
+  return (
+    <>
+      <Button size="xs" variant="ghost" className="w-fit" onClick={() => setOpen(true)}>
+        Details…
+      </Button>
+      <Dialog open={open} onOpenChange={setOpen}>
+        <DialogContent className="sm:max-w-lg">
+          <DialogHeader>
+            <DialogTitle>
+              Cross-check {c.competition} {c.season}
+            </DialogTitle>
+            <DialogDescription>
+              Checked {dateTimeEat(c.checked_at)} · {c.matches} matches, {c.multi_source} with more than one source · needs {pct(c.min_agreement, 0)}{' '}
+              agreement on at least {String((c as { min_compared?: number }).min_compared ?? '')} matches.
+            </DialogDescription>
+          </DialogHeader>
+          <dl className="grid grid-cols-4 gap-2 text-sm tabular">
+            {(['ft', 'ht', 'h15', 'h15_vs_ht'] as const).map((k) => (
+              <div key={k} className="border p-2">
+                <dt className="text-xs text-muted-foreground">{k === 'ft' ? 'Full time' : k === 'ht' ? 'Half time' : k === 'h15' ? '15′' : '15′ vs HT'}</dt>
+                <dd className="font-medium">
+                  {a[k].agreed}/{a[k].compared}
+                </dd>
+              </div>
+            ))}
+          </dl>
+          {c.failed_checks.length > 0 && <p className="text-sm text-destructive">Failed: {c.failed_checks.join(', ')}</p>}
+          <div className="max-h-72 overflow-auto border">
+            {q.isPending ? (
+              <p className="p-3 text-sm text-muted-foreground">Loading…</p>
+            ) : q.isError ? (
+              <div className="p-3">
+                <ErrorState error={q.error} />
+              </div>
+            ) : q.data.disagreements.length === 0 ? (
+              <p className="p-3 text-sm text-muted-foreground">No disagreement between the sources.</p>
+            ) : (
+              <table className="w-full text-left text-xs tabular">
+                <thead className="sticky top-0 bg-muted">
+                  <tr>
+                    <th className="px-2 py-1">Match</th>
+                    <th className="px-2 py-1">What</th>
+                    <th className="px-2 py-1">Sources say</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {q.data.disagreements.map((d, i) => (
+                    <tr key={i} className="border-t">
+                      <td className="px-2 py-1 font-mono">{d.match}</td>
+                      <td className="px-2 py-1">{humanize(d.kind)}</td>
+                      <td className="px-2 py-1">
+                        {Object.entries(d.values)
+                          .map(([src, v]) => `${humanize(src)} ${v}`)
+                          .join(' · ')}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            )}
+          </div>
+        </DialogContent>
+      </Dialog>
+    </>
   )
 }
 
@@ -318,7 +429,9 @@ function Backtests() {
             <li key={b.name} className="grid gap-1 px-4 py-2.5 text-sm">
               <div className="flex flex-wrap items-center gap-2">
                 {b.gate_b_passed ? <CheckCircle2 className="size-4 text-success" /> : <AlertTriangle className="size-4 text-muted-foreground" />}
-                <span className="min-w-0 truncate font-mono text-xs">{b.name}</span>
+                <Link to={`/data-health/backtests/${encodeURIComponent(b.name)}`} className="min-w-0 truncate font-mono text-xs underline-offset-2 hover:underline">
+                  {b.name}
+                </Link>
                 {b.params_version && <span className="text-xs text-muted-foreground">params {b.params_version}</span>}
               </div>
               <div className="flex flex-wrap gap-1.5">

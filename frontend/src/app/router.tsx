@@ -6,6 +6,8 @@ import { Button } from '@/components/ui/button'
 import { LoginPage } from '@/features/auth/login-page'
 import { BetsPage } from '@/features/bets/bets-page'
 import { CalendarPage } from '@/features/calendar/calendar-page'
+import { DataLoadingPage } from '@/features/data/data-loading-page'
+import { BacktestPage } from '@/features/health/backtest-page'
 import { DataHealthPage } from '@/features/health/data-health-page'
 import { MatchPage } from '@/features/match/match-page'
 import { NotificationsPage } from '@/features/notifications/notifications-page'
@@ -42,6 +44,8 @@ export const router = createBrowserRouter([
       { path: 'recorder', element: <RecorderPage /> },
       { path: 'calendar', element: <CalendarPage /> },
       { path: 'data-health', element: <DataHealthPage /> },
+      { path: 'data-health/backtests/:name', element: <BacktestPage /> },
+      { path: 'data-loading', element: <DataLoadingPage /> },
       { path: 'notifications', element: <NotificationsPage /> },
       { path: 'settings', element: <SettingsPage /> },
       { path: '*', element: <NotFound /> },

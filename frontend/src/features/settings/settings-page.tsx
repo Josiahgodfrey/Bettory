@@ -19,6 +19,7 @@ export function SettingsPage() {
   const s = useQuery(settingsQuery)
   const me = useQuery({ queryKey: ['me'], queryFn: () => unwrap(api.GET('/me')) })
   const books = useQuery(bookmakersQuery)
+  const health = useQuery({ queryKey: ['health'], queryFn: () => unwrap(api.GET('/health')), refetchInterval: 60_000 })
   const auth = useAuth()
 
   return (
@@ -34,6 +35,7 @@ export function SettingsPage() {
                 ['Signed in as', auth.bypass ? 'local development (no login)' : (auth.email ?? '—')],
                 ['Two-factor', me.data ? (me.data.local_bypass ? 'bypassed (this machine only)' : me.data.aal) : '—'],
                 ['API', config.apiUrl],
+                ['API status', health.isError ? 'unreachable' : (health.data?.status ?? '…')],
                 ['Backend environment', humanize(String(s.data.environment))],
                 ['API-Football plan', humanize(String(s.data.api_football_plan))],
               ]}

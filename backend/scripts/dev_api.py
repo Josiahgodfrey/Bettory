@@ -41,6 +41,11 @@ def local_database_url() -> str:
 
 
 def main() -> int:
+    import argparse
+
+    ap = argparse.ArgumentParser()
+    ap.add_argument("--port", type=int, default=8000)
+    port = ap.parse_args().port
     env = {
         **os.environ,
         **OFF,
@@ -48,7 +53,7 @@ def main() -> int:
         "AUTH_LOCAL_BYPASS": "true",
         "DATABASE_URL": local_database_url(),
         "RAW_STORE": "local",
-        "CORS_ORIGINS": '["http://localhost:5173","http://127.0.0.1:5173"]',
+        "CORS_ORIGINS": '["http://localhost:5173","http://127.0.0.1:5173","http://localhost:5180","http://127.0.0.1:5180"]',
     }
     # Check with the exact environment the server will get (os.environ keeps the empty values in this process).
     os.environ.clear()
@@ -65,9 +70,9 @@ def main() -> int:
     ) if live]
     if problems:
         raise SystemExit(f"refusing to start: still configured: {', '.join(problems)}")
-    print("dev API: local database, login bypass, Telegram and data APIs OFF -> http://127.0.0.1:8000")
-    return subprocess.call([sys.executable, "-m", "uvicorn", "app.main:app", "--host", "127.0.0.1", "--port", "8000"],
-                           cwd=BACKEND, env=env)
+    print(f"dev API: local database, login bypass, Telegram and data APIs OFF -> http://127.0.0.1:{port}")
+    cmd = [sys.executable, "-m", "uvicorn", "app.main:app", "--host", "127.0.0.1", "--port", str(port)]
+    return subprocess.call(cmd, cwd=BACKEND, env=env)
 
 
 if __name__ == "__main__":

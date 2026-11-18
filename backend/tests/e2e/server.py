@@ -109,6 +109,17 @@ def sealed_session(url: str) -> str:
     return str(sid)
 
 
+def seed_reviews(url: str) -> None:
+    """Two open team reviews: a name meaning an existing team, and a club new to the database."""
+    with psycopg.connect(url, autocommit=True) as c:
+        src = c.execute("select id from core.sources where code::text = 'OPENFOOTBALL'").fetchone()
+        assert src is not None
+        for key, name in (("tst-a", "Team A Utd"), ("tst-new", "Brand New FC")):
+            c.execute("insert into core.entity_review_queue (source_id, entity_type, provider_key, provider_name, "
+                      "context) values (%s, 'TEAM', %s, %s, %s)",
+                      (src[0], key, name, '{"competition": "TST1", "country": "Testland", "season": "2025-26"}'))
+
+
 def main() -> None:
     ap = argparse.ArgumentParser()
     ap.add_argument("--port", type=int, default=8100)
@@ -121,6 +132,7 @@ def main() -> None:
     name, url = create_database()
     atexit.register(drop_database, name)
     seed_league(url)
+    seed_reviews(url)
     sid = sealed_session(url)
 
     engine = create_engine(url.replace("postgresql://", "postgresql+psycopg://"))

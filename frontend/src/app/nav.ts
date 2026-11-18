@@ -3,6 +3,7 @@ import {
   BadgeCheck,
   Bell,
   CalendarDays,
+  DatabaseZap,
   ClipboardList,
   FlaskConical,
   HeartPulse,
@@ -40,6 +41,7 @@ export const NAV: { group: string; items: NavItem[] }[] = [
     items: [
       { to: '/calendar', label: 'Calendar', icon: CalendarDays },
       { to: '/data-health', label: 'Data health', icon: HeartPulse },
+      { to: '/data-loading', label: 'Data loading', icon: DatabaseZap },
     ],
   },
   {
