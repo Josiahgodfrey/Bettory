@@ -1,0 +1,55 @@
+# BETTORY paper betting recorder (docs/PAPER-BETTING.md 8). Loaded and validated by app/paper/config.py
+# (unknown or missing keys are rejected). Decides WHEN the recorder captures, freezes, fetches results and
+# settles - never how a fixture is priced (config/params_v*.yaml) or judged (config/backtest.yaml).
+#
+# One "cycle" (python -m app.cli paper-cycle, or the worker every schedule.every_minutes):
+#   capture   for each session whose data cut-off (as_of) is less than capture.lead_minutes away: fixtures
+#             of the session's dates + the odds of its upcoming fixtures, once (retried up to capture.attempts)
+#   freeze    for each session past its as_of with upcoming fixtures not frozen yet: freeze them
+#   recheck   listed matches recheck.from_minutes .. to_minutes before kick-off: lineups, fresh odds, verify again
+#   closing   listed or bet matches kicking off within closing.minutes_before: the closing odds (CLV)
+#   results   at most every results.every_hours: goal minutes of frozen fixtures that kicked off
+#             results.lookback_hours .. 2 h ago and still have no 15' result
+#   settle    every cycle (no request)
+
+schedule:
+  every_minutes: 5             # the freeze happens at most this long after as_of; the capture window must be
+                               # longer (lead_minutes), so at least one cycle falls inside it
+
+daily_max_requests:            # all recorder runs together (capture + results), per quota day (00:00 UTC)
+  free: 25                     # owner decision 2026-11-17: backfill 70 / recorder 25 / reserve 5
+  pro: 1000
+
+capture:
+  lead_minutes: 20             # capture at most this long before as_of: prices as fresh as possible, and
+                               # still before the cut-off (a price captured after as_of is never sealed)
+  attempts: 3                  # runs per session window, failed ones included (e.g. the API lock was held)
+  max_requests:                # per session: 1 fixtures listing per date + 1 odds request per fixture
+    free: 12
+    pro: 60
+
+recheck:                       # the listed matches about an hour before kick-off (PAPER-BETTING.md 10): fetch the
+                               # lineups and fresh odds, run the full verification again, withdraw if it no
+                               # longer qualifies (never adds). Owner decision 2026-11-17
+  from_minutes: 30             # fixtures kicking off 30 .. 75 minutes from now
+  to_minutes: 75
+  retry_minutes: 15            # lineups not announced yet: try again after this long
+  attempts: 3                  # at most this many re-checks per match (about -75, -60, -45 minutes)
+  max_requests:                # per cycle: 2 per fixture (lineups + odds)
+    free: 6
+    pro: 60
+
+closing:                       # the closing line for CLV (PAPER-BETTING.md 11): the odds of every listed (not
+                               # withdrawn) match and every match with a real bet, just before kick-off
+  minutes_before: 12           # fixtures kicking off within this many minutes, once (longer than the cycle)
+  max_requests:                # per cycle: 1 per fixture
+    free: 4
+    pro: 40
+
+results:
+  every_hours: 6
+  lookback_hours: 48           # the free plan only reaches fixtures around today (to confirm on the first
+                               # Saturday); older ones come from the nightly backfill (mode current, Pro)
+  max_requests:
+    free: 8                    # 1 fixture per request
+    pro: 10                    # 20 fixtures per request

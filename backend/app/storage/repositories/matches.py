@@ -10,7 +10,7 @@ from uuid import UUID
 from sqlalchemy import Connection, text
 
 from app.domain.enums import SOURCE_IDS, FixtureStatus, Side, SourceCode
-from app.domain.models import Score, SourceGoal, SourceMatch, SourceOdds
+from app.domain.models import Score, SourceGoal, SourceLineup, SourceMatch, SourceOdds
 from app.normalisation.reconcile import Issue, TrustedMatch
 
 _SOURCE_BY_ID = {v: k for k, v in SOURCE_IDS.items()}
@@ -223,3 +223,16 @@ def season_match_ids(conn: Connection, competition_code: str, season_label: str)
         where c.code = :c and s.label = :l
           and exists (select 1 from core.match_source_records r where r.match_id = m.id)
         order by m.kickoff_utc, m.id"""), {"c": competition_code, "l": season_label}).scalars())
+
+
+def team_plays(conn: Connection, match_id: UUID, team_id: UUID) -> bool:
+    return bool(conn.execute(text("select 1 from core.matches where id = :m and :t in (home_team_id, away_team_id)"),
+                             {"m": match_id, "t": team_id}).first())
+
+
+def insert_lineup(conn: Connection, match_id: UUID, team_id: UUID, lu: SourceLineup, payload_id: UUID) -> None:
+    conn.execute(text("""
+        insert into core.match_lineups (match_id, team_id, formation, players, source_id, payload_id)
+        values (:m, :t, :f, cast(:p as jsonb), :s, :pl)"""),
+        {"m": match_id, "t": team_id, "f": lu.formation, "p": json.dumps(lu.players_json()),
+         "s": SOURCE_IDS[lu.source], "pl": payload_id})

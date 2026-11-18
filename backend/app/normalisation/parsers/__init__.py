@@ -5,7 +5,7 @@ from __future__ import annotations
 from collections import Counter
 from dataclasses import dataclass, field
 
-from app.domain.models import SourceMatch, SourceOdds
+from app.domain.models import SourceLineup, SourceMatch, SourceOdds
 
 
 class ParseError(ValueError):
@@ -16,4 +16,5 @@ class ParseError(ValueError):
 class ParseResult:
     matches: list[SourceMatch] = field(default_factory=list)
     odds: list[SourceOdds] = field(default_factory=list)
+    lineups: list[SourceLineup] = field(default_factory=list)
     skipped: Counter[str] = field(default_factory=Counter)  # reason -> count

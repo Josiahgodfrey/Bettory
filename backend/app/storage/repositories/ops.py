@@ -5,6 +5,7 @@ from __future__ import annotations
 import hashlib
 from collections.abc import Iterator
 from contextlib import contextmanager
+from datetime import datetime
 from typing import Any
 
 from sqlalchemy import Engine, text
@@ -41,3 +42,39 @@ def latest_run(engine: Engine, job_name: str, status: RunStatus | None = None) -
             order by started_at desc, id limit 1"""),
             {"j": job_name, "st": status.value if status else None}).mappings().one_or_none()
     return dict(row) if row else None
+
+
+def requests_since(engine: Engine, job_prefix: str, since: datetime) -> int:
+    """API requests spent by runs whose job name starts with `job_prefix`, started at or after `since`."""
+    with engine.connect() as conn:
+        return int(conn.execute(text(
+            "select coalesce(sum(requests_used), 0) from raw.ingestion_runs "
+            "where starts_with(job_name, :p) and started_at >= :s"), {"p": job_prefix, "s": since}).scalar_one())
+
+
+def run_statuses_since(engine: Engine, job_prefix: str, since: datetime) -> list[RunStatus]:
+    """Statuses of the runs whose job name starts with `job_prefix`, started at or after `since`, oldest first."""
+    with engine.connect() as conn:
+        return [RunStatus(r[0]) for r in conn.execute(text(
+            "select status::text from raw.ingestion_runs where starts_with(job_name, :p) and started_at >= :s "
+            "order by started_at"), {"p": job_prefix, "s": since})]
+
+
+def latest_run_like(engine: Engine, job_prefix: str) -> dict[str, Any] | None:
+    """The newest run whose job name starts with `job_prefix`."""
+    with engine.connect() as conn:
+        row = conn.execute(text("""
+            select id, job_name, status::text as status, started_at, finished_at, requests_used, error
+            from raw.ingestion_runs where starts_with(job_name, :p) order by started_at desc, id limit 1"""),
+            {"p": job_prefix}).mappings().one_or_none()
+    return dict(row) if row else None
+
+
+def failed_runs_since(engine: Engine, since: datetime) -> list[dict[str, Any]]:
+    """FAILED runs started at or after `since`, newest first."""
+    with engine.connect() as conn:
+        rows = conn.execute(text("""
+            select id, job_name, started_at, error from raw.ingestion_runs
+            where status = 'FAILED' and started_at >= :s order by started_at desc limit 50"""),
+            {"s": since}).mappings().all()
+    return [dict(r) for r in rows]

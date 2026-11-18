@@ -3,11 +3,15 @@
 Run locally:  fastapi dev app/main.py
 """
 
+import json
+
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
-from app.api.routers import data_health, health, jobs, reviews
-from app.core.settings import get_settings
+from app.api.routers import bets, data_health, health, jobs, matches, paper, reviews, sessions, system
+from app.core.settings import BACKEND_DIR, get_settings
+
+OPENAPI_FILE = BACKEND_DIR.parent / "docs" / "api" / "openapi.json"
 
 
 def create_app() -> FastAPI:
@@ -34,7 +38,17 @@ def create_app() -> FastAPI:
     application.include_router(jobs.router)
     application.include_router(reviews.router)
     application.include_router(data_health.router)
+    application.include_router(system.router)
+    application.include_router(sessions.router)
+    application.include_router(matches.router)
+    application.include_router(paper.router)
+    application.include_router(bets.router)
     return application
+
+
+def openapi_json() -> str:
+    """The OpenAPI schema as committed in docs/api/openapi.json (stable order; a test checks it is current)."""
+    return json.dumps(create_app().openapi(), indent=2, sort_keys=True, ensure_ascii=False) + "\n"
 
 
 app = create_app()

@@ -10,7 +10,7 @@ from typing import Any
 from pydantic import ValidationError
 
 from app.domain.enums import FixtureStatus, MarketCode, Side, SnapshotType, SourceCode
-from app.domain.models import Score, SourceGoal, SourceMatch, SourceOdds
+from app.domain.models import LineupPlayer, Score, SourceGoal, SourceLineup, SourceMatch, SourceOdds
 from app.domain.registry import Registry, season_label
 from app.normalisation.parsers import ParseError, ParseResult
 
@@ -120,7 +120,8 @@ def parse_fixtures(raw: bytes, registry: Registry) -> ParseResult:
     return result
 
 
-def parse_odds(raw: bytes, registry: Registry) -> ParseResult:
+def parse_odds(raw: bytes, registry: Registry, snapshot: SnapshotType = SnapshotType.ANALYSIS) -> ParseResult:
+    """`snapshot`: CLOSING for the capture just before kick-off (the closing line of CLV)."""
     result = ParseResult()
     for item in _body(raw):
         if registry.by_provider(SOURCE, str(item["league"]["id"])) is None:
@@ -152,8 +153,31 @@ def parse_odds(raw: bytes, registry: Registry) -> ParseResult:
                             source=SOURCE, provider_match_key=str(item["fixture"]["id"]),
                             bookmaker=bookmaker["name"], market=market, provider_market_name=bet["name"],
                             selection=selection, line=line, odds=float(value["odd"]),
-                            snapshot_type=SnapshotType.ANALYSIS, captured_at=captured,
+                            snapshot_type=snapshot, captured_at=captured,
                         ))
                     except (ValidationError, ValueError):
                         result.skipped["invalid_odds"] += 1
+    return result
+
+
+def parse_lineups(raw: bytes, fixture_key: str) -> ParseResult:
+    """/fixtures/lineups?fixture=<id>: one item per team (an empty response: not announced yet)."""
+    result = ParseResult()
+    for item in _body(raw):
+        players = []
+        for part, starter in (("startXI", True), ("substitutes", False)):
+            for entry in item.get(part) or []:
+                pl = entry.get("player") or {}
+                if not pl.get("name"):
+                    result.skipped["lineup_player_without_name"] += 1
+                    continue
+                players.append(LineupPlayer(name=pl["name"], number=pl.get("number"), position=pl.get("pos"),
+                                            grid=pl.get("grid"), starter=starter))
+        team = item.get("team") or {}
+        try:
+            result.lineups.append(SourceLineup(source=SOURCE, provider_match_key=fixture_key,
+                                               team_key=str(team["id"]), team_name=team["name"],
+                                               formation=item.get("formation"), players=tuple(players)))
+        except (KeyError, ValidationError):
+            result.skipped["invalid_lineup"] += 1
     return result

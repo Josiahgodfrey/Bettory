@@ -26,7 +26,7 @@ class Settings(BaseSettings):
     environment: Literal["local", "production"] = "local"
 
     # Supabase project
-    supabase_project_ref: str = "vhdhqpaxandnuqykjweq"
+    supabase_project_ref: str = ""  # e.g. the "<ref>" in https://<ref>.supabase.co
     supabase_url: str = ""
     supabase_service_role_key: SecretStr = SecretStr("")
 
@@ -69,9 +69,12 @@ class Settings(BaseSettings):
     api_football_requests_per_minute: int = Field(default=10, ge=1, le=1_000)
     football_data_org_key: SecretStr = SecretStr("")
 
-    # Telegram
+    # Telegram (app/notifications): the bot's token from @BotFather and the owner's chat id. Empty: messages are
+    # queued but not sent.
     telegram_bot_token: SecretStr = SecretStr("")
     telegram_chat_id: str = ""
+    # The frontend's address, for the links in the messages
+    app_url: str = "http://localhost:5173"
 
     # Calculation parameters (versioned file in config/)
     params_file: str = "config/params_v1.5.yaml"
@@ -84,7 +87,14 @@ class Settings(BaseSettings):
 
     @property
     def resolved_database_user(self) -> str:
-        return self.database_user or f"postgres.{self.supabase_project_ref}"
+        """DATABASE_USER, or postgres.<project ref> (the pooler's user name); the ref is taken from SUPABASE_URL
+        when SUPABASE_PROJECT_REF is not set. No silent default: a missing ref fails the connection."""
+        if self.database_user:
+            return self.database_user
+        ref = self.supabase_project_ref or self.supabase_url.removeprefix("https://").split(".", 1)[0]
+        if not ref:
+            raise ValueError("set SUPABASE_PROJECT_REF (or SUPABASE_URL, or DATABASE_USER) for the database user")
+        return f"postgres.{ref}"
 
 
 @lru_cache

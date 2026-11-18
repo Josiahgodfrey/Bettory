@@ -42,10 +42,10 @@ def one(c: psycopg.Connection[dict[str, Any]], sql: str, *p: object) -> Any:
     return r["id"]
 
 
-@pytest.fixture
-def league(fresh_db_url: str) -> Iterator[tuple[Engine, str, dict[tuple[str, int], UUID]]]:
+def seed_league(url: str) -> dict[tuple[str, int], UUID]:
+    """The synthetic league TST1: 12 teams, two finished seasons (also used by the e2e server, tests/e2e)."""
     ids: dict[tuple[str, int], UUID] = {}
-    with psycopg.connect(fresh_db_url, row_factory=dict_row, autocommit=True) as c:
+    with psycopg.connect(url, row_factory=dict_row, autocommit=True) as c:
         comp = one(c, "insert into core.competitions (code, name, country, competition_type, level) "
                       "values ('TST1', 'Test League', 'Testland', 'LEAGUE', 1) returning id")
         team = {n: one(c, "insert into core.teams (name, country) values (%s, 'Testland') returning id", n)
@@ -61,6 +61,12 @@ def league(fresh_db_url: str) -> Iterator[tuple[Engine, str, dict[tuple[str, int
                        "status, ft_home, ft_away, ht_home, ht_away, h15_home, h15_away, goal_before_15, data_status) "
                        "values (%s, %s, %s, %s, 'FINISHED', %s, %s, %s, %s, %s, %s, %s, 'COMPLETE') returning id",
                     season, team[h], team[a], ko, *ft, *ht, *h15, sum(h15) > 0)
+    return ids
+
+
+@pytest.fixture
+def league(fresh_db_url: str) -> Iterator[tuple[Engine, str, dict[tuple[str, int], UUID]]]:
+    ids = seed_league(fresh_db_url)
     eng = create_engine(fresh_db_url.replace("postgresql://", "postgresql+psycopg://"))
     yield eng, fresh_db_url, ids
     eng.dispose()

@@ -15,7 +15,7 @@ from uuid import UUID
 from sqlalchemy import Connection
 
 from app.domain.enums import EntityType, MappingMethod, SourceCode
-from app.domain.models import SourceMatch, SourceOdds
+from app.domain.models import SourceLineup, SourceMatch, SourceOdds
 from app.domain.registry import CompetitionDef, Registry
 from app.normalisation.names import normalize_team_name
 from app.normalisation.parsers import ParseResult
@@ -85,6 +85,8 @@ class Loader:
             self._load_match(m, payload_id, parser_version, stats)
         for o in parsed.odds:
             self._load_odds(o, payload_id, stats)
+        for lu in parsed.lineups:
+            self._load_lineup(lu, payload_id, stats)
         return stats
 
     def _load_match(self, m: SourceMatch, payload_id: UUID, parser_version: str, stats: LoadStats) -> None:
@@ -128,3 +130,15 @@ class Loader:
         bookmaker = mrepo.ensure_bookmaker(self.conn, o.bookmaker)
         mrepo.insert_odds(self.conn, o, match_id, bookmaker, payload_id)
         stats.add(f"odds:{o.market.value}")
+
+    def _load_lineup(self, lu: SourceLineup, payload_id: UUID, stats: LoadStats) -> None:
+        match_id = mrepo.match_for_provider_key(self.conn, lu.source, lu.provider_match_key)
+        if match_id is None:
+            stats.add("lineups_without_linked_match")
+            return
+        team = ref.mapped_entity(self.conn, lu.source, EntityType.TEAM, f"id:{lu.team_key}")  # as team_id() maps it
+        if team is None or not mrepo.team_plays(self.conn, match_id, team):
+            stats.add("lineups_team_not_in_match")
+            return
+        mrepo.insert_lineup(self.conn, match_id, team, lu, payload_id)
+        stats.add("lineups")

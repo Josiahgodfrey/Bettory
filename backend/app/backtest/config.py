@@ -37,11 +37,17 @@ class EstimatedValue(_Strict):
     stake: float = Field(gt=0)
 
 
+class PaperBetting(_Strict):
+    alpha: float = Field(gt=0, lt=1)  # profit proven when the e-value ever reaches 1 / alpha
+    min_bets: int = Field(ge=1)
+
+
 class BacktestConfig(_Strict):
     calibration: Calibration
     gate_b: GateB
     uncertainty: Uncertainty
     estimated_value: EstimatedValue
+    paper_betting: PaperBetting
 
 
 def load_backtest_config(path: Path | None = None) -> BacktestConfig:

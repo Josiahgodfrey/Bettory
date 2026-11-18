@@ -14,7 +14,7 @@ from fastapi import APIRouter, HTTPException, Query, status
 from sqlalchemy.exc import NoResultFound
 
 from app.api.deps import EngineDep, OwnerDep
-from app.api.schemas import ResolveReview, ReviewOut, TeamOut
+from app.api.schemas import ResolveReview, ResolveReviewNewTeam, ReviewOut, TeamOut
 from app.storage.repositories import reference as ref
 
 router = APIRouter(tags=["reviews"])
@@ -36,6 +36,23 @@ def resolve_review(review_id: UUID, body: ResolveReview, _: OwnerDep, engine: En
     except NoResultFound:
         raise HTTPException(status.HTTP_404_NOT_FOUND, "no open review with this id, or no team with this id") from None
     return {"status": "RESOLVED"}
+
+
+@router.post("/reviews/{review_id}/new-team", response_model=dict[str, str])
+def resolve_review_new_team(review_id: UUID, body: ResolveReviewNewTeam, _: OwnerDep,
+                            engine: EngineDep) -> dict[str, str]:
+    """The name is a club new to the database (e.g. promoted): create the team and resolve the review.
+    409 with the similar teams when existing teams share a distinctive word (confirm with allow_similar)."""
+    try:
+        with engine.begin() as conn:
+            team_id = ref.resolve_review_new_team(conn, review_id, body.name, body.allow_similar)
+    except NoResultFound:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "no open team review with this id") from None
+    except ref.SimilarTeamsExist as exc:
+        raise HTTPException(status.HTTP_409_CONFLICT, str(exc)) from None
+    except ValueError as exc:
+        raise HTTPException(status.HTTP_409_CONFLICT, str(exc)) from None
+    return {"status": "RESOLVED", "team_id": str(team_id)}
 
 
 @router.get("/teams", response_model=list[TeamOut])

@@ -40,12 +40,14 @@ class ApiFootball:
         self.http = HttpSource(BASE_URL, headers={"x-apisports-key": key}, min_interval_s=60.0 / requests_per_minute,
                                max_requests=max_requests)
         self.rate_limit_retries = 0
+        self.subscription_plan: str | None = None  # the plan the key really has, from the last /status
 
     def quota(self) -> tuple[int, int]:
         """(requests used today, daily limit) from /status, which API-Football does not count."""
         body = json.loads(self.http.get("/status", counted=False).body)
         if body.get("errors"):
             raise FetchError(f"API-Football /status: {body['errors']}")
+        self.subscription_plan = (body["response"].get("subscription") or {}).get("plan")
         r = body["response"]["requests"]
         return int(r["current"]), int(r["limit_day"])
 
@@ -78,6 +80,10 @@ class ApiFootball:
 
     def odds_by_date(self, day: date, page: int = 1) -> Fetched:
         return self._get("/odds", {"date": day.isoformat(), "page": page, "timezone": "UTC"})
+
+    def lineups(self, fixture_id: str) -> Fetched:
+        """Announced lineups of one fixture (about an hour before kick-off; empty before)."""
+        return self._get("/fixtures/lineups", {"fixture": fixture_id})
 
     def odds_for_fixture(self, fixture_id: str) -> Fetched:
         return self._get("/odds", {"fixture": fixture_id})

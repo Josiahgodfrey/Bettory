@@ -8,7 +8,7 @@ from __future__ import annotations
 
 import re
 from datetime import UTC, date, datetime
-from typing import Self
+from typing import Any, Self
 
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
@@ -140,3 +140,25 @@ class SourceOdds(Strict):
         if self.captured_at.utcoffset() is None:
             raise ValueError("captured_at must be timezone-aware")
         return self
+
+
+class LineupPlayer(Strict):
+    name: str = Field(min_length=1)
+    number: int | None = None
+    position: str | None = None  # G / D / M / F as the source reports it
+    grid: str | None = None
+    starter: bool
+
+
+class SourceLineup(Strict):
+    """One team's announced lineup for one match, as reported by a source."""
+
+    source: SourceCode
+    provider_match_key: str = Field(min_length=1)
+    team_key: str = Field(min_length=1)
+    team_name: str = Field(min_length=1)
+    formation: str | None = None
+    players: tuple[LineupPlayer, ...]
+
+    def players_json(self) -> list[dict[str, Any]]:
+        return [pl.model_dump() for pl in self.players]

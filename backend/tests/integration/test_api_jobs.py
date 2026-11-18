@@ -125,3 +125,31 @@ def test_review_flow(client: TestClient, engine: Engine, offline_openfootball: N
     assert client.get("/reviews").json() == []
     assert client.get("/teams", params={"q": "spurs"}).json() == [team]                 # alias added
     assert client.post(f"/reviews/{review['id']}/resolve", json={"team_id": team["id"]}).status_code == 404
+
+
+def test_review_new_team_flow(client: TestClient, engine: Engine, offline_openfootball: None) -> None:
+    client.post("/jobs/ingest/openfootball", json=BODY)                   # creates the teams
+    (spurs,) = client.get("/teams", params={"q": "tottenham"}).json()
+    rows = [("name:England|Coventry City FC", "Coventry City FC"), ("name:England|Tottenham Women", "Tottenham Women"),
+            ("name:England|" + spurs["name"], spurs["name"])]
+    with engine.begin() as c:
+        for key, name in rows:
+            c.execute(text("insert into core.entity_review_queue (source_id, entity_type, provider_key, provider_name, "
+                           "context) values (4, 'TEAM', :k, :n, cast(:ctx as jsonb))"),
+                      {"k": key, "n": name, "ctx": '{"country": "England"}'})
+    reviews = {r["provider_name"]: r["id"] for r in client.get("/reviews").json()}
+
+    new = client.post(f"/reviews/{reviews['Coventry City FC']}/new-team", json={"name": "Coventry City"})
+    assert new.status_code == 200
+    (cov,) = client.get("/teams", params={"q": "coventry"}).json()
+    assert cov["name"] == "Coventry City" and cov["id"] == new.json()["team_id"] and cov["country"] == "England"
+
+    similar = client.post(f"/reviews/{reviews['Tottenham Women']}/new-team", json={})
+    assert similar.status_code == 409 and spurs["id"] in similar.json()["detail"]        # a distinctive word shared
+    assert client.post(f"/reviews/{reviews['Tottenham Women']}/new-team",
+                       json={"allow_similar": True}).status_code == 200                   # confirmed: another club
+
+    taken = client.post(f"/reviews/{reviews[spurs['name']]}/new-team", json={"allow_similar": True})
+    assert taken.status_code == 409 and "already a name of team" in taken.json()["detail"]
+    assert [r["provider_name"] for r in client.get("/reviews").json()] == [spurs["name"]]  # still open
+    assert client.post(f"/reviews/{reviews['Coventry City FC']}/new-team", json={}).status_code == 404  # resolved

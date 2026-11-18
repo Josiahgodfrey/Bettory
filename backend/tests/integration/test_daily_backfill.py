@@ -19,8 +19,9 @@ from app.domain.enums import SourceCode
 from app.domain.registry import CompetitionDef, Registry
 from app.ingestion import pipeline
 from app.ingestion.base import Fetched
+from app.jobs import backfill as backfill_module
 from app.jobs.backfill import BackfillConfig, Mode, TargetState, plan, run_daily_backfill
-from app.jobs.scheduler import build_scheduler
+from app.jobs.scheduler import IntervalJob, build_scheduler
 from app.storage.raw_store import LocalRawStore
 from app.storage.repositories import ops as ops_repo
 from tests.integration.conftest import ADMIN_URL
@@ -56,6 +57,7 @@ def item(league: str, n: int, events: bool) -> dict[str, Any]:
 class Quota:
     def __init__(self, used: int = 0, limit: int = 100) -> None:
         self.used, self.limit, self.calls = used, limit, []
+        self.plan: str | None = "Free"  # what /status reports for the key
 
 
 class FakeHttp:
@@ -67,6 +69,7 @@ class FakeClient:
 
     def __init__(self, quota: Quota) -> None:
         self.q, self.requests_used, self.rate_limit_retries, self.http = quota, 0, 0, FakeHttp()
+        self.subscription_plan: str | None = None
 
     def _f(self, params: dict[str, Any], items: list[dict[str, Any]]) -> Fetched:
         self.requests_used += 1
@@ -76,7 +79,12 @@ class FakeClient:
         return Fetched(endpoint="/fixtures", params=params, http_status=200, body=body, ext="json")
 
     def quota(self) -> tuple[int, int]:
+        self.subscription_plan = self.q.plan
         return self.q.used, self.q.limit
+
+    def fixtures_by_ids(self, fixture_ids: list[str]) -> Fetched:
+        return self._f({"ids": "-".join(fixture_ids)},
+                       [item(str(divmod(int(i), 100)[0]), divmod(int(i), 100)[1], True) for i in fixture_ids])
 
     def fixtures_by_league_season(self, league_id: str, season: int) -> Fetched:
         return self._f({"league": league_id, "season": season}, [item(league_id, n, False) for n in range(N)])
@@ -103,24 +111,32 @@ def quota(monkeypatch: pytest.MonkeyPatch) -> Quota:
 SETTINGS: Settings = get_settings().model_copy(update={
     "api_football_key": SecretStr("key"), "api_football_plan": "free", "api_football_max_requests_per_run": 90,
     "api_football_requests_per_minute": 10})
+PRO: Settings = SETTINGS.model_copy(update={"api_football_plan": "pro"})
 
 
 def config(daily: int, mode: Mode = Mode.HISTORY) -> BackfillConfig:
     return BackfillConfig.model_validate({
-        "schedule": {"timezone": "UTC", "time": "00:30"}, "daily_max_requests": daily,
+        "schedule": {"timezone": "UTC", "time": "00:30"}, "daily_max_requests": {"free": daily, "pro": daily},
         "targets": [{"competition": "TST1", "season": "2024-25", "mode": mode.value},
                     {"competition": "TST2", "season": "2024-25", "mode": mode.value}]})
 
 
-def day(engine: Engine, tmp_path: Path, cfg: BackfillConfig) -> Any:
-    return run_daily_backfill(engine, lambda: LocalRawStore(tmp_path), REG, SETTINGS, cfg)
+def day(engine: Engine, tmp_path: Path, cfg: BackfillConfig, settings: Settings = SETTINGS) -> Any:
+    return run_daily_backfill(engine, lambda: LocalRawStore(tmp_path), REG, settings, cfg)
+
+
+@pytest.fixture
+def separate_days(monkeypatch: pytest.MonkeyPatch) -> None:
+    """These tests simulate several quota days within one real day: earlier runs are not 'today'."""
+    monkeypatch.setattr(backfill_module.ops_repo, "requests_since", lambda *_a, **_k: 0)
 
 
 def listed(q: Quota) -> list[str]:
     return [c["league"] for c in q.calls if "league" in c]
 
 
-def test_targets_in_order_within_the_daily_budget(engine: Engine, tmp_path: Path, quota: Quota) -> None:
+def test_targets_in_order_within_the_daily_budget(engine: Engine, tmp_path: Path, quota: Quota,
+                                                  separate_days: None) -> None:
     first = day(engine, tmp_path, config(daily=8))
     # TST1: listing + its 5 unknown fixtures (history mode) -> finished; TST2: the 2 requests left
     assert first.requests_used == 8 and first.stopped == "request budget reached"
@@ -138,7 +154,8 @@ def test_targets_in_order_within_the_daily_budget(engine: Engine, tmp_path: Path
     assert quota.calls == [] and third.runs == [] and third.stopped == "all targets finished or attempted"
 
 
-def test_crosscheck_mode_also_fetches_known_results(engine: Engine, tmp_path: Path, quota: Quota) -> None:
+def test_crosscheck_mode_also_fetches_known_results(engine: Engine, tmp_path: Path, quota: Quota,
+                                                     separate_days: None) -> None:
     day(engine, tmp_path, config(daily=100))                                 # history: unknown ones only
     assert all(s.state is TargetState.FINISHED for s in plan(engine, config(daily=100)))
     assert [s.state for s in plan(engine, config(daily=100, mode=Mode.CROSSCHECK))] == [TargetState.IN_PROGRESS] * 2
@@ -191,3 +208,40 @@ def test_real_config_and_schedule(engine: Engine) -> None:
     assert job.id == "daily_backfill" and job.coalesce and job.max_instances == 1
     fields = {f.name: str(f) for f in job.trigger.fields}
     assert (fields["hour"], fields["minute"]) == tuple(str(x) for x in cfg.schedule.hour_minute)
+    with_paper = build_scheduler(engine, lambda: LocalRawStore(Path(".")), load_registry(), SETTINGS, cfg,
+                                 BackgroundScheduler(timezone="UTC"),
+                                 interval_jobs=[IntervalJob("paper_cycle", "paper betting cycle", lambda: None, 5)])
+    paper = with_paper.get_job("paper_cycle")
+    assert paper is not None and paper.coalesce and paper.max_instances == 1 and paper.misfire_grace_time == 300
+
+
+def test_current_season_mode_needs_pro_and_never_finishes(engine: Engine, tmp_path: Path, quota: Quota,
+                                                           separate_days: None) -> None:
+    cfg = config(daily=100, mode=Mode.CURRENT)
+    free = day(engine, tmp_path, cfg)                                       # free plan: skipped, nothing spent
+    assert quota.calls == [] and all(r["outcome"].startswith("skipped") and r["requests"] == 0 for r in free.runs)
+
+    quota.plan = "Pro"
+    first = day(engine, tmp_path, cfg, PRO)
+    assert [r["outcome"] for r in first.runs] == ["ok", "ok"]
+    assert any("ids" in c for c in quota.calls)                             # 20 fixtures per request on Pro
+    assert all(r["fixtures_still_without_minutes"] == 0 for r in first.runs)
+    assert [s.state for s in plan(engine, cfg)] == [TargetState.IN_PROGRESS] * 2   # never finished
+
+    quota.calls = []
+    second = day(engine, tmp_path, cfg, PRO)                                # the next night: listings again,
+    assert listed(quota) == ["990", "991"] and second.requests_used == 2   # nothing new to fetch
+
+
+def test_pro_setting_with_a_free_key_spends_nothing(engine: Engine, tmp_path: Path, quota: Quota) -> None:
+    result = day(engine, tmp_path, config(daily=100), PRO)                  # /status still says Free
+    assert result.stopped == "plan mismatch" and quota.calls == []
+    assert result.runs[0]["outcome"].startswith("plan: API_FOOTBALL_PLAN=pro")
+
+
+def test_the_daily_bound_counts_earlier_runs_of_the_same_day(engine: Engine, tmp_path: Path, quota: Quota) -> None:
+    first = day(engine, tmp_path, config(daily=8))                         # e.g. a manual run
+    assert first.requests_used == 8
+    second = day(engine, tmp_path, config(daily=8))                        # the night job, same quota day
+    assert second.earlier_today == 8 and second.requests_used == 0 and second.stopped == "daily budget used"
+    assert quota.calls[8:] == []

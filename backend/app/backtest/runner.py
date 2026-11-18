@@ -20,13 +20,11 @@ from datetime import date, datetime
 
 from sqlalchemy import Engine, text
 
-from app.analysis.builder import AnalysisContext
+from app.analysis.session import evaluate_session, league_baseline
 from app.backtest.config import BacktestConfig
 from app.backtest.estimate import assumed_quotes
 from app.calculation.ev import Bet
-from app.calculation.pricing import league_outcomes
 from app.decision.layers import FixtureAnalysis, Verdict, verify
-from app.decision.ranking import rank_and_cap
 from app.domain.enums import Decision, Grade, ReconciliationStatus
 from app.domain.params import Params
 from app.domain.registry import Registry
@@ -94,18 +92,6 @@ class BacktestRun:
     season_shares: tuple[SeasonShare, ...] = ()  # observed 15' shares of the seasons in the run (descriptive)
 
 
-def _league(a: FixtureAnalysis | None, params: Params) -> tuple[float | None, float | None]:
-    b = a.baseline if a is not None else None
-    if b is None or b.s is None:
-        return None, None
-    try:
-        o = league_outcomes(b, params)
-    except Exception:  # a baseline that cannot be priced simply has no comparison value
-        log.warning("league baseline could not be priced for %s", a.fixture_id if a else "?")
-        return None, None
-    return o.p_00, o.p_draw
-
-
 def _estimate(a: FixtureAnalysis, params: Params, margin: float) -> EstimatedBet | None:
     """Quote mode against the assumed bookmaker price, with the same verify() as live."""
     if a.model_c is None or not a.model_c.available:
@@ -128,7 +114,7 @@ def _result(f: FixtureResult) -> Result15 | None:
 
 def _row(f: FixtureResult, sid: SessionId, as_of: datetime, a: FixtureAnalysis | None, v: Verdict,
          decision: Decision, estimated: EstimatedBet | None, params: Params) -> BacktestRow:
-    league_00, league_draw = _league(a, params)
+    league_00, league_draw = league_baseline(a, params)
     c = a.model_c if a is not None and a.model_c is not None and a.model_c.available else None
     return BacktestRow(
         fixture_id=str(f.id), competition=f.competition_code, season=f.season_label, session=sid, as_of=as_of,
@@ -167,16 +153,15 @@ def run_backtest(engine: Engine, params: Params, registry: Registry, config: Bac
         fixtures = {str(f.id): f for f in fixtures_between(conn, start, end, codes)}
         for sid, items in cal.group((k, f.kickoff_utc) for k, f in fixtures.items()).items():
             as_of = cal.run_start(sid, items[0][1])
-            ctx = AnalysisContext(conn, params, registry, as_of, cache)
-            evaluated = {key: ctx.evaluate(fixtures[key].id) for key, _ in items}
-            report = rank_and_cap([v for _, v in evaluated.values()], params)
-            final = {v.fixture_id: v.decision for v in (*report.listed, *report.over_cap, *report.not_qualified)}
-            for key, _ in items:
-                a, v = evaluated[key]
-                decision = final[v.fixture_id]
+            evaluated = evaluate_session(conn, params, registry, as_of, [fixtures[key].id for key, _ in items],
+                                         cache)
+            for (key, _), sv in zip(items, evaluated, strict=True):
+                a, v, decision = sv.analysis, sv.verdict, sv.decision
                 est = _estimate(a, params, margin) if a is not None and decision is Decision.QUALIFIED else None
                 rows.append(_row(fixtures[key], sid, as_of, a, v, decision, est, params))
-            run = SessionRun(sid, as_of, len(items), len(report.listed) + len(report.over_cap), len(report.listed))
+            qualified = sum(sv.verdict.decision is Decision.QUALIFIED for sv in evaluated)
+            listed = sum(sv.decision is Decision.QUALIFIED for sv in evaluated)
+            run = SessionRun(sid, as_of, len(items), qualified, listed)
             sessions.append(run)
             if progress is not None:
                 progress(run)

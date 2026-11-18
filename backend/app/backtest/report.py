@@ -209,6 +209,20 @@ def profit_criterion(roi_: Roi, interval: Interval | None, label: str) -> Criter
                      "only; profit is proven in paper betting")
 
 
+def calibration_criterion(buckets: Sequence[Bucket], c: Calibration) -> Criterion:
+    """Gate B calibration (owner decision 2026-11-16): every bucket with >= min_bucket_matches fixtures within
+    max(tolerance, noise_multiplier x SE)."""
+    judged = [b for b in buckets if b.n >= c.min_bucket_matches]
+    if not judged:
+        return Criterion("Calibration", NOT_EVALUABLE, f"no bucket with >= {c.min_bucket_matches} fixtures")
+    worst = max(judged, key=lambda b: abs(b.gap_pts) / allowed_gap_pts(b, c))
+    allowed = allowed_gap_pts(worst, c)
+    failing = sum(abs(b.gap_pts) > allowed_gap_pts(b, c) for b in judged)
+    return Criterion("Calibration", PASS if failing == 0 else FAIL,
+                     f"{len(judged)} buckets judged, {failing} outside; tightest: {worst.gap_pts:+.1f} pts "
+                     f"in {worst.lo_pts:g}-{worst.hi_pts:g} % (n={worst.n}, allowed ±{allowed:.1f})")
+
+
 def baseline_criterion(paired: Paired | None, u: Uncertainty) -> Criterion:
     ci = paired.brier if paired is not None else None
     if ci is None:
@@ -228,18 +242,7 @@ def _gate(listed: Sequence[BacktestRow], buckets: list[Bucket], split: date | No
     need = cfg.gate_b.min_qualified
     gate.append(Criterion("Qualified selections", PASS if known >= need else FAIL, f"{known} (need >= {need})"))
 
-    c = cfg.calibration
-    judged = [b for b in buckets if b.n >= c.min_bucket_matches]
-    if not judged:
-        gate.append(Criterion("Calibration", NOT_EVALUABLE, f"no bucket with >= {c.min_bucket_matches} fixtures"))
-    else:
-        worst = max(judged, key=lambda b: abs(b.gap_pts) / allowed_gap_pts(b, c))
-        allowed = allowed_gap_pts(worst, c)
-        failing = sum(abs(b.gap_pts) > allowed_gap_pts(b, c) for b in judged)
-        gate.append(Criterion("Calibration", PASS if failing == 0 else FAIL,
-                              f"{len(judged)} buckets judged, {failing} outside; tightest: {worst.gap_pts:+.1f} pts "
-                              f"in {worst.lo_pts:g}-{worst.hi_pts:g} % (n={worst.n}, allowed ±{allowed:.1f})"))
-
+    gate.append(calibration_criterion(buckets, cfg.calibration))
     gate.append(baseline_criterion(paired, cfg.uncertainty))
     gate.append(profit_criterion(roi_, roi_ci, "validation period" if split is not None else "whole period"))
     return gate

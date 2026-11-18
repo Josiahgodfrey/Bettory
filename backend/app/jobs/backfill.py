@@ -17,6 +17,7 @@ from __future__ import annotations
 import logging
 from collections.abc import Callable
 from dataclasses import dataclass, field
+from datetime import UTC, datetime
 from enum import StrEnum
 from pathlib import Path
 from typing import Any, Self
@@ -40,6 +41,8 @@ log = logging.getLogger(__name__)
 class Mode(StrEnum):
     HISTORY = "history"  # only fixtures whose 15' result is unknown
     CROSSCHECK = "crosscheck"  # every finished fixture: a second goal-minute source for the cross-check
+    CURRENT = "current"  # the season being played: never finished, new results every day; paid plan only
+                         # (the free plan cannot list the current season)
 
 
 class _Strict(BaseModel):
@@ -75,9 +78,19 @@ class Schedule(_Strict):
         return h, m
 
 
+class DailyMax(_Strict):
+    """Upper bound of requests per day, by the plan in API_FOOTBALL_PLAN (at least listing + one fixture)."""
+
+    free: int = Field(ge=2)
+    pro: int = Field(ge=2)
+
+    def for_plan(self, plan: str) -> int:
+        return self.pro if plan == "pro" else self.free
+
+
 class BackfillConfig(_Strict):
     schedule: Schedule
-    daily_max_requests: int = Field(ge=2)  # at least the season listing + one fixture
+    daily_max_requests: DailyMax
     targets: list[Target] = Field(min_length=1)
 
     @model_validator(mode="after")
@@ -125,6 +138,8 @@ def target_status(engine: Engine, target: Target) -> TargetStatus:
         return TargetStatus(target, TargetState.NOT_STARTED, None, None)
     stats: dict[str, Any] = run["stats"] or {}
     left = int(stats.get("fixtures_still_without_minutes", 0))
+    if target.mode is Mode.CURRENT:  # matches keep finishing: never done
+        return TargetStatus(target, TargetState.IN_PROGRESS, left, run["started_at"].isoformat())
     # a history-mode run skipped the known fixtures, so it does not finish a cross-check target
     covered = target.mode is Mode.HISTORY or not stats.get("skipped_known_15")
     done = left == 0 and not stats.get("stopped_at_request_budget") and covered
@@ -140,9 +155,11 @@ class DayResult:
     runs: list[dict[str, Any]] = field(default_factory=list)  # per target: requests, outcome, key statistics
     requests_used: int = 0
     stopped: str = ""  # why the day ended
+    earlier_today: int = 0  # backfill requests of earlier runs the same quota day
 
     def as_dict(self) -> dict[str, Any]:
-        return {"runs": self.runs, "requests_used": self.requests_used, "stopped": self.stopped}
+        return {"runs": self.runs, "requests_used": self.requests_used, "earlier_today": self.earlier_today,
+                "stopped": self.stopped}
 
 
 def run_daily_backfill(engine: Engine, store: Callable[[], RawStore], registry: Registry, settings: Settings,
@@ -152,22 +169,38 @@ def run_daily_backfill(engine: Engine, store: Callable[[], RawStore], registry: 
     if not key:
         raise ValueError("API_FOOTBALL_KEY is not configured")
     day = DayResult()
+    plan_name = settings.api_football_plan
+    # the bound is per DAY (quota day: 00:00 UTC): runs earlier today - a manual run, the night job - count too
+    today = datetime.now(UTC).replace(hour=0, minute=0, second=0, microsecond=0)
+    earlier = ops_repo.requests_since(engine, "api_football_backfill:", today)
+    daily_max = cfg.daily_max_requests.for_plan(plan_name) - earlier
+    day.earlier_today = earlier
     for target in cfg.targets:
         status = target_status(engine, target)
         if status.state is TargetState.FINISHED:
             continue
-        budget = min(cfg.daily_max_requests - day.requests_used, settings.api_football_max_requests_per_run)
+        entry: dict[str, Any] = {"competition": target.competition, "season": target.season,
+                                 "mode": target.mode.value}
+        if target.mode is Mode.CURRENT and plan_name != "pro":
+            entry.update(outcome="skipped: the current season needs a paid plan (API_FOOTBALL_PLAN=pro)",
+                         requests=0)
+            day.runs.append(entry)
+            continue
+        budget = min(daily_max - day.requests_used, settings.api_football_max_requests_per_run)
         if budget < 2:
             day.stopped = "daily budget used"
             break
-        entry: dict[str, Any] = {"competition": target.competition, "season": target.season,
-                                 "mode": target.mode.value}
         try:
             stats = pipeline.api_football_backfill(
                 engine, store(), registry, key, target.competition, target.season,
                 settings.api_football_plan == "pro", budget,
                 requests_per_minute=settings.api_football_requests_per_minute,
-                skip_known_15=target.mode is Mode.HISTORY)
+                skip_known_15=target.mode in (Mode.HISTORY, Mode.CURRENT))
+        except pipeline.PlanError as exc:
+            entry["outcome"] = f"plan: {exc}"
+            day.runs.append(entry)
+            day.stopped = "plan mismatch"
+            break
         except pipeline.QuotaError as exc:
             entry["outcome"] = f"quota: {exc}"
             day.runs.append(entry)

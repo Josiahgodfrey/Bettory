@@ -14,7 +14,9 @@ Examples (from backend/, venv active):
   python -m app.cli health --runs 10 --quota
   python -m app.cli backfill-daily              # where every target stands (no request)
   python -m app.cli backfill-daily --run        # run today's backfill now
-  python -m app.cli worker                      # start the scheduler (foreground)
+  python -m app.cli openapi                     # export docs/api/openapi.json (frontend types)
+  python -m app.cli worker                      # start the scheduler (foreground): backfill + paper cycle
+  python -m app.cli paper-cycle [--dry-run]     # one paper betting cycle: capture, freeze, results, settle
   python -m app.cli tuning-plan                 # the pre-registered tuning plan (config/tuning_v1.yaml)
   python -m app.cli tune --tuning 2025-08-01 2026-01-31 --holdout 2026-02-01 2026-05-31   # dry run
   python -m app.cli tune --real                 # the real run: locks the plan, may write a new params file
@@ -29,27 +31,39 @@ import logging
 import sys
 from datetime import UTC, date, datetime
 from pathlib import Path
+from typing import Any
 from uuid import UUID
 
+from app.api.recorder import cycle_inputs
 from app.backtest.config import load_backtest_config
+from app.backtest.paper_report import paper_json, render_paper, summarise_paper
 from app.backtest.report import render_markdown, rows_csv, summarise, summary_json
 from app.backtest.runner import SessionRun, run_backtest
 from app.backtest.tuning import TuningNotReady, period_of, run_tuning
 from app.backtest.tuning_plan import check_unchanged, current_plan_path, lineage, load_plan, sha256_of, variations
 from app.backtest.tuning_report import render_tuning, tuning_json, variations_csv
+from app.core.provenance import code_version
 from app.core.settings import BACKEND_DIR, get_settings
-from app.domain.params import load_params
+from app.domain.params import Params, load_params, params_path
 from app.domain.quality_config import load_quality_config
 from app.domain.registry import load_registry
+from app.domain.sessions import SessionCalendar, SessionId
 from app.ingestion import pipeline
 from app.ingestion.api_football import ApiFootball
 from app.ingestion.health_view import render_text, snapshot
 from app.ingestion.quality import crosscheck_season
 from app.jobs.backfill import load_backfill_config, plan, run_daily_backfill
-from app.jobs.scheduler import build_scheduler
+from app.jobs.scheduler import IntervalJob, build_scheduler
+from app.main import OPENAPI_FILE, openapi_json
+from app.paper.capture import capture_session
+from app.paper.config import load_paper_config
+from app.paper.cycle import run_cycle
+from app.paper.freeze import Provenance, due_sessions, freeze_session, replay_session
+from app.paper.settle import settle_due
 from app.storage.db import get_engine
 from app.storage.raw_store import store_from_settings
 from app.storage.repositories import health as health_repo
+from app.storage.repositories import paper as paper_repo
 from app.storage.repositories import reference as ref
 
 
@@ -83,7 +97,12 @@ def main(argv: list[str] | None = None) -> int:
     review.add_parser("list")
     res = review.add_parser("resolve")
     res.add_argument("review_id", type=UUID)
-    res.add_argument("team_id", type=UUID)
+    res.add_argument("team_id", type=UUID, nargs="?", help="the existing team this name refers to")
+    res.add_argument("--new-team", action="store_true",
+                     help="the name is a club new to the database (e.g. promoted): create it")
+    res.add_argument("--name", help="with --new-team: the team's name (default: the provider's name)")
+    res.add_argument("--not-similar", action="store_true",
+                     help="with --new-team: confirm it is a different club from the similar teams listed")
 
     cc = sub.add_parser("crosscheck", help="agreement between sources (FT, HT, 15')")
     cc.add_argument("--comp", required=True)
@@ -100,7 +119,10 @@ def main(argv: list[str] | None = None) -> int:
 
     bd = sub.add_parser("backfill-daily", help="automatic API-Football backfill (config/backfill.yaml)")
     bd.add_argument("--run", action="store_true", help="run today's backfill now (otherwise: show the plan)")
-    sub.add_parser("worker", help="start the scheduler in the foreground (Ctrl+C to stop)")
+    oa = sub.add_parser("openapi", help="export the API's OpenAPI schema (for the frontend's TypeScript types)")
+    oa.add_argument("--out", type=Path, default=OPENAPI_FILE, help="default: docs/api/openapi.json")
+    wk = sub.add_parser("worker", help="start the scheduler in the foreground (Ctrl+C to stop)")
+    wk.add_argument("--no-paper", action="store_true", help="without the paper betting cycle")
     tn = sub.add_parser("tune", help="run a pre-registered tuning plan (dry run unless --real)")
     tn.add_argument("--plan", type=Path, default=None, help="plan file (default: the newest registered plan)")
     tn.add_argument("--real", action="store_true",
@@ -113,6 +135,27 @@ def main(argv: list[str] | None = None) -> int:
     tp = sub.add_parser("tuning-plan", help="show and validate a pre-registered tuning plan")
     tp.add_argument("--plan", type=Path, default=None, help="plan file (default: the newest registered plan)")
 
+    pc = sub.add_parser("paper-capture", help="capture the odds of upcoming sessions before their data cut-off")
+    pc.add_argument("--session", action="append", help="session id (repeatable; default: every session that "
+                    "has not started yet, today .. tomorrow)")
+    pc.add_argument("--max-requests", type=int, default=12, help="API-Football requests per session (default 12)")
+    pf = sub.add_parser("paper-freeze", help="freeze the predictions of due sessions before kick-off")
+    pf.add_argument("--session", action="append", help="session id, e.g. 2026-11-18-NOON (repeatable; default: "
+                    "every session that has not ended, yesterday .. tomorrow)")
+    pf.add_argument("--params", action="append", help="params version (repeatable; default: the live params)")
+    sub.add_parser("paper-settle", help="settle frozen predictions whose 15' result is known (append-only)")
+    pcy = sub.add_parser("paper-cycle", help="one recorder cycle: capture, freeze, results, settle (when due)")
+    pcy.add_argument("--dry-run", action="store_true", help="show what is due now; no request, nothing stored")
+    prp = sub.add_parser("paper-report", help="the forward test: forecasts, paper bets, e-values, Gate B")
+    prp.add_argument("--params", default=None, help="one params version (default: all frozen versions)")
+    prp.add_argument("--json", action="store_true")
+    prp.add_argument("--out", type=Path, default=None, help="also write paper_report.md / .json to this folder")
+    pv = sub.add_parser("paper-verify", help="check the hash chain of frozen predictions; --replay recomputes")
+    pv.add_argument("--replay", action="append", metavar="SESSION",
+                    help="recompute a frozen session and compare (repeatable)")
+    pl = sub.add_parser("paper-list", help="frozen predictions of one session")
+    pl.add_argument("session")
+
     bt = sub.add_parser("backtest", help="replay sessions point in time and report calibration / Gate B")
     bt.add_argument("--from", dest="first", required=True, type=date.fromisoformat, help="first session date")
     bt.add_argument("--to", dest="last", required=True, type=date.fromisoformat, help="last session date")
@@ -122,7 +165,15 @@ def main(argv: list[str] | None = None) -> int:
     bt.add_argument("--out", type=Path, default=None, help="output folder (default: backtests/<params>_<dates>)")
 
     args = parser.parse_args(argv)
+    if args.cmd == "openapi":
+        args.out.parent.mkdir(parents=True, exist_ok=True)
+        args.out.write_text(openapi_json(), encoding="utf-8")
+        print(f"written to {args.out}")
+        return 0
     settings, engine, registry = get_settings(), get_engine(), load_registry()
+
+    if args.cmd.startswith("paper-"):
+        return _paper(args, engine, registry, load_params(BACKEND_DIR / settings.params_file), settings)
 
     if args.cmd == "backtest":
         params, cfg = load_params(BACKEND_DIR / settings.params_file), load_backtest_config()
@@ -245,7 +296,17 @@ def main(argv: list[str] | None = None) -> int:
         backfill_cfg = load_backfill_config()
         backfill_cfg.check_registry(registry)
         if args.cmd == "worker":
-            sched = build_scheduler(engine, lambda: store_from_settings(settings), registry, settings, backfill_cfg)
+            jobs: list[IntervalJob] = []
+            if not args.no_paper:
+                live = load_params(BACKEND_DIR / settings.params_file)
+                paper_cfg = load_paper_config()
+                jobs.append(IntervalJob(
+                    "paper_cycle", "paper betting cycle",
+                    lambda: run_cycle(cycle_inputs(engine, registry, live, settings, paper_cfg),
+                                      now=datetime.now(UTC)),
+                    paper_cfg.schedule.every_minutes))
+            sched = build_scheduler(engine, lambda: store_from_settings(settings), registry, settings, backfill_cfg,
+                                    interval_jobs=jobs)
             for j in sched.get_jobs():
                 print(f"scheduled: {j.name} ({j.trigger})")
             print("worker running - Ctrl+C to stop")
@@ -260,7 +321,9 @@ def main(argv: list[str] | None = None) -> int:
             print(json.dumps(outcome.as_dict(), indent=2))
             return 0
         sch = backfill_cfg.schedule
-        print(f"daily at {sch.time} {sch.timezone}, at most {backfill_cfg.daily_max_requests} requests")
+        print(f"daily at {sch.time} {sch.timezone}, at most "
+              f"{backfill_cfg.daily_max_requests.for_plan(settings.api_football_plan)} requests "
+              f"(plan setting: {settings.api_football_plan})")
         for st in plan(engine, backfill_cfg):
             left = "" if st.still_without_minutes is None else f", {st.still_without_minutes} still without minutes"
             print(f"  {st.target.competition} {st.target.season:<8} {st.target.mode.value:<10} {st.state.value}{left}")
@@ -271,13 +334,19 @@ def main(argv: list[str] | None = None) -> int:
             snap = snapshot(conn, args.runs)
         quota = None
         key = settings.api_football_key.get_secret_value()
+        actual_plan = None
         if args.quota and key:
-            quota = ApiFootball(key, max_requests=1, requests_per_minute=settings.api_football_requests_per_minute
-                                ).quota()
+            af = ApiFootball(key, max_requests=1, requests_per_minute=settings.api_football_requests_per_minute)
+            quota, actual_plan = af.quota(), af.subscription_plan
         if args.json:
-            print(json.dumps({**snap, "quota": quota}, indent=2, default=str))
+            print(json.dumps({**snap, "quota": quota, "api_football_plan": actual_plan}, indent=2, default=str))
         else:
             print(render_text(snap, quota))
+            if actual_plan is not None:
+                setting = settings.api_football_plan
+                mismatch = (actual_plan.strip().lower() == "free") != (setting == "free")
+                print(f"API-FOOTBALL PLAN: {actual_plan} (setting API_FOOTBALL_PLAN={setting})"
+                      + ("  <- MISMATCH: change the setting in .env" if mismatch else ""))
         return 0
 
     if args.cmd == "review":
@@ -285,6 +354,19 @@ def main(argv: list[str] | None = None) -> int:
             if args.action == "list":
                 for row in ref.open_reviews(conn):
                     print(f"{row['id']}  {row['source']:<20} {row['provider_name']:<35} {row['context']}")
+            elif args.new_team == (args.team_id is not None):
+                print("give either a team id or --new-team", file=sys.stderr)
+                return 2
+            elif args.new_team:
+                try:
+                    new_id = ref.resolve_review_new_team(conn, args.review_id, args.name, args.not_similar)
+                except ref.SimilarTeamsExist as e:
+                    print(f"{e}.\nIf it really is another club: add --not-similar", file=sys.stderr)
+                    return 2
+                except ValueError as e:
+                    print(e, file=sys.stderr)
+                    return 2
+                print(f"resolved: new team {new_id}. Link the waiting records with that source's ingest --reparse")
             else:
                 ref.resolve_review(conn, args.review_id, args.team_id)
                 print("resolved")
@@ -312,6 +394,118 @@ def main(argv: list[str] | None = None) -> int:
         stats = pipeline.api_football_day(engine, store, registry, settings.api_football_key.get_secret_value(),
                                           args.date, args.events, args.odds, args.reparse, requests_per_minute=rpm)
     print(pipeline.format_stats(stats))
+    return 0
+
+
+def _paper(args: argparse.Namespace, engine: Any, registry: Any, live: Params, settings: Any) -> int:
+    plan_path = current_plan_path()
+    competitions = load_plan(plan_path).competitions  # paper betting covers the leagues of the plan in force
+    if args.cmd == "paper-cycle":
+        logging.basicConfig(level=logging.WARNING)
+        res = run_cycle(cycle_inputs(engine, registry, live, settings, load_paper_config()),
+                        now=datetime.now(UTC), dry_run=args.dry_run)
+        stamp = f"{datetime.now(UTC):%Y-%m-%d %H:%M}Z"
+        for line in res.lines or ["nothing due"]:
+            print(f"{stamp}  {line}")
+        return 4 if res.errors else 0
+    if args.cmd == "paper-capture":
+        key = settings.api_football_key.get_secret_value()
+        if not key:
+            print("API_FOOTBALL_KEY is not configured", file=sys.stderr)
+            return 2
+        now = datetime.now(UTC)
+        cal = SessionCalendar(live)
+        sids = ([SessionId.parse(x) for x in args.session] if args.session
+                else [s for s in due_sessions(cal, now) if cal.times(s).start_utc > now])
+        for sid in sids:
+            try:
+                c = capture_session(engine, lambda: store_from_settings(settings), registry, key, live, sid,
+                                    competitions, now=now, max_requests=args.max_requests,
+                                    requests_per_minute=settings.api_football_requests_per_minute)
+            except (pipeline.QuotaError, pipeline.ConcurrentRunError) as e:
+                print(f"{sid}  NOT CAPTURED: {e}")
+                return 3
+            keys = ("session_fixtures", "odds_requests", "fixtures_without_odds_request")
+            detail = "  ".join(f"{k} {c.stats.get(k, 0)}" for k in keys)
+            cut = f"  as_of {c.as_of:%Y-%m-%d %H:%M}Z" if c.as_of else ""
+            print(f"{sid}  {c.status}{cut}  {detail}")
+        return 0
+    if args.cmd == "paper-freeze":
+        versions = args.params or [live.params_version]
+        prov = Provenance(plan_path.name, sha256_of(plan_path), code_version())
+        now = datetime.now(UTC)
+
+        for version in versions:
+            params = live if version == live.params_version else load_params(params_path(version))
+            cal = SessionCalendar(params)
+            sids = [SessionId.parse(x) for x in args.session] if args.session else due_sessions(cal, now)
+            for sid in sids:
+                r = freeze_session(engine, params, registry, sid, now=now, competitions=competitions,
+                                   provenance=prov, stake=load_backtest_config().estimated_value.stake)
+                line = f"{sid}  params {version}  {r.status}"
+                if r.status == "TOO_EARLY":
+                    line += f"  ({r.fixtures} fixtures; data cut-off {r.as_of:%Y-%m-%d %H:%M}Z: freeze after it)"
+                elif r.status == "FROZEN":
+                    line += (f"  as_of {r.as_of:%Y-%m-%d %H:%M}Z  fixtures {r.fixtures}  new {r.frozen}  "
+                             f"already {r.already}  started {r.started}  listed {r.qualified}  "
+                             f"paper bets {r.bets}")
+                    if r.chain_from is not None:
+                        line += f"  chain {r.chain_from}..{r.chain_to}"
+                print(line)
+        return 0
+    if args.cmd == "paper-report":
+        with engine.connect() as conn:
+            report_rows = paper_repo.report_rows(conn, args.params)
+            chain = paper_repo.verify_chain(conn)
+        cfg_bt = load_backtest_config()
+        summary = summarise_paper(report_rows, chain, cfg_bt, live, args.params)
+        md, js = render_paper(summary, cfg_bt), paper_json(summary)
+        if args.out is not None:
+            args.out.mkdir(parents=True, exist_ok=True)
+            (args.out / "paper_report.md").write_text(md, encoding="utf-8")
+            (args.out / "paper_report.json").write_text(json.dumps(js, indent=2, default=str), encoding="utf-8")
+        if hasattr(sys.stdout, "reconfigure"):  # the report uses UTF-8 punctuation; a Windows console may not
+            sys.stdout.reconfigure(encoding="utf-8", errors="replace")
+        print(json.dumps(js, indent=2, default=str) if args.json else md)
+        return 0 if chain.intact else 4
+    if args.cmd == "paper-settle":
+        sr = settle_due(engine, datetime.now(UTC))
+        print(f"settled {sr.settled}  corrected {sr.corrected}  pending (15' result not known yet) {sr.pending}  "
+              f"unchanged {sr.unchanged}")
+        for line in sr.inconsistent:
+            print(f"  ! inconsistent stored result, not settled: {line}")
+        return 0 if not sr.inconsistent else 4
+    if args.cmd == "paper-verify":
+        with engine.connect() as conn:
+            chain = paper_repo.verify_chain(conn)
+        print(f"frozen predictions: {chain.rows}")
+        if chain.head_pos is not None:
+            print(f"head: #{chain.head_pos} {chain.head_hash}  (note it down: a later head must extend this one)")
+        for pos, problem in chain.problems:
+            print(f"  ! #{pos}: {problem}")
+        print("chain:", "INTACT" if chain.intact else "BROKEN")
+        ok = chain.intact
+        for sid in args.replay or []:
+            with engine.connect() as conn:
+                versions = sorted({r.params_version for r in paper_repo.frozen(conn, sid)})
+            for version in versions:
+                params = live if version == live.params_version else load_params(params_path(version))
+                rr = replay_session(engine, params, registry, sid)
+                print(f"replay {sid} params {version}: {rr.compared} rows, "
+                      + ("IDENTICAL" if rr.identical else f"{len(rr.differences)} DIFFERENCES"))
+                for d in rr.differences[:20]:
+                    print(f"  ~ {d.match_id} {d.field}: frozen {d.frozen}  now {d.replayed}")
+                ok = ok and rr.identical
+        return 0 if ok else 4
+    with engine.connect() as conn:  # paper-list
+        rows = paper_repo.frozen(conn, args.session)
+    for fp in rows:
+        p = "-" if fp.p_under05 is None else f"{fp.p_under05:.3f}"
+        print(f"#{fp.chain_pos:<6} {fp.kickoff_utc:%Y-%m-%d %H:%M}Z {fp.competition_code:<5} {fp.decision:<18} "
+              f"{fp.grade:<5} P(U0.5) {p:<6} params {fp.params_version}  recorded {fp.recorded_at:%H:%M:%S}Z"
+              + (f"  BET {fp.bet_market} @ {fp.bet_odds:.2f} {fp.bet_book} (EV {fp.bet_ev:+.1%})"
+                 if fp.bet_market and fp.bet_odds and fp.bet_ev is not None else ""))
+    print(f"{len(rows)} frozen predictions in {args.session}")
     return 0
 
 
