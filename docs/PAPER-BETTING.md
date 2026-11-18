@@ -436,3 +436,48 @@ token never reaches a log or the database (errors keep only the HTTP status and 
 | [app/notifications/messages.py](../backend/app/notifications/messages.py) | the texts |
 | [app/notifications/outbox.py](../backend/app/notifications/outbox.py) | `notify`, `notify_at_most_hourly`, `deliver` |
 | [tests/integration/test_notifications.py](../backend/tests/integration/test_notifications.py) | once per event, retries, expiry, cycle events, login alert, endpoints |
+
+## 13. The two sessions, step by step — session planning (2026-11-18)
+
+**Gap closed.** Until 18 Nov the recorder only worked on sessions whose fixtures were **already in the database**;
+nothing loaded upcoming fixtures automatically (they came from season loads done by hand). A session whose fixtures
+were never loaded would have been skipped without any message. The planner of ARCHITECTURE.md §12.4 is now the
+recorder cycle's first step (`plan`, `app/paper/plan.py`, `config/paper.yaml` → `plan`).
+
+### 13.1 What happens for each session (times EAT)
+
+| Step | Night session of date D (kick-offs D 01:00 – 12:59) | Noon session of date D (kick-offs D 13:00 – D+1 00:59) |
+|---|---|---|
+| **Plan**: load the session's fixtures (all leagues, 1 request per UTC date) | **D−1 19:00** (2 requests: the session covers two UTC dates) | **D 07:00** (1 request) |
+| If no fixture in the report leagues | one Telegram "no matches in the report leagues" | same |
+| **Capture** the odds (fixtures re-listed: kick-off changes, postponements) | cut-off − 20 min | cut-off − 20 min |
+| **Cut-off** (`as_of` = ready_by − 45 min): predictions sealed, Telegram "report ready" | 22:15 (first KO 01:00) … 00:15 (first KO ≥ 05:00) | 10:15 (first KO 13:00) … 12:15 (first KO ≥ 15:00) |
+| **Report ready by** = min(deadline, first KO − 2 h) | ≤ 01:00 | ≤ 13:00 |
+| **Re-check** each listed match (lineups, fresh odds, verify again; may withdraw) | 75 → 30 min before its kick-off | same |
+| **Closing odds** (CLV) | 12 min before its kick-off | same |
+| **Results / settle** | every 6 h / every cycle | same |
+
+Every step decides from the database whether it is due, every 5 minutes (worker or Task Scheduler). A late start is
+safe: a session whose plan time has passed is planned at once (a worker switched on at 09:58 still plans the Noon
+session and captures it in the same cycle). Each plan is tried at most 3 times; failures are reported on Telegram
+(at most once an hour each). The plan's requests count in the recorder's daily bound (prefix `paper_`): 3 a day.
+
+### 13.2 Where to see it
+
+`GET /paper/status` → `sessions` (the session in progress and the next ones): plan time and status, fixtures, first
+kick-off, capture time and whether it happened, cut-off, report-ready time, sealed predictions. The **Recorder**
+screen shows it as the *Session schedule* card.
+
+### 13.3 Found and fixed at the same time
+
+- **After midnight** the Today screen lost the Noon session that is still running (it ends 00:59 EAT): "next session"
+  searched from today's EAT date only. It now starts from yesterday (`app/api/recorder.py`, test
+  `test_next_session_includes_the_noon_session_still_running_after_midnight`). Found by the e2e tests at 00:10 EAT.
+- The "report ready" Telegram link pointed to `/bets?session=…`; the app's address is `/sessions/<id>`.
+
+### 13.4 Tests
+
+`tests/integration/test_paper_plan.py`: plan times and UTC dates of both sessions; one simulated day (the session in
+progress planned late, the Night session at 19:00 the evening before with two dates, nothing planned twice, the Noon
+session at 07:00, "no fixtures" only for empty sessions, the schedule's times); failure without a key; planning off.
+`tests/unit/test_paper_config.py`: the plan settings. The older cycle tests run with planning off (`plan.enabled`).

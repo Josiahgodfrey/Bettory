@@ -308,6 +308,27 @@ def api_football_session_odds(engine: Engine, store: RawStore, registry: Registr
                 _close_api_football(client, job))
 
 
+def api_football_fixture_dates(engine: Engine, store: RawStore, registry: Registry, api_key: str,
+                               days: Sequence[date], run_id: UUID | None = None, *, requests_per_minute: int,
+                               job_name: str) -> Counter[str]:
+    """Session planning (ARCHITECTURE.md 12.4): the fixtures of the given UTC dates, all leagues in one request per
+    date - new fixtures, kick-off changes and postponements - and nothing else (no odds, no goal minutes)."""
+    wanted = sorted(set(days))
+    client = ApiFootball(api_key, max_requests=len(wanted), requests_per_minute=requests_per_minute)
+    job = Job(engine, store, registry, SourceCode.API_FOOTBALL, job_name, False, run_id)
+
+    def body() -> None:
+        _plan_quota(client, job, len(wanted), minimum=len(wanted))  # a half-listed session is no plan
+        for day in wanted:
+            listing = client.fixtures_by_date(day)
+            parsed = p_af.parse_fixtures(listing.body, registry)
+            job.process(listing, lambda raw: parsed)  # noqa: B023 - used at once, inside this iteration
+            job.stats["listed_fixtures"] += len(parsed.matches)
+
+    return _run(job, lambda: client.requests_used, _exclusive(engine, SourceCode.API_FOOTBALL, body),
+                _close_api_football(client, job))
+
+
 def api_football_results(engine: Engine, store: RawStore, registry: Registry, api_key: str,
                          fixture_keys: Sequence[str], bulk: bool, max_requests: int, run_id: UUID | None = None, *,
                          requests_per_minute: int, job_name: str) -> Counter[str]:

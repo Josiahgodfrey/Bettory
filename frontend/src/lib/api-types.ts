@@ -1952,6 +1952,8 @@ export interface components {
             requests_today: number;
             /** Schedule Every Minutes */
             schedule_every_minutes: number;
+            /** Sessions */
+            sessions: components["schemas"]["SessionScheduleOut"][];
             telegram: components["schemas"]["TelegramStatusOut"];
         };
         /** ReplayItemOut */
@@ -2293,6 +2295,52 @@ export interface components {
             session: components["schemas"]["SessionOut"];
             /** Source */
             source: string;
+        };
+        /**
+         * SessionScheduleOut
+         * @description One session's recorder timeline (plan -> capture -> cut-off -> report) and what has happened.
+         */
+        SessionScheduleOut: {
+            /** As Of Utc */
+            as_of_utc: string | null;
+            /** Capture From Utc */
+            capture_from_utc: string | null;
+            /** Captured */
+            captured: boolean;
+            /**
+             * Deadline Utc
+             * Format: date-time
+             */
+            deadline_utc: string;
+            /**
+             * End Utc
+             * Format: date-time
+             */
+            end_utc: string;
+            /** Ended */
+            ended: boolean;
+            /** First Kickoff Utc */
+            first_kickoff_utc: string | null;
+            /** Fixtures */
+            fixtures: number;
+            /** Frozen */
+            frozen: number;
+            /** Id */
+            id: string;
+            /**
+             * Plan At Utc
+             * Format: date-time
+             */
+            plan_at_utc: string;
+            /** Plan Status */
+            plan_status: string | null;
+            /** Ready By Utc */
+            ready_by_utc: string | null;
+            /**
+             * Start Utc
+             * Format: date-time
+             */
+            start_utc: string;
         };
         /**
          * SourceCode

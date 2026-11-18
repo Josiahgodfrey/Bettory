@@ -271,15 +271,26 @@ edited again: a change means a new migration (SUPABASE.md §3).
 
 Secrets that were pasted in the chat (API key, database password, bot token) should be rotated when convenient.
 
+## 15b. 18–19 Nov: storage, session planning, test server
+
+| Change | How | Effect |
+|---|---|---|
+| Raw files to Supabase Storage | `backend/scripts/upload_raw_to_supabase.py`: the 224 files referenced by `raw.payloads`, each checked against its row's sha256 and size, uploaded without overwrite, read back (224/224); `RAW_STORE=supabase` | New raw payloads go to the private bucket `raw-payloads` (public URL and browser key: refused) |
+| Owner login configured | owner user created in Supabase, `OWNER_USER_ID` in `.env`; tokens are ES256, verified against the project's keys | The real login (password + authenticator code) works against the API; requests without a valid token get 401 |
+| **Session planning** | the recorder cycle's first step: Noon at 07:00 EAT, Night at 19:00 EAT the evening before, 1 request per UTC date (PAPER-BETTING.md §13) | Sessions no longer depend on fixtures loaded by hand; empty sessions get one Telegram notice; the Recorder screen shows each session's timeline |
+| Next session after midnight | the dashboard searches from yesterday | Between 00:00 and 00:59 EAT the running Noon session stays on Today |
+| Report link | `/sessions/<id>` | Telegram "report ready" opens the right page |
+| Test database port | Windows reserved ports 54293–54392 (took 54329): container `bettory-pg-55432` on port **55432** sharing the same data volume; the old `bettory-pg` is stopped, not deleted; backup `Documents/BETTORY_backups/bettory_dev_2026-11-18.dump` | `TEST_DATABASE_URL` and `LOCAL_DATABASE_URL` use 55432 |
+
 ## 16. What is not live yet
 
 | Item | Needs | Then |
 |---|---|---|
 | API-Football Pro | Owner completes the upgrade, updates `.env` | `backfill-daily --run` once; fixtures get enough history to be analysed |
-| Real login | Owner creates the Supabase user (sign-ups off) and sets `OWNER_USER_ID` | Login with password + authenticator code (FRONTEND.md §3) |
+| Real login | ✅ owner user and `OWNER_USER_ID` set (18 Nov); first login with the authenticator QR code by the owner | — |
 | Recorder | A decision to switch it on (worker or Task Scheduler) — ideally on the hosted backend | Paper betting starts; Telegram report messages flow |
 | Backend hosting | Owner chooses Render / Railway / Fly.io near eu-west-1 | Fast screens; recorder runs without the PC |
-| Raw files to Storage | Owner adds `SUPABASE_SERVICE_ROLE_KEY` to `.env` | Upload 183 files, `RAW_STORE=supabase` |
+| Raw files to Storage | ✅ done 18 Nov (§15b) | — |
 | Gate B settings | Owner confirms alpha 0.05 and min_bets 100 | — |
 | Frontend steps 5–6 | — | Recorder, Calendar, Data health, Notifications, Settings; whole-application tests |
 | Merge | Owner asks for a pull request | `paper-betting` → `frontend-api` → `frontend` into `main` |

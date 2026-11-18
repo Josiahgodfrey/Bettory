@@ -354,6 +354,25 @@ class ManualCycleOut(Out):
     errors: int
 
 
+class SessionScheduleOut(Out):
+    """One session's recorder timeline (plan -> capture -> cut-off -> report) and what has happened."""
+
+    id: str
+    start_utc: datetime
+    end_utc: datetime
+    deadline_utc: datetime
+    plan_at_utc: datetime
+    plan_status: str | None  # latest plan run: SUCCEEDED / FAILED / RUNNING, None = not planned yet
+    fixtures: int  # in the recorder's competitions
+    first_kickoff_utc: datetime | None
+    capture_from_utc: datetime | None
+    captured: bool
+    as_of_utc: datetime | None  # the data cut-off: the freeze seals the predictions
+    ready_by_utc: datetime | None
+    frozen: int
+    ended: bool
+
+
 class RecorderStatusOut(Out):
     now_utc: datetime
     competitions: list[str]
@@ -370,6 +389,7 @@ class RecorderStatusOut(Out):
     cycle_running: bool
     manual_cycle: ManualCycleOut | None
     schedule_every_minutes: int
+    sessions: list[SessionScheduleOut]
     telegram: TelegramStatusOut
 
 

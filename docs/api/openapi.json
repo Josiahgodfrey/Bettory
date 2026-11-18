@@ -3269,6 +3269,13 @@
             "title": "Schedule Every Minutes",
             "type": "integer"
           },
+          "sessions": {
+            "items": {
+              "$ref": "#/components/schemas/SessionScheduleOut"
+            },
+            "title": "Sessions",
+            "type": "array"
+          },
           "telegram": {
             "$ref": "#/components/schemas/TelegramStatusOut"
           }
@@ -3289,6 +3296,7 @@
           "cycle_running",
           "manual_cycle",
           "schedule_every_minutes",
+          "sessions",
           "telegram"
         ],
         "title": "RecorderStatusOut",
@@ -4383,6 +4391,129 @@
           "how_to_bet"
         ],
         "title": "SessionReportOut",
+        "type": "object"
+      },
+      "SessionScheduleOut": {
+        "additionalProperties": false,
+        "description": "One session's recorder timeline (plan -> capture -> cut-off -> report) and what has happened.",
+        "properties": {
+          "as_of_utc": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "As Of Utc"
+          },
+          "capture_from_utc": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Capture From Utc"
+          },
+          "captured": {
+            "title": "Captured",
+            "type": "boolean"
+          },
+          "deadline_utc": {
+            "format": "date-time",
+            "title": "Deadline Utc",
+            "type": "string"
+          },
+          "end_utc": {
+            "format": "date-time",
+            "title": "End Utc",
+            "type": "string"
+          },
+          "ended": {
+            "title": "Ended",
+            "type": "boolean"
+          },
+          "first_kickoff_utc": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "First Kickoff Utc"
+          },
+          "fixtures": {
+            "title": "Fixtures",
+            "type": "integer"
+          },
+          "frozen": {
+            "title": "Frozen",
+            "type": "integer"
+          },
+          "id": {
+            "title": "Id",
+            "type": "string"
+          },
+          "plan_at_utc": {
+            "format": "date-time",
+            "title": "Plan At Utc",
+            "type": "string"
+          },
+          "plan_status": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Plan Status"
+          },
+          "ready_by_utc": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Ready By Utc"
+          },
+          "start_utc": {
+            "format": "date-time",
+            "title": "Start Utc",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "start_utc",
+          "end_utc",
+          "deadline_utc",
+          "plan_at_utc",
+          "plan_status",
+          "fixtures",
+          "first_kickoff_utc",
+          "capture_from_utc",
+          "captured",
+          "as_of_utc",
+          "ready_by_utc",
+          "frozen",
+          "ended"
+        ],
+        "title": "SessionScheduleOut",
         "type": "object"
       },
       "SourceCode": {

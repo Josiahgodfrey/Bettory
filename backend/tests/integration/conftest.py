@@ -1,8 +1,9 @@
 """Shared fixtures: disposable PostgreSQL databases with all migrations applied.
 
-Set TEST_DATABASE_URL to a superuser URL of a throwaway server, e.g.
-    docker run -d --name bettory-pg -e POSTGRES_PASSWORD=test -p 127.0.0.1:54329:5432 postgres:17
-    TEST_DATABASE_URL=postgresql://postgres:test@127.0.0.1:54329/postgres pytest tests/integration
+Set TEST_DATABASE_URL to a superuser URL of a throwaway server (port 55432: on this PC Windows reserves 54293-54392,
+which took the earlier 54329 on 2026-11-18), e.g.
+    docker run -d --name bettory-pg -e POSTGRES_PASSWORD=test -p 127.0.0.1:55432:5432 postgres:17
+    TEST_DATABASE_URL=postgresql://postgres:test@127.0.0.1:55432/postgres pytest tests/integration
 """
 
 from __future__ import annotations

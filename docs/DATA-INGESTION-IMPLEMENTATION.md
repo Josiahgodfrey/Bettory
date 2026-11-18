@@ -300,7 +300,7 @@ This is in [api/deps.py](../backend/app/api/deps.py). Every endpoint except `/he
 
 **122 tests pass**:
 ```bash
-TEST_DATABASE_URL=postgresql://postgres:test@127.0.0.1:54329/postgres pytest
+TEST_DATABASE_URL=postgresql://postgres:test@127.0.0.1:55432/postgres pytest
 ```
 This uses the Docker `postgres:17` container `bettory-pg`. The integration tests are skipped when `TEST_DATABASE_URL` is not set.
 

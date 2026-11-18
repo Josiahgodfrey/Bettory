@@ -66,7 +66,7 @@ def test_message_texts() -> None:
     ko = datetime(2026, 11, 21, 12, 30, tzinfo=UTC)                         # 15:30 EAT
     text = messages.report_ready("2026-11-21-NOON", 3, ko, EAT, "https://app.example/")
     assert text == ("☀️ Noon session 21 Nov — 3 matches verified (first kick-off 15:30 EAT). "
-                    "Open: https://app.example/bets?session=2026-11-21-NOON")
+                    "Open: https://app.example/sessions/2026-11-21-NOON")
     none = messages.report_ready("2026-11-22-NIGHT", 0, ko, EAT, "x")
     assert none == "Night session 22 Nov — 0 matches passed verification."
     w = messages.withdrawn("Home", "Away", ko, ["CONTEXT_ODDS_MOVEMENT"], EAT)

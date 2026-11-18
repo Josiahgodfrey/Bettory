@@ -50,3 +50,16 @@ def test_closing_window_must_be_longer_than_the_cycle() -> None:
     raw["closing"]["minutes_before"] = raw["schedule"]["every_minutes"]
     with pytest.raises(ValidationError, match=r"closing.minutes_before"):
         PaperConfig.model_validate(raw)
+
+
+def test_plan_settings() -> None:
+    cfg = load_paper_config()
+    assert cfg.plan.enabled and cfg.plan.noon_at == "07:00" and cfg.plan.night_at == "19:00"  # ARCHITECTURE 12.4
+    raw = load_paper_config().model_dump()
+    raw["plan"]["max_requests"]["free"] = 1                                   # the Night session lists 2 dates
+    with pytest.raises(ValidationError, match=r"plan.max_requests"):
+        PaperConfig.model_validate(raw)
+    raw = load_paper_config().model_dump()
+    raw["plan"]["noon_at"] = "7:00"                                           # HH:MM only
+    with pytest.raises(ValidationError):
+        PaperConfig.model_validate(raw)

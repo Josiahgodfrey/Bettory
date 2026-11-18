@@ -26,10 +26,11 @@ from app.domain.registry import Registry
 from app.domain.sessions import SessionCalendar
 from app.ingestion.health_view import snapshot
 from app.notifications import outbox
-from app.paper.capture import RECORDER_JOB_PREFIX
+from app.paper.capture import RECORDER_JOB_PREFIX, capture_job
 from app.paper.config import PaperConfig, load_paper_config
 from app.paper.cycle import RESULTS_JOB, CycleInputs, CycleResult, run_cycle
-from app.paper.freeze import Provenance
+from app.paper.freeze import Provenance, due_sessions
+from app.paper.plan import plan_job, timeline
 from app.storage.raw_store import RawStore, store_from_settings
 from app.storage.repositories import notifications as notif_repo
 from app.storage.repositories import ops as ops_repo
@@ -106,9 +107,35 @@ def recorder_status(x: CycleInputs, now: datetime) -> dict[str, Any]:
             "error": m.error, "lines": m.result.lines if m.result else [],
             "errors": m.result.errors if m.result else 0},
         "schedule_every_minutes": x.cfg.schedule.every_minutes,
+        "sessions": session_schedule(x, now),
         "telegram": {"configured": outbox.configured(x.settings), "pending": counts.get("PENDING", 0),
                      "failed": counts.get("FAILED", 0)},
     }
+
+
+def session_schedule(x: CycleInputs, now: datetime) -> list[dict[str, Any]]:
+    """The sessions the recorder works on (the one in progress and the next ones, yesterday .. tomorrow EAT, as the
+    cycle sees them): when it plans, captures and freezes each, and what it has done so far (ARCHITECTURE.md 12.3)."""
+    cal = SessionCalendar(x.params)
+    codes = tuple(sorted(x.competitions))
+    out: list[dict[str, Any]] = []
+    for sid in due_sessions(cal, now):
+        t = cal.times(sid)
+        with x.engine.connect() as conn:
+            fixtures = paper_repo.session_fixtures(conn, t.start_utc, t.end_utc, codes)
+            frozen = len(paper_repo.frozen_match_ids(conn, str(sid), x.params.params_version))
+        tl = timeline(cal, x.cfg, sid, fixtures[0].kickoff_utc if fixtures else None)
+        plan = ops_repo.latest_run_like(x.engine, plan_job(sid))
+        captured = tl.capture_from is not None and "SUCCEEDED" in {
+            s.value for s in ops_repo.run_statuses_since(x.engine, capture_job(sid), tl.capture_from)}
+        out.append({
+            "id": tl.session_id, "start_utc": tl.start, "end_utc": tl.end, "deadline_utc": tl.deadline,
+            "plan_at_utc": tl.plan_at, "plan_status": plan["status"] if plan else None,
+            "fixtures": len(fixtures), "first_kickoff_utc": tl.first_kickoff, "capture_from_utc": tl.capture_from,
+            "captured": captured, "as_of_utc": tl.as_of, "ready_by_utc": tl.ready_by, "frozen": frozen,
+            "ended": t.end_utc <= now,
+        })
+    return [jsonable(r) for r in out]
 
 
 def paper_summary(engine: Engine, params: Params, params_version: str | None) -> PaperSummary:
@@ -125,7 +152,9 @@ def dashboard(engine: Engine, params: Params, competitions: tuple[str, ...], now
         infos = session_infos(conn, params, competitions, today - timedelta(days=1), today + timedelta(days=1), now)
         chain = paper_repo.verify_chain(conn)
         marks = paper_repo.recorder_marks(conn)
-        ahead = session_infos(conn, params, competitions, today, today + timedelta(days=NEXT_SESSION_DAYS - 1), now)
+        # from yesterday: the Noon session of yesterday runs until 00:59 EAT today (ARCHITECTURE.md 12.2)
+        ahead = session_infos(conn, params, competitions, today - timedelta(days=1),
+                              today + timedelta(days=NEXT_SESSION_DAYS - 1), now)
     sessions = [info_json(i, cal) for i in infos]
     upcoming = [info_json(i, cal) for i in ahead if i.report_state != "NO_FIXTURES" and i.phase != "ENDED"]
     alerts: list[dict[str, Any]] = []

@@ -160,7 +160,7 @@ frontend only maps numbers to pixels; every figure comes from the API.
 
 | Part | How |
 |---|---|
-| Backend | `backend/tests/e2e/server.py` on port 8100: a **fresh database** on the local test server (`TEST_DATABASE_URL`, default the Docker `bettory-pg` at 127.0.0.1:54329; it refuses any non-local host, so never Supabase), all migrations, the synthetic league TST1, two fixtures 40–50 minutes ahead whose session is **sealed with the real freeze**. Isolated like the test suite (`tests/conftest.py`): no Telegram connection possible, no data-API keys, raw files in a temporary folder. Old `bettory_e2e_*` databases are dropped at start |
+| Backend | `backend/tests/e2e/server.py` on port 8100: a **fresh database** on the local test server (`TEST_DATABASE_URL`, default the Docker `bettory-pg-55432` at 127.0.0.1:55432; it refuses any non-local host, so never Supabase), all migrations, the synthetic league TST1, two fixtures 40–50 minutes ahead whose session is **sealed with the real freeze**. Isolated like the test suite (`tests/conftest.py`): no Telegram connection possible, no data-API keys, raw files in a temporary folder. Old `bettory_e2e_*` databases are dropped at start |
 | Frontend | Vite on port 5190 with the login bypass and its own dependency cache (`node_modules/.vite-e2e`), so it can run beside `npm run dev` |
 | Config | `frontend/playwright.config.ts` (both servers are started and stopped by Playwright) |
 

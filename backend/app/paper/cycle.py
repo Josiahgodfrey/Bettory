@@ -1,9 +1,11 @@
-"""One recorder cycle: capture -> freeze -> results -> settle (docs/PAPER-BETTING.md 8, config/paper.yaml).
+"""One recorder cycle: plan -> capture -> freeze -> results -> settle (docs/PAPER-BETTING.md 8, config/paper.yaml).
 
 Run every few minutes by the worker (app/jobs/scheduler.py) or by Windows Task Scheduler (`paper-cycle`). Every
 step decides from the database alone whether it is due, so a cycle can run at any time, as often as wanted, in
 any process: a step that is not due does nothing and costs nothing.
 
+    plan      a session past its plan time (plan.noon_at / plan.night_at, EAT) without a successful plan run: the
+              fixtures of the UTC dates it covers (app/paper/plan.py); "no fixtures" on Telegram if it has none
     capture   a session whose as_of is less than capture.lead_minutes away and that has no successful capture
               run in that window yet (at most capture.attempts runs): app/paper/capture.py
     freeze    a session past its as_of with upcoming fixtures not frozen yet for the live params version:
@@ -41,6 +43,7 @@ from app.notifications.outbox import Sender
 from app.paper.capture import RECORDER_JOB_PREFIX, capture_job, capture_session
 from app.paper.config import PaperConfig
 from app.paper.freeze import MIN_LEAD, Provenance, due_sessions, freeze_session
+from app.paper.plan import plan_job, plan_time, session_dates
 from app.paper.recheck import Rechecked, run_rechecks
 from app.paper.recheck import due as recheck_due
 from app.paper.settle import SETTLE_AFTER, settle_due
@@ -141,13 +144,49 @@ class _Cycle:
         except Exception:  # notifications must never stop the recorder
             log.exception("telegram notifications failed")
 
+    def plan_session(self, cal: SessionCalendar, sid: SessionId) -> bool:
+        """Load the session's fixtures once, from its plan time on. True when a plan run has succeeded."""
+        x, now, out, cfg = self.x, self.now, self.out, self.x.cfg.plan
+        at = plan_time(cal, x.cfg, sid)
+        if not cfg.enabled or now < at:
+            return False
+        job = plan_job(sid)
+        runs = ops_repo.run_statuses_since(x.engine, job, at)
+        if RunStatus.SUCCEEDED in runs:
+            return True
+        if len(runs) >= cfg.attempts:
+            return False
+        days = session_dates(cal, sid)
+        budget = min(cfg.max_requests.for_plan(self.plan), self.left_today())
+        if not self.key:
+            out.fail(f"{sid} plan due but API_FOOTBALL_KEY is not configured")
+            return False
+        if budget < len(days):
+            out.fail(f"{sid} plan due but the recorder's daily request bound is used up")
+            return False
+        if self.dry_run:
+            out.note(f"{sid} would plan now: fixtures of {', '.join(d.isoformat() for d in days)} "
+                     f"({len(days)} request{'s' if len(days) > 1 else ''})")
+            return False
+        try:
+            st = pipeline.api_football_fixture_dates(x.engine, x.store(), x.registry, self.key, days,
+                                                     requests_per_minute=self.rpm, job_name=job)
+        except Exception as exc:
+            out.fail(f"{sid} plan failed: {type(exc).__name__}: {exc}")
+            return False
+        out.note(f"{sid} plan: {st.get('listed_fixtures', 0)} fixtures listed ({len(days)} date(s))")
+        return True
+
     def session(self, cal: SessionCalendar, sid: SessionId) -> None:
         x, now, out = self.x, self.now, self.out
+        planned = self.plan_session(cal, sid)
         times = cal.times(sid)
         with x.engine.connect() as conn:
             fixtures = paper_repo.session_fixtures(conn, times.start_utc, times.end_utc, self.codes)
             done = paper_repo.frozen_match_ids(conn, str(sid), x.params.params_version)
         if not fixtures:
+            if planned and not self.dry_run and x.cfg.plan.notify_no_fixtures:
+                outbox.notify(x.engine, f"nofixtures:{sid}", "NO_MATCHES", messages.no_fixtures(str(sid)))
             return
         as_of = cal.run_start(sid, fixtures[0].kickoff_utc)
         window = as_of - x.cfg.capture.lead

@@ -1,7 +1,7 @@
 /**
  * Whole-application tests: the real frontend (Vite, port 5190) against the real API (port 8100) on a throwaway
  * database seeded with the synthetic league and a just-sealed session (backend/tests/e2e/server.py).
- * Needs the local test PostgreSQL (TEST_DATABASE_URL, default 127.0.0.1:54329). Run: npm run e2e
+ * Needs the local test PostgreSQL (TEST_DATABASE_URL, default 127.0.0.1:55432). Run: npm run e2e
  */
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
@@ -34,7 +34,7 @@ export default defineConfig({
       timeout: 180_000,
       reuseExistingServer: false,
       stdout: 'pipe',
-      env: { TEST_DATABASE_URL: process.env.TEST_DATABASE_URL ?? 'postgresql://postgres:test@127.0.0.1:54329/postgres' },
+      env: { TEST_DATABASE_URL: process.env.TEST_DATABASE_URL ?? 'postgresql://postgres:test@127.0.0.1:55432/postgres' },
     },
     {
       command: 'npx vite --host 127.0.0.1 --port 5190 --strictPort',

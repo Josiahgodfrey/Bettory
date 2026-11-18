@@ -1,6 +1,6 @@
 """Backend for the whole-application (end-to-end) tests: the real API on a throwaway database.
 
-    TEST_DATABASE_URL=postgresql://postgres:test@127.0.0.1:54329/postgres \\
+    TEST_DATABASE_URL=postgresql://postgres:test@127.0.0.1:55432/postgres \\
         venv/Scripts/python -m tests.e2e.server --port 8100
 
 Started by Playwright (frontend/playwright.config.ts). What it does:
@@ -27,7 +27,7 @@ from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from urllib.parse import urlparse
 
-os.environ.setdefault("TEST_DATABASE_URL", "postgresql://postgres:test@127.0.0.1:54329/postgres")
+os.environ.setdefault("TEST_DATABASE_URL", "postgresql://postgres:test@127.0.0.1:55432/postgres")
 import tests.conftest  # noqa: F401 - isolation from the real services, before the app is imported
 
 os.environ["ENVIRONMENT"] = "local"
