@@ -63,8 +63,10 @@ left Supabase unchanged.
 
 ## 6. Still open
 
-- **Raw payload files** (183 files, 1.5 MB) are still on local disk (`RAW_STORE=local`, `backend/data/raw`); their
-  database rows are in Supabase. Moving them to Supabase Storage needs `SUPABASE_SERVICE_ROLE_KEY` in `.env`
-  (dashboard → Project Settings → API Keys → secret key); then upload and set `RAW_STORE=supabase`.
+- ~~Raw payload files~~ **done 2026-11-18**: the 224 files referenced by `raw.payloads` were copied to the private
+  Storage bucket `raw-payloads` (`backend/scripts/upload_raw_to_supabase.py`: each file checked against its row's
+  sha256 and size, uploaded without overwrite, read back and verified: 224 / 224). The bucket is private (the public
+  URL and the browser key both get 400). `.env` now has `RAW_STORE=supabase`, so new payloads go straight to
+  Storage. 5 local files not referenced by any row (repeated fetches) were left on disk.
 - A backfill run of 2026-11-17 00:30 UTC is stuck in RUNNING (0 requests; its process ended without finishing the
   row). Harmless.
