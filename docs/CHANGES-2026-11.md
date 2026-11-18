@@ -152,7 +152,7 @@ build instead of a screen. The paper report (open JSON) gained chart series on 1
 
 ## 8. Telegram notifications
 
-**What.** Commits `09b0ad3`, `8132d5c`. Bot `@logorexen_bot`, sending to the owner's private chat.
+**What.** Commits `09b0ad3`, `8132d5c`. The owner's bot, sending to the owner's private chat (both set in `.env`).
 
 **How.** An outbox table `ops.notifications`: each event has a unique key and is sent once (up to 3 attempts),
 messages older than 24 hours expire instead of arriving late, failures are reported at most once an hour. Events:
