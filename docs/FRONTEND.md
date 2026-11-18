@@ -64,7 +64,7 @@ Until step 3 is done, the API refuses every real login (503 "authentication is n
 | 2 | Today (dashboard) and Bets section (sessions, report, all fixtures) | ✅ 2026-11-18 |
 | 3 | Match analysis, odds check, record a bet, My bets (cancel) | ✅ 2026-11-18 |
 | 4 | Performance, Paper betting (report, predictions, chain, replay) — with charts | ✅ 2026-11-18 |
-| 5 | Recorder, Calendar, Data health, Notifications, Settings | ⬜ |
+| 5 | Recorder, Calendar, Data health, Notifications, Settings | ✅ 2026-11-18 |
 | 6 | Whole-application tests (Playwright on the real API), phone layout pass | ⬜ |
 
 ### Step 1 checks (2026-11-17)
@@ -130,3 +130,24 @@ frontend only maps numbers to pixels; every figure comes from the API.
   `bets.profit_curve`, `bets.hit_rate` (tests in `tests/unit/test_paper_report.py`).
 - Checked with simulated histories (260 paper bets, 40 real bets) at desktop and phone width, light and dark, and
   with the real (still empty) records; tooltips by mouse and keyboard; no console errors.
+
+### Step 5 checks (2026-11-18)
+
+- **Recorder** (`/recorder`, `GET /paper/status` every minute, every 3 s while a cycle started here runs): API requests
+  today against the recorder's bound, sealed predictions, kicked-off-not-settled, Telegram on/off; **what the next
+  cycle would do** (the dry run); **Run one cycle now** behind a confirmation (it may spend requests and seal
+  predictions; `409` when one is running); last capture / results / freeze / settlement; the 25 latest job runs with
+  errors.
+- **Calendar** (`/calendar?date=`): every fixture of an EAT day by league, previous / next / pick a date / today,
+  score, 15′ result, session and decision; each row opens the match analysis.
+- **Data health** (`/data-health`): blocked-bets alert, API-Football quota (read live; says so when the backend has
+  no key), coverage per league-season (usable 15′, exact / derived / partial, conflicts, sources), cross-check per
+  league-season with FT / HT / 15′ agreement and **Accept after review…** (note required) for a failed one, recent runs
+  with their audit findings, stored backtests with their Gate B results, open team reviews.
+- **Notifications** (`/notifications`): the Telegram outbox with status and errors, counts, **Send a test message**
+  (disabled with an explanation when Telegram is off).
+- **Settings** (`/settings`, read-only): account, sessions and time, real-bet rules, Gate B (alpha and min_bets marked
+  "to confirm"), recorder timing, bookmakers, the competition registry, and the whole params file as a tree.
+- Checked against the dev API (local data, Telegram and data APIs off — `backend/scripts/dev_api.py`): every page at
+  desktop and phone width, light and dark, no page wider than the phone, no console errors; the cycle button's
+  confirm / cancel / run (request mocked), the test message refused while Telegram is off, calendar navigation.

@@ -1,14 +1,19 @@
 import { createBrowserRouter, Link } from 'react-router'
 
 import { AppLayout } from '@/app/app-layout'
-import { ComingSoon, PageHeader } from '@/components/page'
+import { PageHeader } from '@/components/page'
 import { Button } from '@/components/ui/button'
 import { LoginPage } from '@/features/auth/login-page'
 import { BetsPage } from '@/features/bets/bets-page'
+import { CalendarPage } from '@/features/calendar/calendar-page'
+import { DataHealthPage } from '@/features/health/data-health-page'
 import { MatchPage } from '@/features/match/match-page'
+import { NotificationsPage } from '@/features/notifications/notifications-page'
 import { PaperPage } from '@/features/paper/paper-page'
 import { PerformancePage } from '@/features/performance/performance-page'
+import { RecorderPage } from '@/features/recorder/recorder-page'
 import { SessionPage, SessionsIndex } from '@/features/sessions/session-page'
+import { SettingsPage } from '@/features/settings/settings-page'
 import { TodayPage } from '@/features/today/today-page'
 
 function NotFound() {
@@ -34,11 +39,11 @@ export const router = createBrowserRouter([
       { path: 'bets', element: <BetsPage /> },
       { path: 'performance', element: <PerformancePage /> },
       { path: 'paper', element: <PaperPage /> },
-      { path: 'recorder', element: <ComingSoon title="Recorder" step={5} endpoints={['GET /paper/status', 'POST /paper/cycle']} /> },
-      { path: 'calendar', element: <ComingSoon title="Calendar" step={5} endpoints={['GET /fixtures?date=']} /> },
-      { path: 'data-health', element: <ComingSoon title="Data health" step={5} endpoints={['GET /data-health/…']} /> },
-      { path: 'notifications', element: <ComingSoon title="Notifications" step={5} endpoints={['GET /notifications']} /> },
-      { path: 'settings', element: <ComingSoon title="Settings" step={5} endpoints={['GET /settings', 'GET /bookmakers']} /> },
+      { path: 'recorder', element: <RecorderPage /> },
+      { path: 'calendar', element: <CalendarPage /> },
+      { path: 'data-health', element: <DataHealthPage /> },
+      { path: 'notifications', element: <NotificationsPage /> },
+      { path: 'settings', element: <SettingsPage /> },
       { path: '*', element: <NotFound /> },
     ],
   },
