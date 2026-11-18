@@ -43,6 +43,8 @@ that deletes the variable and the real value comes back from `.env`.
 | `npm run typecheck` / `npm run lint` / `npm run build` | strict types, lint, production build |
 | `npm run api-types` | regenerate `src/lib/api-types.ts` after the backend contract changes (`python -m app.cli openapi`) |
 | `node scripts/shots.mjs <dir> home settings …` | screenshots of the running app: desktop + phone, light + dark, with console errors |
+| `npm test` | unit tests (formatting, EAT times, check names) |
+| `npm run e2e` | **whole-application tests** (§5): starts the real API on a throwaway database and the frontend, then drives the browser |
 
 Port 5174 is taken by Docker on this PC; use 5173 (default) or 5180.
 
@@ -65,7 +67,7 @@ Until step 3 is done, the API refuses every real login (503 "authentication is n
 | 3 | Match analysis, odds check, record a bet, My bets (cancel) | ✅ 2026-11-18 |
 | 4 | Performance, Paper betting (report, predictions, chain, replay) — with charts | ✅ 2026-11-18 |
 | 5 | Recorder, Calendar, Data health, Notifications, Settings | ✅ 2026-11-18 |
-| 6 | Whole-application tests (Playwright on the real API), phone layout pass | ⬜ |
+| 6 | Whole-application tests (Playwright on the real API), phone layout pass | ✅ 2026-11-18 |
 
 ### Step 1 checks (2026-11-17)
 
@@ -151,3 +153,23 @@ frontend only maps numbers to pixels; every figure comes from the API.
 - Checked against the dev API (local data, Telegram and data APIs off — `backend/scripts/dev_api.py`): every page at
   desktop and phone width, light and dark, no page wider than the phone, no console errors; the cycle button's
   confirm / cancel / run (request mocked), the test message refused while Telegram is off, calendar navigation.
+
+## 5. Whole-application tests (step 6, 2026-11-18)
+
+`npm run e2e` (from `frontend/`) runs Playwright against the **real backend and real frontend together**:
+
+| Part | How |
+|---|---|
+| Backend | `backend/tests/e2e/server.py` on port 8100: a **fresh database** on the local test server (`TEST_DATABASE_URL`, default the Docker `bettory-pg` at 127.0.0.1:54329; it refuses any non-local host, so never Supabase), all migrations, the synthetic league TST1, two fixtures 40–50 minutes ahead whose session is **sealed with the real freeze**. Isolated like the test suite (`tests/conftest.py`): no Telegram connection possible, no data-API keys, raw files in a temporary folder. Old `bettory_e2e_*` databases are dropped at start |
+| Frontend | Vite on port 5190 with the login bypass and its own dependency cache (`node_modules/.vite-e2e`), so it can run beside `npm run dev` |
+| Config | `frontend/playwright.config.ts` (both servers are started and stopped by Playwright) |
+
+What the 31 tests cover:
+
+| File | Tests |
+|---|---|
+| `e2e/pages.spec.ts` | every screen on **desktop and phone** (Pixel 7): loads from the API, no browser error, never wider than the screen; the Bets section's listed cards; every match-analysis tab; the not-found page |
+| `e2e/betting.spec.ts` | Today → sealed session → listed cards with the sealed minimum odds; **odds check with real writes**: a too-good price is refused (NO BET, "BETTORY vs bookmaker"), a realistic one gives BET, the prices are stored and shown; **record the bet** from the card → toast → stored by the API (TZS, follows the rules) → My bets; a bet **below the minimum** is recorded and flagged; **cancel** it with a reason → still listed as cancelled, excluded from performance; an implausible stake is stopped by the form |
+| `e2e/system.spec.ts` | Paper betting: 2 sealed predictions, **Verify now** (chain intact), **Replay** (identical to the seal); Recorder: a **real cycle** from the app (confirm → started → finished, status reported); Notifications: Telegram off, the test message refused (409); Calendar shows the sealed fixtures; Settings show the betting rules |
+
+Last run 2026-11-18: **31 passed** (about 1 minute), twice in a row from a fresh database.
