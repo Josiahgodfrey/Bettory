@@ -17,11 +17,10 @@ RUN pip install -r requirements.txt
 # the source is used in place (not pip-installed): app/ finds config/ relative to itself
 COPY app ./app
 COPY config ./config
-COPY backtests ./backtests
 COPY deploy ./deploy
 RUN chmod +x deploy/start.sh \
     && useradd --create-home --uid 10001 bettory \
-    && mkdir -p data && chown -R bettory:bettory /app
+    && mkdir -p data backtests && chown -R bettory:bettory /app  # backtests/: local output, not in git
 USER bettory
 
 ENV ENVIRONMENT=production PORT=8000
