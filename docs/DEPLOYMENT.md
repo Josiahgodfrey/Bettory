@@ -17,8 +17,8 @@
 
 ## 2. Before you start
 
-1. **The code must be on GitHub** in the branch Render deploys (`render.yaml`: `branch: frontend`; change it to `main`
-   once the branches are merged).
+1. **The code must be on GitHub** in the branch Render deploys: `main` (`render.yaml`: `branch: main`). Merge the
+   pull request of `espn-probabilities` into `main` first.
 2. **Recommended: make the GitHub repository private** first (GitHub → repository → Settings → General → Danger
    Zone → Change visibility). Render then needs access to it through its GitHub app (step 3.2).
 3. Have `BETTORY/.env` open: the secret values are copied from it into Render's dashboard, one by one.
@@ -27,7 +27,7 @@
 
 1. Sign up at **render.com** (sign in with GitHub is simplest) and add a payment method (Starter plan).
 2. **Account settings → GitHub**: give Render access to the repository `Bettory` (only that one is enough).
-3. Dashboard → **New → Blueprint** → choose the `Bettory` repository → branch **`frontend`**. Render reads
+3. Dashboard → **New → Blueprint** → choose the `Bettory` repository → branch **`main`**. Render reads
    `render.yaml` and shows the service `bettory-api` with the settings to fill in.
 4. Fill in every value Render asks for (all are secrets; Render stores them encrypted):
 
