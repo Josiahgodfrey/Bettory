@@ -61,6 +61,7 @@ class Plan(_Strict):
 
 
 class Capture(_Strict):
+    enabled: bool = True  # false (owner decision 2026-11-23): no odds are captured - the owner's app has them
     lead_minutes: int = Field(ge=1, le=180)
     attempts: int = Field(ge=1, le=10)
     max_requests: PerPlan
@@ -71,6 +72,7 @@ class Capture(_Strict):
 
 
 class Recheck(_Strict):
+    with_odds: bool = True  # false: lineups only (1 request per match instead of 2)
     from_minutes: int = Field(ge=5, le=240)
     to_minutes: int = Field(ge=10, le=360)
     retry_minutes: int = Field(ge=5, le=120)
@@ -85,6 +87,7 @@ class Recheck(_Strict):
 
 
 class Closing(_Strict):
+    enabled: bool = True  # false: no closing odds (no CLV)
     minutes_before: int = Field(ge=2, le=60)
     max_requests: PerPlan
 
@@ -95,6 +98,17 @@ class Results(_Strict):
     max_requests: PerPlan
 
 
+class History(_Strict):
+    """Goal minutes of the session's teams' recent matches from ESPN (docs/ESPN.md), once per session after its plan
+    and before its cut-off. ESPN has no key and no daily quota: these requests never touch the API-Football bound."""
+
+    enabled: bool = False  # off unless the config file switches it on (tests of other steps make no ESPN request)
+    max_requests: int = Field(default=1500, ge=10, le=10000)  # per run; about 1 per second
+    attempts: int = Field(default=2, ge=1, le=10)  # runs per session, failed ones included
+    skip_complete: bool = True  # no summary for a match whose 15' data is already complete from another source
+    all_competitions: bool = True  # also the registered leagues outside the recorder's (data for later backtests)
+
+
 class PaperConfig(_Strict):
     schedule: Schedule
     daily_max_requests: PerPlan
@@ -103,6 +117,7 @@ class PaperConfig(_Strict):
     recheck: Recheck
     closing: Closing
     results: Results
+    history: History = History()
 
     @model_validator(mode="after")
     def _window(self) -> Self:

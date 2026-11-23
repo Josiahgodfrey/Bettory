@@ -371,6 +371,12 @@ class SessionScheduleOut(Out):
     ready_by_utc: datetime | None
     frozen: int
     ended: bool
+    # ESPN team histories (docs/ESPN.md): after the plan, before the cut-off, once
+    history_enabled: bool
+    history_status: str | None  # latest run since the plan time: SUCCEEDED / FAILED / RUNNING; None = not run yet
+    history_summaries: int | None  # match summaries (goal minutes) fetched
+    history_teams_without_link: int | None  # session teams with no ESPN id yet (review queue / a later run)
+    history_stopped_at_budget: bool | None
 
 
 class RecorderStatusOut(Out):

@@ -17,7 +17,7 @@ from app.paper.cycle import run_cycle
 from app.paper.plan import plan_time, session_dates
 from tests.integration.conftest import ADMIN_URL
 from tests.integration.test_paper_capture import CAL, DAY, FIXTURES, SID, FakeClient, engine  # noqa: F401
-from tests.integration.test_paper_cycle import FULL, inputs, runs_at
+from tests.integration.test_paper_cycle import FULL, SHIPPED, inputs, runs_at
 
 pytestmark = pytest.mark.skipif(not ADMIN_URL, reason="TEST_DATABASE_URL not set")
 
@@ -104,3 +104,51 @@ def test_planning_can_be_switched_off(engine: Engine, tmp_path: Path) -> None:  
 
 def test_now_is_timezone_aware() -> None:
     assert plan_time(CAL, FULL, NOON).tzinfo is UTC
+
+
+def test_history_runs_once_per_session_after_its_plan(engine: Engine, tmp_path: Path,  # noqa: F811
+                                                      monkeypatch: pytest.MonkeyPatch) -> None:
+    """The ESPN history step (docs/ESPN.md): after the session's plan, once; its run is not a "paper_" run, so its
+    requests never count against the recorder's API-Football bound."""
+    from dataclasses import replace
+
+    from app.domain.enums import SourceCode
+    from app.domain.registry import Registry
+    from app.ingestion import pipeline
+    from tests.integration.test_espn_history import FakeEspn
+
+    assert SHIPPED.history.enabled                                   # the shipped config switches it on
+    monkeypatch.setattr(pipeline, "Espn", FakeEspn)
+    plain = inputs(engine, tmp_path, cfg=FULL.model_copy(update={"history": SHIPPED.history}))
+    noon_at = plan_time(CAL, FULL, NOON)
+
+    # the test league has no ESPN code: the step has nothing to fetch and starts no run
+    run_cycle(plain, now=noon_at + timedelta(minutes=1))
+    runs_at(engine, noon_at + timedelta(minutes=1))
+    with engine.connect() as c:
+        assert c.execute(text("select count(*) from raw.ingestion_runs "
+                              "where job_name like 'espn_history:%'")).scalar() == 0
+
+    # with an ESPN code for the league
+    leagues = [c.model_copy(update={"providers": {**c.providers, SourceCode.ESPN: f"tst.{i}"}})
+               for i, c in enumerate(plain.registry.competitions)]
+    x = replace(plain, registry=Registry(leagues))
+
+    run_cycle(x, now=noon_at - timedelta(minutes=30))
+    with engine.connect() as c:
+        before = c.execute(text("select count(*) from raw.ingestion_runs "
+                                "where job_name like 'espn_history:%'")).scalar()
+    assert before == 0                                               # nothing before the plan time
+
+    t = noon_at + timedelta(minutes=1)
+    r = run_cycle(x, now=t)
+    runs_at(engine, t)
+    run_cycle(x, now=t + timedelta(minutes=5))
+    with engine.connect() as c:
+        rows = c.execute(text("select job_name, status::text from raw.ingestion_runs "
+                              "where job_name like 'espn_history:%'")).all()
+    assert [tuple(row) for row in rows] == [(f"espn_history:{NOON}", "SUCCEEDED")]
+    assert any(ln.startswith(f"{NOON} history (ESPN):") for ln in r.lines)
+    noon = {s["id"]: s for s in session_schedule(x, t + timedelta(minutes=6))}[str(NOON)]   # the Recorder screen
+    assert (noon["history_enabled"], noon["history_status"], noon["history_summaries"]) == (True, "SUCCEEDED", 0)
+    assert noon["history_stopped_at_budget"] is False

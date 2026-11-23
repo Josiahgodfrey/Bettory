@@ -69,10 +69,10 @@ def run_rechecks(engine: Engine, store: Callable[[], RawStore], registry: Regist
     if not todo:
         return run
     keys = [c.provider_key for c in todo if c.provider_key]
-    if api_key and keys and max_requests >= 2:
+    if api_key and keys and max_requests >= (2 if cfg.with_odds else 1):
         try:
             st = pipeline.api_football_recheck(engine, store(), registry, api_key, keys, max_requests,
-                                               requests_per_minute=requests_per_minute,
+                                               requests_per_minute=requests_per_minute, with_odds=cfg.with_odds,
                                                job_name=f"{RECHECK_JOB}{now.astimezone(UTC):%Y-%m-%dT%H:%M}")
             run.fetched = int(st.get("fixtures_requested", 0))
         except Exception as exc:  # verify with what is known; the failed run is in the run history

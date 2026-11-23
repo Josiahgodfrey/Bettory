@@ -28,7 +28,7 @@ from app.ingestion.health_view import snapshot
 from app.notifications import outbox
 from app.paper.capture import RECORDER_JOB_PREFIX, capture_job
 from app.paper.config import PaperConfig, load_paper_config
-from app.paper.cycle import RESULTS_JOB, CycleInputs, CycleResult, run_cycle
+from app.paper.cycle import HISTORY_JOB, RESULTS_JOB, CycleInputs, CycleResult, run_cycle
 from app.paper.freeze import Provenance, due_sessions
 from app.paper.plan import plan_job, timeline
 from app.storage.raw_store import RawStore, store_from_settings
@@ -128,12 +128,19 @@ def session_schedule(x: CycleInputs, now: datetime) -> list[dict[str, Any]]:
         plan = ops_repo.latest_run_like(x.engine, plan_job(sid))
         captured = tl.capture_from is not None and "SUCCEEDED" in {
             s.value for s in ops_repo.run_statuses_since(x.engine, capture_job(sid), tl.capture_from)}
+        history = ops_repo.latest_run_since(x.engine, f"{HISTORY_JOB}{sid}", tl.plan_at)
+        hstats = (history or {}).get("stats") or {}
         out.append({
             "id": tl.session_id, "start_utc": tl.start, "end_utc": tl.end, "deadline_utc": tl.deadline,
             "plan_at_utc": tl.plan_at, "plan_status": plan["status"] if plan else None,
             "fixtures": len(fixtures), "first_kickoff_utc": tl.first_kickoff, "capture_from_utc": tl.capture_from,
             "captured": captured, "as_of_utc": tl.as_of, "ready_by_utc": tl.ready_by, "frozen": frozen,
             "ended": t.end_utc <= now,
+            "history_enabled": x.cfg.history.enabled,
+            "history_status": history["status"] if history else None,
+            "history_summaries": int(hstats.get("summaries", 0)) if history else None,
+            "history_teams_without_link": int(hstats.get("teams_without_espn_link", 0)) if history else None,
+            "history_stopped_at_budget": bool(hstats.get("stopped_at_request_budget")) if history else None,
         })
     return [jsonable(r) for r in out]
 

@@ -37,7 +37,15 @@ from tests.integration.test_paper_capture import capture as manual_capture
 from tests.support import PARAMS
 
 pytestmark = pytest.mark.skipif(not ADMIN_URL, reason="TEST_DATABASE_URL not set")
-FULL = load_paper_config()
+SHIPPED = load_paper_config()
+# ESPN history (docs/ESPN.md) off in every recorder test but its own (test_paper_plan): no test fetches from ESPN.
+# The odds steps (capture, closing, re-check odds) are off in the shipped config since 2026-11-23 (probabilities only,
+# params 1.6); they still exist for params <= 1.5, so these tests switch them on to keep them tested.
+FULL = SHIPPED.model_copy(update={
+    "history": SHIPPED.history.model_copy(update={"enabled": False}),
+    "capture": SHIPPED.capture.model_copy(update={"enabled": True}),
+    "closing": SHIPPED.closing.model_copy(update={"enabled": True}),
+    "recheck": SHIPPED.recheck.model_copy(update={"with_odds": True})})
 # the tests of capture / freeze / results / settle load their fixtures themselves: planning off (tested separately)
 CFG = FULL.model_copy(update={"plan": FULL.plan.model_copy(update={"enabled": False})})
 
