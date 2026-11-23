@@ -7,7 +7,7 @@ services:
     runtime: docker
     region: frankfurt
     plan: starter            # always on; the free plan sleeps after 15 minutes and cannot run the scheduler
-    branch: frontend         # switch to main once the branches are merged
+    branch: main
     rootDir: backend
     dockerfilePath: ./Dockerfile
     dockerContext: .
