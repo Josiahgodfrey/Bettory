@@ -85,6 +85,7 @@ class MappingMethod(StrEnum):  # db: core.mapping_method
     EXACT_ID = "EXACT_ID"
     ALIAS = "ALIAS"
     MANUAL = "MANUAL"
+    FIXTURE_PAIRING = "FIXTURE_PAIRING"  # ESPN: linked through a stored match (docs/ESPN.md)
 
 
 class ReviewStatus(StrEnum):  # db: core.review_status
@@ -158,6 +159,7 @@ class SourceCode(StrEnum):
     FOOTBALL_DATA_ORG = "FOOTBALL_DATA_ORG"
     OPENFOOTBALL = "OPENFOOTBALL"
     FOOTBALL_DATA_CO_UK = "FOOTBALL_DATA_CO_UK"
+    ESPN = "ESPN"
     MANUAL = "MANUAL"
 
 
@@ -166,6 +168,7 @@ SOURCE_IDS: dict[SourceCode, int] = {
     SourceCode.FOOTBALL_DATA_ORG: 2,
     SourceCode.OPENFOOTBALL: 3,
     SourceCode.FOOTBALL_DATA_CO_UK: 4,
+    SourceCode.ESPN: 5,
     SourceCode.MANUAL: 9,
 }
 

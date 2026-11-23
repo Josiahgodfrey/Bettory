@@ -70,7 +70,7 @@ T0 = datetime(2025, 9, 1, 15, 0, tzinfo=UTC)
 
 def test_sources_seeded(conn: psycopg.Connection) -> None:
     codes = [r["code"] for r in conn.execute("select code from core.sources order by id")]
-    assert codes == ["API_FOOTBALL", "FOOTBALL_DATA_ORG", "OPENFOOTBALL", "FOOTBALL_DATA_CO_UK", "MANUAL"]
+    assert codes == ["API_FOOTBALL", "FOOTBALL_DATA_ORG", "OPENFOOTBALL", "FOOTBALL_DATA_CO_UK", "ESPN", "MANUAL"]
 
 
 def test_valid_match_accepted(conn: psycopg.Connection) -> None:

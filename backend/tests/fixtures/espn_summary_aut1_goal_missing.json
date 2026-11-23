@@ -1,0 +1,647 @@
+{
+ "header": {
+  "id": "747348",
+  "season": {
+   "year": 2025,
+   "current": false,
+   "type": 13552,
+   "name": "2025-26 Austrian Bundesliga, Regular Season"
+  },
+  "competitions": [
+   {
+    "date": "2025-08-23T15:00Z",
+    "status": {
+     "type": {
+      "id": "28",
+      "name": "STATUS_FULL_TIME",
+      "state": "post",
+      "completed": true,
+      "description": "Full Time",
+      "detail": "FT",
+      "shortDetail": "FT"
+     }
+    },
+    "competitors": [
+     {
+      "homeAway": "home",
+      "id": "21950",
+      "score": "0",
+      "linescores": [
+       {
+        "displayValue": "0"
+       },
+       {
+        "displayValue": "0"
+       }
+      ],
+      "team": {
+       "id": "21950",
+       "displayName": "FC Blau-Weiß Linz"
+      }
+     },
+     {
+      "homeAway": "away",
+      "id": "3759",
+      "score": "2",
+      "linescores": [
+       {
+        "displayValue": "0"
+       },
+       {
+        "displayValue": "2"
+       }
+      ],
+      "team": {
+       "id": "3759",
+       "displayName": "SV Josko Ried"
+      }
+     }
+    ]
+   }
+  ]
+ },
+ "keyEvents": [
+  {
+   "type": {
+    "id": "76",
+    "text": "Substitution",
+    "type": "substitution"
+   },
+   "period": {
+    "number": 1
+   },
+   "clock": {
+    "value": 540.0,
+    "displayValue": "9'"
+   },
+   "scoringPlay": false,
+   "shootout": false,
+   "team": {
+    "id": "21950",
+    "displayName": "FC Blau-Weiß Linz"
+   },
+   "participants": [
+    {
+     "athlete": {
+      "id": "342099",
+      "displayName": "Jakob Knollmüller"
+     }
+    },
+    {
+     "athlete": {
+      "id": "238291",
+      "displayName": "Ronivaldo"
+     }
+    }
+   ],
+   "text": "Jakob Knollmüller (FC Blau-Weiß Linz) Substitution at 9'"
+  },
+  {
+   "type": {
+    "id": "94",
+    "text": "Yellow Card",
+    "type": "yellow-card"
+   },
+   "period": {
+    "number": 1
+   },
+   "clock": {
+    "value": 1380.0,
+    "displayValue": "23'"
+   },
+   "scoringPlay": false,
+   "shootout": false,
+   "team": {
+    "id": "21950",
+    "displayName": "FC Blau-Weiß Linz"
+   },
+   "participants": [
+    {
+     "athlete": {
+      "id": "237535",
+      "displayName": "Fabio Strauss"
+     }
+    }
+   ],
+   "text": "Fabio Strauss (FC Blau-Weiß Linz) Yellow Card at 23'"
+  },
+  {
+   "type": {
+    "id": "94",
+    "text": "Yellow Card",
+    "type": "yellow-card"
+   },
+   "period": {
+    "number": 1
+   },
+   "clock": {
+    "value": 2100.0,
+    "displayValue": "35'"
+   },
+   "scoringPlay": false,
+   "shootout": false,
+   "team": {
+    "id": "21950",
+    "displayName": "FC Blau-Weiß Linz"
+   },
+   "participants": [
+    {
+     "athlete": {
+      "id": "238288",
+      "displayName": "Manuel Maranda"
+     }
+    }
+   ],
+   "text": "Manuel Maranda (FC Blau-Weiß Linz) Yellow Card at 35'"
+  },
+  {
+   "type": {
+    "id": "94",
+    "text": "Yellow Card",
+    "type": "yellow-card"
+   },
+   "period": {
+    "number": 1
+   },
+   "clock": {
+    "value": 2160.0,
+    "displayValue": "36'"
+   },
+   "scoringPlay": false,
+   "shootout": false,
+   "team": {
+    "id": "3759",
+    "displayName": "SV Josko Ried"
+   },
+   "participants": [
+    {
+     "athlete": {
+      "id": "320940",
+      "displayName": "Philipp Pomer"
+     }
+    }
+   ],
+   "text": "Philipp Pomer (SV Josko Ried) Yellow Card at 36'"
+  },
+  {
+   "type": {
+    "id": "76",
+    "text": "Substitution",
+    "type": "substitution"
+   },
+   "period": {
+    "number": 2
+   },
+   "clock": {
+    "value": 2700.0,
+    "displayValue": "45'"
+   },
+   "scoringPlay": false,
+   "shootout": false,
+   "team": {
+    "id": "3759",
+    "displayName": "SV Josko Ried"
+   },
+   "participants": [
+    {
+     "athlete": {
+      "id": "319826",
+      "displayName": "Antonio Van Wyk"
+     }
+    },
+    {
+     "athlete": {
+      "id": "334820",
+      "displayName": "Mark Grosse"
+     }
+    }
+   ],
+   "text": "Antonio Van Wyk (SV Josko Ried) Substitution at 45'"
+  },
+  {
+   "type": {
+    "id": "76",
+    "text": "Substitution",
+    "type": "substitution"
+   },
+   "period": {
+    "number": 2
+   },
+   "clock": {
+    "value": 2700.0,
+    "displayValue": "45'"
+   },
+   "scoringPlay": false,
+   "shootout": false,
+   "team": {
+    "id": "3759",
+    "displayName": "SV Josko Ried"
+   },
+   "participants": [
+    {
+     "athlete": {
+      "id": "270388",
+      "displayName": "Jonathan Scherzer"
+     }
+    },
+    {
+     "athlete": {
+      "id": "399122",
+      "displayName": "Peter Kiedl"
+     }
+    }
+   ],
+   "text": "Jonathan Scherzer (SV Josko Ried) Substitution at 45'"
+  },
+  {
+   "type": {
+    "id": "94",
+    "text": "Yellow Card",
+    "type": "yellow-card"
+   },
+   "period": {
+    "number": 2
+   },
+   "clock": {
+    "value": 3840.0,
+    "displayValue": "64'"
+   },
+   "scoringPlay": false,
+   "shootout": false,
+   "team": {
+    "id": "21950",
+    "displayName": "FC Blau-Weiß Linz"
+   },
+   "participants": [
+    {
+     "athlete": {
+      "id": "286989",
+      "displayName": "Christopher Cvetko"
+     }
+    }
+   ],
+   "text": "Christopher Cvetko (FC Blau-Weiß Linz) Yellow Card at 64'"
+  },
+  {
+   "type": {
+    "id": "76",
+    "text": "Substitution",
+    "type": "substitution"
+   },
+   "period": {
+    "number": 2
+   },
+   "clock": {
+    "value": 3900.0,
+    "displayValue": "65'"
+   },
+   "scoringPlay": false,
+   "shootout": false,
+   "team": {
+    "id": "21950",
+    "displayName": "FC Blau-Weiß Linz"
+   },
+   "participants": [
+    {
+     "athlete": {
+      "id": "305584",
+      "displayName": "João Luiz Soares Alves"
+     }
+    },
+    {
+     "athlete": {
+      "id": "238905",
+      "displayName": "Simon Pirkl"
+     }
+    }
+   ],
+   "text": "João Luiz Soares Alves (FC Blau-Weiß Linz) Substitution at 65'"
+  },
+  {
+   "type": {
+    "id": "76",
+    "text": "Substitution",
+    "type": "substitution"
+   },
+   "period": {
+    "number": 2
+   },
+   "clock": {
+    "value": 3900.0,
+    "displayValue": "65'"
+   },
+   "scoringPlay": false,
+   "shootout": false,
+   "team": {
+    "id": "21950",
+    "displayName": "FC Blau-Weiß Linz"
+   },
+   "participants": [
+    {
+     "athlete": {
+      "id": "364525",
+      "displayName": "Alexander Briedl"
+     }
+    },
+    {
+     "athlete": {
+      "id": "286989",
+      "displayName": "Christopher Cvetko"
+     }
+    }
+   ],
+   "text": "Alexander Briedl (FC Blau-Weiß Linz) Substitution at 65'"
+  },
+  {
+   "type": {
+    "id": "70",
+    "text": "Goal",
+    "type": "goal"
+   },
+   "period": {
+    "number": 2
+   },
+   "clock": {
+    "value": 3960.0,
+    "displayValue": "66'"
+   },
+   "scoringPlay": true,
+   "shootout": false,
+   "team": {
+    "id": "3759",
+    "displayName": "SV Josko Ried"
+   },
+   "participants": [
+    {
+     "athlete": {
+      "id": "320940",
+      "displayName": "Philipp Pomer"
+     }
+    }
+   ],
+   "text": "Philipp Pomer (SV Josko Ried) Goal at 66'"
+  },
+  {
+   "type": {
+    "id": "76",
+    "text": "Substitution",
+    "type": "substitution"
+   },
+   "period": {
+    "number": 2
+   },
+   "clock": {
+    "value": 4020.0,
+    "displayValue": "67'"
+   },
+   "scoringPlay": false,
+   "shootout": false,
+   "team": {
+    "id": "3759",
+    "displayName": "SV Josko Ried"
+   },
+   "participants": [
+    {
+     "athlete": {
+      "id": "219322",
+      "displayName": "Martin Rasner"
+     }
+    },
+    {
+     "athlete": {
+      "id": "334113",
+      "displayName": "Jonas Mayer"
+     }
+    }
+   ],
+   "text": "Martin Rasner (SV Josko Ried) Substitution at 67'"
+  },
+  {
+   "type": {
+    "id": "76",
+    "text": "Substitution",
+    "type": "substitution"
+   },
+   "period": {
+    "number": 2
+   },
+   "clock": {
+    "value": 4380.0,
+    "displayValue": "73'"
+   },
+   "scoringPlay": false,
+   "shootout": false,
+   "team": {
+    "id": "21950",
+    "displayName": "FC Blau-Weiß Linz"
+   },
+   "participants": [
+    {
+     "athlete": {
+      "id": "214633",
+      "displayName": "Thomas Goiginger"
+     }
+    },
+    {
+     "athlete": {
+      "id": "325993",
+      "displayName": "Paul Mensah"
+     }
+    }
+   ],
+   "text": "Thomas Goiginger (FC Blau-Weiß Linz) Substitution at 73'"
+  },
+  {
+   "type": {
+    "id": "76",
+    "text": "Substitution",
+    "type": "substitution"
+   },
+   "period": {
+    "number": 2
+   },
+   "clock": {
+    "value": 4380.0,
+    "displayValue": "73'"
+   },
+   "scoringPlay": false,
+   "shootout": false,
+   "team": {
+    "id": "21950",
+    "displayName": "FC Blau-Weiß Linz"
+   },
+   "participants": [
+    {
+     "athlete": {
+      "id": "313063",
+      "displayName": "Murharem Huskovic"
+     }
+    },
+    {
+     "athlete": {
+      "id": "364541",
+      "displayName": "Simon Seidl"
+     }
+    }
+   ],
+   "text": "Murharem Huskovic (FC Blau-Weiß Linz) Substitution at 73'"
+  },
+  {
+   "type": {
+    "id": "94",
+    "text": "Yellow Card",
+    "type": "yellow-card"
+   },
+   "period": {
+    "number": 2
+   },
+   "clock": {
+    "value": 4500.0,
+    "displayValue": "75'"
+   },
+   "scoringPlay": false,
+   "shootout": false,
+   "team": {
+    "id": "21950",
+    "displayName": "FC Blau-Weiß Linz"
+   },
+   "participants": [
+    {
+     "athlete": {
+      "id": "305584",
+      "displayName": "João Luiz Soares Alves"
+     }
+    }
+   ],
+   "text": "João Luiz Soares Alves (FC Blau-Weiß Linz) Yellow Card at 75'"
+  },
+  {
+   "type": {
+    "id": "94",
+    "text": "Yellow Card",
+    "type": "yellow-card"
+   },
+   "period": {
+    "number": 2
+   },
+   "clock": {
+    "value": 4620.0,
+    "displayValue": "77'"
+   },
+   "scoringPlay": false,
+   "shootout": false,
+   "team": {
+    "id": "21950",
+    "displayName": "FC Blau-Weiß Linz"
+   },
+   "participants": [
+    {
+     "athlete": {
+      "id": "364583",
+      "displayName": "Alem Pasic"
+     }
+    }
+   ],
+   "text": "Alem Pasic (FC Blau-Weiß Linz) Yellow Card at 77'"
+  },
+  {
+   "type": {
+    "id": "76",
+    "text": "Substitution",
+    "type": "substitution"
+   },
+   "period": {
+    "number": 2
+   },
+   "clock": {
+    "value": 4920.0,
+    "displayValue": "82'"
+   },
+   "scoringPlay": false,
+   "shootout": false,
+   "team": {
+    "id": "3759",
+    "displayName": "SV Josko Ried"
+   },
+   "participants": [
+    {
+     "athlete": {
+      "id": "374528",
+      "displayName": "Fabian Rossdorfer"
+     }
+    },
+    {
+     "athlete": {
+      "id": "320940",
+      "displayName": "Philipp Pomer"
+     }
+    }
+   ],
+   "text": "Fabian Rossdorfer (SV Josko Ried) Substitution at 82'"
+  },
+  {
+   "type": {
+    "id": "76",
+    "text": "Substitution",
+    "type": "substitution"
+   },
+   "period": {
+    "number": 2
+   },
+   "clock": {
+    "value": 5400.0,
+    "displayValue": "90'+2'"
+   },
+   "scoringPlay": false,
+   "shootout": false,
+   "team": {
+    "id": "3759",
+    "displayName": "SV Josko Ried"
+   },
+   "participants": [
+    {
+     "athlete": {
+      "id": "392663",
+      "displayName": "Ekain Azkune"
+     }
+    },
+    {
+     "athlete": {
+      "id": "368312",
+      "displayName": "Kingstone Mutandwa"
+     }
+    }
+   ],
+   "text": "Ekain Azkune (SV Josko Ried) Substitution at 92'"
+  },
+  {
+   "type": {
+    "id": "94",
+    "text": "Yellow Card",
+    "type": "yellow-card"
+   },
+   "period": {
+    "number": 2
+   },
+   "clock": {
+    "value": 5400.0,
+    "displayValue": "90'+3'"
+   },
+   "scoringPlay": false,
+   "shootout": false,
+   "team": {
+    "id": "21950",
+    "displayName": "FC Blau-Weiß Linz"
+   },
+   "participants": [
+    {
+     "athlete": {
+      "id": "21896",
+      "displayName": "Thomas Turner"
+     }
+    }
+   ],
+   "text": "Thomas Turner (FC Blau-Weiß Linz) Yellow Card at 93'"
+  }
+ ]
+}

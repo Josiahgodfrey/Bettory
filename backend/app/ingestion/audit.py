@@ -84,6 +84,13 @@ def audit_run(stats: Mapping[str, int], error: str | None, cfg: QualityConfig) -
         f.append(Finding(Level.INFO, "BUDGET_REACHED",
                          f"request budget reached: {s.get('fixtures_still_without_minutes', 0)} fixtures still "
                          "without goal minutes - run again (resumes where it stopped)"))
+    espn_errors = {k: s.get(k, 0) for k in ("scoreboard_errors", "schedule_errors", "summary_errors") if s.get(k)}
+    if espn_errors:
+        f.append(Finding(Level.WARNING, "PAGES_FAILED", "pages that could not be fetched (skipped, the next run tries "
+                         "again): " + ", ".join(f"{k.removesuffix('_errors')} {v}" for k, v in espn_errors.items())))
+    if teams := s.get("teams_without_espn_link", 0):
+        f.append(Finding(Level.INFO, "TEAMS_NOT_LINKED", f"{teams} fixture teams without an ESPN id yet: their "
+                         "histories were not loaded (linked by a later run, or through the review queue)"))
     if retries := s.get("rate_limit_retries", 0):
         f.append(Finding(Level.INFO, "RATE_LIMIT_RETRIES", f"{retries} requests retried after the per-minute limit"))
 

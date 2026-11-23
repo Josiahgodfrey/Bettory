@@ -14,16 +14,20 @@ from app.calculation.recovery import FifteenMinute, derive_fifteen
 from app.domain.enums import FixtureStatus, ReconciliationStatus, Severity, SourceCode
 from app.domain.models import Score, SourceGoal, SourceMatch
 
+# ESPN (docs/ESPN.md) ranks after the established sources everywhere: it fills gaps; where another source has the
+# value, ESPN's version only takes part in the agreement check (a disagreement is a CONFLICT, as for any source).
 SCORE_PRIORITY = (
     SourceCode.API_FOOTBALL,
     SourceCode.FOOTBALL_DATA_ORG,
     SourceCode.OPENFOOTBALL,
+    SourceCode.ESPN,
     SourceCode.FOOTBALL_DATA_CO_UK,
 )
-GOALS_PRIORITY = (SourceCode.API_FOOTBALL, SourceCode.OPENFOOTBALL)
+GOALS_PRIORITY = (SourceCode.API_FOOTBALL, SourceCode.OPENFOOTBALL, SourceCode.ESPN)
 KICKOFF_PRIORITY = (
     SourceCode.API_FOOTBALL,
     SourceCode.FOOTBALL_DATA_ORG,
+    SourceCode.ESPN,
     SourceCode.FOOTBALL_DATA_CO_UK,
     SourceCode.OPENFOOTBALL,
 )

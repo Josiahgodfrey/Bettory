@@ -57,6 +57,15 @@ def mapped_entity(conn: Connection, source: SourceCode, entity_type: EntityType,
     ).scalar_one_or_none()
 
 
+def provider_keys_for(conn: Connection, source: SourceCode, entity_type: EntityType, entity_id: UUID) -> list[str]:
+    """The source's keys linked to one entity (normally one; e.g. ["id:364"])."""
+    return list(conn.execute(
+        text("select provider_key from core.provider_entity_map "
+             "where source_id = :s and entity_type = :t and entity_id = :e order by created_at"),
+        {"s": SOURCE_IDS[source], "t": entity_type.value, "e": entity_id},
+    ).scalars())
+
+
 def add_mapping(conn: Connection, source: SourceCode, entity_type: EntityType, provider_key: str,
                 entity_id: UUID, method: MappingMethod) -> None:
     conn.execute(

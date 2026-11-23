@@ -9,6 +9,7 @@ from app.domain.enums import DB_ENUMS
 
 MIGRATIONS = Path(__file__).resolve().parents[3] / "supabase" / "migrations"
 ENUM_RE = re.compile(r"create type\s+([\w.]+)\s+as enum\s*\(([^)]*)\)", re.IGNORECASE)
+ADD_VALUE_RE = re.compile(r"alter type\s+([\w.]+)\s+add value\s+(?:if not exists\s+)?'([^']*)'", re.IGNORECASE)
 
 
 def _db_enums() -> dict[str, list[str]]:
@@ -16,6 +17,9 @@ def _db_enums() -> dict[str, list[str]]:
     for sql_file in sorted(MIGRATIONS.glob("*.sql")):
         for name, body in ENUM_RE.findall(sql_file.read_text(encoding="utf-8")):
             found[name.lower()] = re.findall(r"'([^']*)'", body)
+        for name, value in ADD_VALUE_RE.findall(sql_file.read_text(encoding="utf-8")):  # appended in file order
+            if value not in found[name.lower()]:
+                found[name.lower()].append(value)
     return found
 
 

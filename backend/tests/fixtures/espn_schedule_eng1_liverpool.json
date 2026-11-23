@@ -1,0 +1,418 @@
+{
+ "season": {
+  "year": 2026,
+  "type": 14308,
+  "name": "2026-27 English Premier League",
+  "displayName": "2026-27 English Premier League",
+  "half": 1
+ },
+ "events": [
+  {
+   "id": "401878755",
+   "date": "2026-11-22T16:30Z",
+   "season": {
+    "year": 2026,
+    "displayName": "2026-27 English Premier League"
+   },
+   "competitions": [
+    {
+     "status": {
+      "type": {
+       "name": "STATUS_FULL_TIME",
+       "state": "post",
+       "completed": true
+      }
+     },
+     "competitors": [
+      {
+       "homeAway": "home",
+       "id": "364",
+       "team": {
+        "id": "364",
+        "displayName": "Liverpool"
+       }
+      },
+      {
+       "homeAway": "away",
+       "id": "360",
+       "team": {
+        "id": "360",
+        "displayName": "Manchester United"
+       }
+      }
+     ]
+    }
+   ]
+  },
+  {
+   "id": "401879243",
+   "date": "2026-11-08T14:00Z",
+   "season": {
+    "year": 2026,
+    "displayName": "2026-27 English Premier League"
+   },
+   "competitions": [
+    {
+     "status": {
+      "type": {
+       "name": "STATUS_FULL_TIME",
+       "state": "post",
+       "completed": true
+      }
+     },
+     "competitors": [
+      {
+       "homeAway": "home",
+       "id": "384",
+       "team": {
+        "id": "384",
+        "displayName": "Crystal Palace"
+       }
+      },
+      {
+       "homeAway": "away",
+       "id": "364",
+       "team": {
+        "id": "364",
+        "displayName": "Liverpool"
+       }
+      }
+     ]
+    }
+   ]
+  },
+  {
+   "id": "401879246",
+   "date": "2026-11-01T16:30Z",
+   "season": {
+    "year": 2026,
+    "displayName": "2026-27 English Premier League"
+   },
+   "competitions": [
+    {
+     "status": {
+      "type": {
+       "name": "STATUS_FULL_TIME",
+       "state": "post",
+       "completed": true
+      }
+     },
+     "competitors": [
+      {
+       "homeAway": "home",
+       "id": "364",
+       "team": {
+        "id": "364",
+        "displayName": "Liverpool"
+       }
+      },
+      {
+       "homeAway": "away",
+       "id": "359",
+       "team": {
+        "id": "359",
+        "displayName": "Arsenal"
+       }
+      }
+     ]
+    }
+   ]
+  },
+  {
+   "id": "401878765",
+   "date": "2026-10-25T14:00Z",
+   "season": {
+    "year": 2026,
+    "displayName": "2026-27 English Premier League"
+   },
+   "competitions": [
+    {
+     "status": {
+      "type": {
+       "name": "STATUS_FULL_TIME",
+       "state": "post",
+       "completed": true
+      }
+     },
+     "competitors": [
+      {
+       "homeAway": "home",
+       "id": "364",
+       "team": {
+        "id": "364",
+        "displayName": "Liverpool"
+       }
+      },
+      {
+       "homeAway": "away",
+       "id": "331",
+       "team": {
+        "id": "331",
+        "displayName": "Brighton & Hove Albion"
+       }
+      }
+     ]
+    }
+   ]
+  },
+  {
+   "id": "401879262",
+   "date": "2026-10-17T14:00Z",
+   "season": {
+    "year": 2026,
+    "displayName": "2026-27 English Premier League"
+   },
+   "competitions": [
+    {
+     "status": {
+      "type": {
+       "name": "STATUS_FULL_TIME",
+       "state": "post",
+       "completed": true
+      }
+     },
+     "competitors": [
+      {
+       "homeAway": "home",
+       "id": "337",
+       "team": {
+        "id": "337",
+        "displayName": "Brentford"
+       }
+      },
+      {
+       "homeAway": "away",
+       "id": "364",
+       "team": {
+        "id": "364",
+        "displayName": "Liverpool"
+       }
+      }
+     ]
+    }
+   ]
+  },
+  {
+   "id": "401879264",
+   "date": "2026-10-11T15:30Z",
+   "season": {
+    "year": 2026,
+    "displayName": "2026-27 English Premier League"
+   },
+   "competitions": [
+    {
+     "status": {
+      "type": {
+       "name": "STATUS_FULL_TIME",
+       "state": "post",
+       "completed": true
+      }
+     },
+     "competitors": [
+      {
+       "homeAway": "home",
+       "id": "364",
+       "team": {
+        "id": "364",
+        "displayName": "Liverpool"
+       }
+      },
+      {
+       "homeAway": "away",
+       "id": "382",
+       "team": {
+        "id": "382",
+        "displayName": "Manchester City"
+       }
+      }
+     ]
+    }
+   ]
+  },
+  {
+   "id": "401879276",
+   "date": "2026-09-20T13:00Z",
+   "season": {
+    "year": 2026,
+    "displayName": "2026-27 English Premier League"
+   },
+   "competitions": [
+    {
+     "status": {
+      "type": {
+       "name": "STATUS_FULL_TIME",
+       "state": "post",
+       "completed": true
+      }
+     },
+     "competitors": [
+      {
+       "homeAway": "home",
+       "id": "349",
+       "team": {
+        "id": "349",
+        "displayName": "AFC Bournemouth"
+       }
+      },
+      {
+       "homeAway": "away",
+       "id": "364",
+       "team": {
+        "id": "364",
+        "displayName": "Liverpool"
+       }
+      }
+     ]
+    }
+   ]
+  },
+  {
+   "id": "401879279",
+   "date": "2026-09-12T14:00Z",
+   "season": {
+    "year": 2026,
+    "displayName": "2026-27 English Premier League"
+   },
+   "competitions": [
+    {
+     "status": {
+      "type": {
+       "name": "STATUS_FULL_TIME",
+       "state": "post",
+       "completed": true
+      }
+     },
+     "competitors": [
+      {
+       "homeAway": "home",
+       "id": "364",
+       "team": {
+        "id": "364",
+        "displayName": "Liverpool"
+       }
+      },
+      {
+       "homeAway": "away",
+       "id": "370",
+       "team": {
+        "id": "370",
+        "displayName": "Fulham"
+       }
+      }
+     ]
+    }
+   ]
+  },
+  {
+   "id": "401879288",
+   "date": "2026-09-04T19:00Z",
+   "season": {
+    "year": 2026,
+    "displayName": "2026-27 English Premier League"
+   },
+   "competitions": [
+    {
+     "status": {
+      "type": {
+       "name": "STATUS_FULL_TIME",
+       "state": "post",
+       "completed": true
+      }
+     },
+     "competitors": [
+      {
+       "homeAway": "home",
+       "id": "373",
+       "team": {
+        "id": "373",
+        "displayName": "Ipswich Town"
+       }
+      },
+      {
+       "homeAway": "away",
+       "id": "364",
+       "team": {
+        "id": "364",
+        "displayName": "Liverpool"
+       }
+      }
+     ]
+    }
+   ]
+  },
+  {
+   "id": "401879314",
+   "date": "2026-08-29T11:30Z",
+   "season": {
+    "year": 2026,
+    "displayName": "2026-27 English Premier League"
+   },
+   "competitions": [
+    {
+     "status": {
+      "type": {
+       "name": "STATUS_FULL_TIME",
+       "state": "post",
+       "completed": true
+      }
+     },
+     "competitors": [
+      {
+       "homeAway": "home",
+       "id": "364",
+       "team": {
+        "id": "364",
+        "displayName": "Liverpool"
+       }
+      },
+      {
+       "homeAway": "away",
+       "id": "393",
+       "team": {
+        "id": "393",
+        "displayName": "Nottingham Forest"
+       }
+      }
+     ]
+    }
+   ]
+  },
+  {
+   "id": "401879319",
+   "date": "2026-08-23T15:30Z",
+   "season": {
+    "year": 2026,
+    "displayName": "2026-27 English Premier League"
+   },
+   "competitions": [
+    {
+     "status": {
+      "type": {
+       "name": "STATUS_FULL_TIME",
+       "state": "post",
+       "completed": true
+      }
+     },
+     "competitors": [
+      {
+       "homeAway": "home",
+       "id": "361",
+       "team": {
+        "id": "361",
+        "displayName": "Newcastle United"
+       }
+      },
+      {
+       "homeAway": "away",
+       "id": "364",
+       "team": {
+        "id": "364",
+        "displayName": "Liverpool"
+       }
+      }
+     ]
+    }
+   ]
+  }
+ ]
+}

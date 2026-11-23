@@ -1,0 +1,599 @@
+{
+ "header": {
+  "id": "740612",
+  "season": {
+   "year": 2025,
+   "current": false,
+   "type": 13481,
+   "name": "2025-26 English Premier League"
+  },
+  "competitions": [
+   {
+    "date": "2025-08-24T15:30Z",
+    "status": {
+     "type": {
+      "id": "28",
+      "name": "STATUS_FULL_TIME",
+      "state": "post",
+      "completed": true,
+      "description": "Full Time",
+      "detail": "FT",
+      "shortDetail": "FT"
+     }
+    },
+    "competitors": [
+     {
+      "homeAway": "home",
+      "id": "370",
+      "score": "1",
+      "linescores": [
+       {
+        "displayValue": "0"
+       },
+       {
+        "displayValue": "1"
+       }
+      ],
+      "team": {
+       "id": "370",
+       "displayName": "Fulham"
+      }
+     },
+     {
+      "homeAway": "away",
+      "id": "360",
+      "score": "1",
+      "linescores": [
+       {
+        "displayValue": "0"
+       },
+       {
+        "displayValue": "1"
+       }
+      ],
+      "team": {
+       "id": "360",
+       "displayName": "Manchester United"
+      }
+     }
+    ]
+   }
+  ]
+ },
+ "keyEvents": [
+  {
+   "type": {
+    "id": "80",
+    "text": "Kickoff",
+    "type": "kickoff"
+   },
+   "period": {
+    "number": 1
+   },
+   "clock": {
+    "value": 0.0,
+    "displayValue": ""
+   },
+   "scoringPlay": false,
+   "shootout": false,
+   "text": "First Half begins."
+  },
+  {
+   "type": {
+    "id": "113",
+    "text": "Penalty - Missed",
+    "type": "penalty---missed"
+   },
+   "period": {
+    "number": 1
+   },
+   "clock": {
+    "value": 2240.0,
+    "displayValue": "38'"
+   },
+   "scoringPlay": false,
+   "shootout": false,
+   "team": {
+    "id": "360",
+    "displayName": "Manchester United"
+   },
+   "participants": [
+    {
+     "athlete": {
+      "id": "124091",
+      "displayName": "Bruno Fernandes"
+     }
+    }
+   ],
+   "text": "Penalty missed. Bruno Fernandes (Manchester United) right footed shot is too high."
+  },
+  {
+   "type": {
+    "id": "94",
+    "text": "Yellow Card",
+    "type": "yellow-card"
+   },
+   "period": {
+    "number": 1
+   },
+   "clock": {
+    "value": 2316.0,
+    "displayValue": "39'"
+   },
+   "scoringPlay": false,
+   "shootout": false,
+   "team": {
+    "id": "360",
+    "displayName": "Manchester United"
+   },
+   "participants": [
+    {
+     "athlete": {
+      "id": "173666",
+      "displayName": "Casemiro"
+     }
+    }
+   ],
+   "text": "Casemiro (Manchester United) is shown the yellow card."
+  },
+  {
+   "type": {
+    "id": "81",
+    "text": "Halftime",
+    "type": "halftime"
+   },
+   "period": {
+    "number": 1
+   },
+   "clock": {
+    "value": 2700.0,
+    "displayValue": "45'+3'"
+   },
+   "scoringPlay": false,
+   "shootout": false,
+   "text": "First Half ends, Fulham 0, Manchester United 0."
+  },
+  {
+   "type": {
+    "id": "82",
+    "text": "Start 2nd Half",
+    "type": "start-2nd-half"
+   },
+   "period": {
+    "number": 2
+   },
+   "clock": {
+    "value": 2700.0,
+    "displayValue": "45'"
+   },
+   "scoringPlay": false,
+   "shootout": false,
+   "text": "Second Half begins Fulham 0, Manchester United 0."
+  },
+  {
+   "type": {
+    "id": "76",
+    "text": "Substitution",
+    "type": "substitution"
+   },
+   "period": {
+    "number": 2
+   },
+   "clock": {
+    "value": 3112.0,
+    "displayValue": "52'"
+   },
+   "scoringPlay": false,
+   "shootout": false,
+   "team": {
+    "id": "360",
+    "displayName": "Manchester United"
+   },
+   "participants": [
+    {
+     "athlete": {
+      "id": "238902",
+      "displayName": "Diogo Dalot"
+     }
+    },
+    {
+     "athlete": {
+      "id": "291630",
+      "displayName": "Amad Diallo"
+     }
+    }
+   ],
+   "text": "Substitution, Manchester United. Diogo Dalot replaces Amad Diallo."
+  },
+  {
+   "type": {
+    "id": "76",
+    "text": "Substitution",
+    "type": "substitution"
+   },
+   "period": {
+    "number": 2
+   },
+   "clock": {
+    "value": 3121.0,
+    "displayValue": "53'"
+   },
+   "scoringPlay": false,
+   "shootout": false,
+   "team": {
+    "id": "360",
+    "displayName": "Manchester United"
+   },
+   "participants": [
+    {
+     "athlete": {
+      "id": "289155",
+      "displayName": "Benjamin Sesko"
+     }
+    },
+    {
+     "athlete": {
+      "id": "173666",
+      "displayName": "Casemiro"
+     }
+    }
+   ],
+   "text": "Substitution, Manchester United. Benjamin Sesko replaces Casemiro."
+  },
+  {
+   "type": {
+    "id": "97",
+    "text": "Own Goal",
+    "type": "own-goal"
+   },
+   "period": {
+    "number": 2
+   },
+   "clock": {
+    "value": 3451.0,
+    "displayValue": "58'"
+   },
+   "scoringPlay": true,
+   "shootout": false,
+   "team": {
+    "id": "360",
+    "displayName": "Manchester United"
+   },
+   "participants": [
+    {
+     "athlete": {
+      "id": "301525",
+      "displayName": "Rodrigo Muniz"
+     }
+    }
+   ],
+   "text": "Own Goal by Rodrigo Muniz, Fulham. Fulham 0, Manchester United 1."
+  },
+  {
+   "type": {
+    "id": "76",
+    "text": "Substitution",
+    "type": "substitution"
+   },
+   "period": {
+    "number": 2
+   },
+   "clock": {
+    "value": 3691.0,
+    "displayValue": "62'"
+   },
+   "scoringPlay": false,
+   "shootout": false,
+   "team": {
+    "id": "370",
+    "displayName": "Fulham"
+   },
+   "participants": [
+    {
+     "athlete": {
+      "id": "194801",
+      "displayName": "Harry Wilson"
+     }
+    },
+    {
+     "athlete": {
+      "id": "197163",
+      "displayName": "Timothy Castagne"
+     }
+    }
+   ],
+   "text": "Substitution, Fulham. Harry Wilson replaces Timothy Castagne."
+  },
+  {
+   "type": {
+    "id": "76",
+    "text": "Substitution",
+    "type": "substitution"
+   },
+   "period": {
+    "number": 2
+   },
+   "clock": {
+    "value": 3696.0,
+    "displayValue": "62'"
+   },
+   "scoringPlay": false,
+   "shootout": false,
+   "team": {
+    "id": "370",
+    "displayName": "Fulham"
+   },
+   "participants": [
+    {
+     "athlete": {
+      "id": "222396",
+      "displayName": "Antonee Robinson"
+     }
+    },
+    {
+     "athlete": {
+      "id": "241328",
+      "displayName": "Ryan Sessegnon"
+     }
+    }
+   ],
+   "text": "Substitution, Fulham. Antonee Robinson replaces Ryan Sessegnon."
+  },
+  {
+   "type": {
+    "id": "76",
+    "text": "Substitution",
+    "type": "substitution"
+   },
+   "period": {
+    "number": 2
+   },
+   "clock": {
+    "value": 4131.0,
+    "displayValue": "69'"
+   },
+   "scoringPlay": false,
+   "shootout": false,
+   "team": {
+    "id": "360",
+    "displayName": "Manchester United"
+   },
+   "participants": [
+    {
+     "athlete": {
+      "id": "241468",
+      "displayName": "Manuel Ugarte"
+     }
+    },
+    {
+     "athlete": {
+      "id": "231167",
+      "displayName": "Mason Mount"
+     }
+    }
+   ],
+   "text": "Substitution, Manchester United. Manuel Ugarte replaces Mason Mount."
+  },
+  {
+   "type": {
+    "id": "76",
+    "text": "Substitution",
+    "type": "substitution"
+   },
+   "period": {
+    "number": 2
+   },
+   "clock": {
+    "value": 4223.0,
+    "displayValue": "71'"
+   },
+   "scoringPlay": false,
+   "shootout": false,
+   "team": {
+    "id": "370",
+    "displayName": "Fulham"
+   },
+   "participants": [
+    {
+     "athlete": {
+      "id": "167060",
+      "displayName": "Raúl Jiménez"
+     }
+    },
+    {
+     "athlete": {
+      "id": "301525",
+      "displayName": "Rodrigo Muniz"
+     }
+    }
+   ],
+   "text": "Substitution, Fulham. Raúl Jiménez replaces Rodrigo Muniz."
+  },
+  {
+   "type": {
+    "id": "76",
+    "text": "Substitution",
+    "type": "substitution"
+   },
+   "period": {
+    "number": 2
+   },
+   "clock": {
+    "value": 4230.0,
+    "displayValue": "71'"
+   },
+   "scoringPlay": false,
+   "shootout": false,
+   "team": {
+    "id": "370",
+    "displayName": "Fulham"
+   },
+   "participants": [
+    {
+     "athlete": {
+      "id": "266697",
+      "displayName": "Emile Smith Rowe"
+     }
+    },
+    {
+     "athlete": {
+      "id": "409541",
+      "displayName": "Josh King"
+     }
+    }
+   ],
+   "text": "Substitution, Fulham. Emile Smith Rowe replaces Josh King."
+  },
+  {
+   "type": {
+    "id": "173",
+    "text": "Goal - Volley",
+    "type": "goal---volley"
+   },
+   "period": {
+    "number": 2
+   },
+   "clock": {
+    "value": 4324.0,
+    "displayValue": "73'"
+   },
+   "scoringPlay": true,
+   "shootout": false,
+   "team": {
+    "id": "370",
+    "displayName": "Fulham"
+   },
+   "participants": [
+    {
+     "athlete": {
+      "id": "266697",
+      "displayName": "Emile Smith Rowe"
+     }
+    },
+    {
+     "athlete": {
+      "id": "175063",
+      "displayName": "Alex Iwobi"
+     }
+    }
+   ],
+   "text": "Goal! Fulham 1, Manchester United 1. Emile Smith Rowe (Fulham) right footed shot from very close range to the bottom left corner. Assisted by Alex Iwobi with a through ball."
+  },
+  {
+   "type": {
+    "id": "94",
+    "text": "Yellow Card",
+    "type": "yellow-card"
+   },
+   "period": {
+    "number": 2
+   },
+   "clock": {
+    "value": 5146.0,
+    "displayValue": "86'"
+   },
+   "scoringPlay": false,
+   "shootout": false,
+   "team": {
+    "id": "370",
+    "displayName": "Fulham"
+   },
+   "participants": [
+    {
+     "athlete": {
+      "id": "222300",
+      "displayName": "Sasa Lukic"
+     }
+    }
+   ],
+   "text": "Sasa Lukic (Fulham) is shown the yellow card for a bad foul."
+  },
+  {
+   "type": {
+    "id": "76",
+    "text": "Substitution",
+    "type": "substitution"
+   },
+   "period": {
+    "number": 2
+   },
+   "clock": {
+    "value": 5188.0,
+    "displayValue": "87'"
+   },
+   "scoringPlay": false,
+   "shootout": false,
+   "team": {
+    "id": "360",
+    "displayName": "Manchester United"
+   },
+   "participants": [
+    {
+     "athlete": {
+      "id": "356044",
+      "displayName": "Ayden Heaven"
+     }
+    },
+    {
+     "athlete": {
+      "id": "340206",
+      "displayName": "Leny Yoro"
+     }
+    }
+   ],
+   "text": "Substitution, Manchester United. Ayden Heaven replaces Leny Yoro."
+  },
+  {
+   "type": {
+    "id": "76",
+    "text": "Substitution",
+    "type": "substitution"
+   },
+   "period": {
+    "number": 2
+   },
+   "clock": {
+    "value": 5198.0,
+    "displayValue": "87'"
+   },
+   "scoringPlay": false,
+   "shootout": false,
+   "team": {
+    "id": "360",
+    "displayName": "Manchester United"
+   },
+   "participants": [
+    {
+     "athlete": {
+      "id": "157073",
+      "displayName": "Harry Maguire"
+     }
+    },
+    {
+     "athlete": {
+      "id": "167127",
+      "displayName": "Luke Shaw"
+     }
+    }
+   ],
+   "text": "Substitution, Manchester United. Harry Maguire replaces Luke Shaw."
+  },
+  {
+   "type": {
+    "id": "83",
+    "text": "End Regular Time",
+    "type": "end-regular-time"
+   },
+   "period": {
+    "number": 2
+   },
+   "clock": {
+    "value": 5400.0,
+    "displayValue": "90'+6'"
+   },
+   "scoringPlay": false,
+   "shootout": false,
+   "text": "Second Half ends, Fulham 1, Manchester United 1."
+  }
+ ]
+}

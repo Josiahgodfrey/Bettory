@@ -9,7 +9,7 @@
 |---|---|
 | Project | `syheclbxfmviccltkppa` (from `SUPABASE_URL`) |
 | Region | eu-west-1 (Ireland), Postgres 17 |
-| Migrations applied | all 8 in `supabase/migrations/` (2026-11-14 .. 2026-11-20), recorded in `supabase_migrations.schema_migrations` |
+| Migrations applied | all 9 in `supabase/migrations/` (2026-11-14 .. 2026-11-23; the 9th, `20261123120000_espn_source.sql`, pushed 2026-11-23 after a dry run), recorded in `supabase_migrations.schema_migrations` |
 | Check 2026-11-17 | schema compared with the local database: 298 columns, 218 constraints, 22 triggers, 14 functions, 61 indexes, 16 enums, 24 tables — identical; RLS on every table; no grants and no schema usage for `anon` / `authenticated`; a rolled-back smoke test confirmed the hash chain and the append-only guards |
 | Data | copied 2026-11-17 from the local database (`pg_dump` data-only + `psql` in one transaction): 24 tables, every row identical (checksums by id) |
 | Backend | uses Supabase since 2026-11-17: `.env` `SUPABASE_PROJECT_REF`, `DATABASE_HOST` (pooler), `DATABASE_PORT=5432`, `DATABASE_PASSWORD`; the local database is kept as `LOCAL_DATABASE_URL` (frozen copy, not updated any more) |
@@ -34,6 +34,10 @@ command — that is how the first "dry run" became a real push on 2026-11-17):
 supabase db push --db-url "<pooler url>" --dry-run      # see what would be applied
 supabase db push --db-url "<pooler url>"                # apply
 ```
+
+The Supabase CLI reads `BETTORY/.env` and refuses a variable name with a hyphen (`unexpected character '-' in
+variable name`, 2026-11-23: a non-BETTORY entry). Remove such lines from `.env`, or run the CLI from a folder that
+holds only a copy of `supabase/`.
 
 `db push` applies only migrations not yet recorded in `supabase_migrations.schema_migrations`. A migration that is
 already applied must never be edited: write a new one.

@@ -88,10 +88,26 @@ class DailyMax(_Strict):
         return self.pro if plan == "pro" else self.free
 
 
+class EspnDaily(_Strict):
+    """Nightly ESPN forward fill (docs/ESPN.md): the last `days_back` days of every league with an ESPN code -
+    fixtures, scores, goal minutes. No key, no daily quota: never counted against API-Football."""
+
+    enabled: bool = False
+    time: str = Field(default="02:00", pattern=r"^([01]\d|2[0-3]):[0-5]\d$")  # in schedule.timezone
+    days_back: int = Field(default=3, ge=1, le=14)
+    max_requests: int = Field(default=1500, ge=10, le=10000)
+
+    @property
+    def hour_minute(self) -> tuple[int, int]:
+        h, m = (int(x) for x in self.time.split(":"))
+        return h, m
+
+
 class BackfillConfig(_Strict):
     schedule: Schedule
     daily_max_requests: DailyMax
     targets: list[Target] = Field(min_length=1)
+    espn: EspnDaily = EspnDaily()
 
     @model_validator(mode="after")
     def _unique(self) -> Self:

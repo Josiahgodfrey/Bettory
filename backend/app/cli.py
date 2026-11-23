@@ -29,7 +29,7 @@ import argparse
 import json
 import logging
 import sys
-from datetime import UTC, date, datetime
+from datetime import UTC, date, datetime, timedelta
 from pathlib import Path
 from typing import Any
 from uuid import UUID
@@ -44,6 +44,7 @@ from app.backtest.tuning_plan import check_unchanged, current_plan_path, lineage
 from app.backtest.tuning_report import render_tuning, tuning_json, variations_csv
 from app.core.provenance import code_version
 from app.core.settings import BACKEND_DIR, get_settings
+from app.domain.enums import SourceCode
 from app.domain.params import Params, load_params, params_path
 from app.domain.quality_config import load_quality_config
 from app.domain.registry import load_registry
@@ -92,6 +93,24 @@ def main(argv: list[str] | None = None) -> int:
     day.add_argument("--events", type=int, default=20, help="max requests for goal minutes")
     day.add_argument("--odds", type=int, default=20, help="max requests for odds")
     day.add_argument("--reparse", action="store_true")
+
+    eh = ingest.add_parser("espn-history", help="ESPN goal minutes for the recent matches of the teams playing "
+                                                "between --from and --to (docs/ESPN.md)")
+    eh.add_argument("--from", dest="start", required=True, type=datetime.fromisoformat,
+                    help="UTC start, e.g. 2026-11-24T10:00")
+    eh.add_argument("--to", dest="end", required=True, type=datetime.fromisoformat)
+    eh.add_argument("--comp", action="append", help="competition code (repeatable; default: every ESPN league)")
+    eh.add_argument("--max-requests", type=int, default=1500)
+    eh.add_argument("--all", action="store_true", help="fetch summaries also for matches already complete")
+    ed = ingest.add_parser("espn-days", help="whole match days of whole leagues from ESPN: fixtures, scores and "
+                                             "goal minutes (resumable; docs/ESPN.md)")
+    ed.add_argument("--comp", action="append", help="competition code (repeatable; default: every ESPN league)")
+    ed.add_argument("--from", dest="start", required=True, type=date.fromisoformat)
+    ed.add_argument("--to", dest="end", required=True, type=date.fromisoformat)
+    ed.add_argument("--max-requests", type=int, default=1500)
+    ed.add_argument("--all", action="store_true", help="fetch summaries also for matches already complete")
+    ed.add_argument("--reparse", action="store_true",
+                    help="load every page again (after team links were added in the review queue)")
 
     review = sub.add_parser("review").add_subparsers(dest="action", required=True)
     review.add_parser("list")
@@ -374,6 +393,31 @@ def main(argv: list[str] | None = None) -> int:
 
     store = store_from_settings(settings)
     rpm = settings.api_football_requests_per_minute
+    if args.source in ("espn-history", "espn-days"):
+        codes = args.comp or [c.code for c in registry.competitions if SourceCode.ESPN in c.providers]
+        unknown = [c for c in codes if c not in {x.code for x in registry.competitions}]
+        if unknown:
+            print(f"unknown competition(s): {', '.join(unknown)}", file=sys.stderr)
+            return 2
+        if args.source == "espn-history":
+            start, end = (d if d.tzinfo else d.replace(tzinfo=UTC) for d in (args.start, args.end))
+            with engine.connect() as conn:
+                teams = paper_repo.session_fixture_teams(conn, start, end, codes)
+            n = load_params(BACKEND_DIR / settings.params_file).data_gate.history_matches
+            stats = pipeline.espn_history(engine, store, registry, [pipeline.FixtureRef(*t) for t in teams],
+                                          history_matches=n,
+                                          max_requests=args.max_requests, skip_complete=not args.all,
+                                          job_name=f"espn_history:manual:{start:%Y-%m-%dT%H:%M}")
+        else:
+            if args.end < args.start or (args.end - args.start).days > 400:
+                print("--to must be on or after --from, at most 400 days later", file=sys.stderr)
+                return 2
+            days = [args.start + timedelta(days=i) for i in range((args.end - args.start).days + 1)]
+            stats = pipeline.espn_days(engine, store, registry, codes, days, max_requests=args.max_requests,
+                                       skip_complete=not args.all, reparse=args.reparse,
+                                       job_name=f"espn_days:{args.start}:{args.end}")
+        print(pipeline.format_stats(stats))
+        return 0
     if args.source == "openfootball":
         stats = pipeline.openfootball(engine, store, registry, args.comp, args.season, args.full, args.reparse)
     elif args.source == "football-data-org":
