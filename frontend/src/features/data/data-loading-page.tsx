@@ -34,6 +34,8 @@ const SOURCES = {
   'api-football-season': { label: 'API-Football: season fixtures', source: 'API_FOOTBALL', kind: 'season', quota: true },
   'api-football-backfill': { label: 'API-Football: goal-minute backfill', source: 'API_FOOTBALL', kind: 'backfill', quota: true },
   'api-football-day': { label: 'API-Football: one day (fixtures, goals, odds)', source: 'API_FOOTBALL', kind: 'day', quota: true },
+  'espn-days': { label: 'ESPN: league match days (fixtures, scores, goal minutes)', source: 'ESPN', kind: 'espn-days', quota: false },
+  'espn-history': { label: 'ESPN: team histories for upcoming fixtures', source: 'ESPN', kind: 'espn-history', quota: false },
 } as const
 type SourceKey = keyof typeof SOURCES
 
@@ -69,6 +71,8 @@ function StartLoad({ onStarted }: { onStarted: (runId: string) => void }) {
   const chosen = options.find((c) => c.code === comp) ?? options[0]
   const [season, setSeason] = useState('')
   const [confirm, setConfirm] = useState<null | (() => void)>(null)
+  const [picked, setPicked] = useState<string[]>([])
+  const espn = src.kind === 'espn-days' || src.kind === 'espn-history'
   useEffect(() => setSeason(chosen?.example_season ?? ''), [chosen?.code, chosen?.example_season])
 
   const start = useMutation({
@@ -91,6 +95,22 @@ function StartLoad({ onStarted }: { onStarted: (runId: string) => void }) {
     let body: Record<string, unknown>
     if (src.kind === 'day') {
       body = { date: String(f.get('date')), max_event_requests: num('events') ?? 20, max_odds_requests: num('odds') ?? 20, reparse: on('reparse') }
+    } else if (src.kind === 'espn-days') {
+      body = {
+        competitions: picked,
+        date_from: String(f.get('date_from')),
+        date_to: String(f.get('date_to')),
+        max_requests: num('max_requests') ?? 1500,
+        include_complete: on('include_complete'),
+      }
+    } else if (src.kind === 'espn-history') {
+      body = {
+        competitions: picked,
+        start_utc: eatToIso(String(f.get('start'))),
+        end_utc: eatToIso(String(f.get('end'))),
+        max_requests: num('max_requests') ?? 1500,
+        include_complete: on('include_complete'),
+      }
     } else {
       body = { competition: chosen?.code, season: season.trim(), reparse: on('reparse') }
       if (key === 'openfootball') body.full = on('full')
@@ -138,6 +158,12 @@ function StartLoad({ onStarted }: { onStarted: (runId: string) => void }) {
                     ))}
                   </SelectContent>
                 </Select>
+                {espn && (
+                  <FieldDescription>
+                    Free, no key: does not use API-Football requests. About one page per second, so large loads take a while; run the same load
+                    again to finish what is missing.
+                  </FieldDescription>
+                )}
                 {src.quota && (
                   <FieldDescription>
                     Uses API-Football requests
@@ -145,7 +171,16 @@ function StartLoad({ onStarted }: { onStarted: (runId: string) => void }) {
                   </FieldDescription>
                 )}
               </Field>
-              {src.kind === 'day' ? (
+              {espn ? (
+                <EspnFields
+                  key={`${src.kind}-${today}`}
+                  kind={src.kind}
+                  today={today || eatToday()}
+                  comps={options}
+                  picked={picked}
+                  setPicked={setPicked}
+                />
+              ) : src.kind === 'day' ? (
                 <>
                   <Field>
                     <FieldLabel htmlFor="ing-date">Date (UTC)</FieldLabel>
@@ -189,18 +224,22 @@ function StartLoad({ onStarted }: { onStarted: (runId: string) => void }) {
                   </Field>
                 </div>
               )}
-              {src.kind === 'backfill' && (
+              {(src.kind === 'backfill' || espn) && (
                 <Field>
                   <FieldLabel htmlFor="ing-max">Request budget (optional)</FieldLabel>
-                  <Input id="ing-max" name="max_requests" inputMode="numeric" placeholder="what is left today" />
+                  <Input id="ing-max" name="max_requests" inputMode="numeric" placeholder={espn ? '1500' : 'what is left today'} />
                 </Field>
               )}
               <div className="grid gap-2 text-sm">
                 {key === 'openfootball' && <Check name="full" label="Full season file (with goal minutes)" checked />}
                 {src.kind === 'backfill' && <Check name="skip_known_15" label="Skip matches whose 15′ score is already known" />}
-                <Check name="reparse" label="Re-read payloads already stored (no new requests for them)" />
+                {espn ? (
+                  <Check name="include_complete" label="Also matches already complete from another source (a second opinion; more pages)" />
+                ) : (
+                  <Check name="reparse" label="Re-read payloads already stored (no new requests for them)" />
+                )}
               </div>
-              <Button type="submit" disabled={start.isPending || (src.kind !== 'day' && !chosen)}>
+              <Button type="submit" disabled={start.isPending || (src.kind !== 'day' && !espn && !chosen)}>
                 {start.isPending ? 'Starting…' : 'Start'}
               </Button>
             </FieldGroup>
@@ -230,6 +269,86 @@ function StartLoad({ onStarted }: { onStarted: (runId: string) => void }) {
         </AlertDialogContent>
       </AlertDialog>
     </Card>
+  )
+}
+
+/** EAT (UTC+3, no daylight saving) wall-clock "YYYY-MM-DDTHH:MM" -> ISO with its offset. */
+function eatToIso(local: string): string {
+  return `${local}:00+03:00`
+}
+
+/** Today's date in EAT (UTC+3) from the browser clock: the default until the API's date has loaded. */
+function eatToday(): string {
+  return new Date(Date.now() + 3 * 3_600_000).toISOString().slice(0, 10)
+}
+
+function shiftDate(day: string, days: number): string {
+  if (!day) return ''
+  const d = new Date(`${day}T12:00:00Z`)
+  d.setUTCDate(d.getUTCDate() + days)
+  return d.toISOString().slice(0, 10)
+}
+
+/** ESPN loads (docs/ESPN.md): a date range or a fixture window, and the leagues (none ticked = all). */
+function EspnFields({
+  kind,
+  today,
+  comps,
+  picked,
+  setPicked,
+}: {
+  kind: string
+  today: string
+  comps: Schemas['CompetitionOut'][]
+  picked: string[]
+  setPicked: (v: string[]) => void
+}) {
+  const toggle = (code: string) => setPicked(picked.includes(code) ? picked.filter((c) => c !== code) : [...picked, code])
+  return (
+    <>
+      {kind === 'espn-days' ? (
+        <div className="grid grid-cols-2 gap-3">
+          <Field>
+            <FieldLabel htmlFor="espn-from">From (date)</FieldLabel>
+            <Input id="espn-from" name="date_from" type="date" defaultValue={shiftDate(today, -3)} required />
+          </Field>
+          <Field>
+            <FieldLabel htmlFor="espn-to">To (date)</FieldLabel>
+            <Input id="espn-to" name="date_to" type="date" defaultValue={shiftDate(today, -1)} required />
+          </Field>
+        </div>
+      ) : (
+        <div className="grid grid-cols-2 gap-3">
+          <Field>
+            <FieldLabel htmlFor="espn-start">Fixtures from (EAT)</FieldLabel>
+            <Input id="espn-start" name="start" type="datetime-local" defaultValue={today ? `${today}T13:00` : ''} required />
+          </Field>
+          <Field>
+            <FieldLabel htmlFor="espn-end">to (EAT)</FieldLabel>
+            <Input id="espn-end" name="end" type="datetime-local" defaultValue={today ? `${shiftDate(today, 1)}T13:00` : ''} required />
+          </Field>
+        </div>
+      )}
+      <Field>
+        <FieldLabel>Leagues</FieldLabel>
+        <FieldDescription>
+          {comps.length === 0
+            ? 'No competition has an ESPN code on this backend.'
+            : picked.length === 0
+              ? `None ticked: all ${comps.length} leagues with an ESPN code.`
+              : `${picked.length} ticked.`}
+          {kind === 'espn-history' && ' Loads the last 10 home and 10 away matches of every team with a fixture in the window.'}
+        </FieldDescription>
+        <div className="grid max-h-40 grid-cols-3 gap-x-3 gap-y-1 overflow-auto border p-2 text-xs sm:grid-cols-4" data-testid="espn-leagues">
+          {comps.map((c) => (
+            <label key={c.code} className="flex items-center gap-1.5" title={`${c.name} (${c.country})`}>
+              <input type="checkbox" checked={picked.includes(c.code)} onChange={() => toggle(c.code)} className="size-3.5 accent-primary" />
+              <span className="font-mono">{c.code}</span>
+            </label>
+          ))}
+        </div>
+      </Field>
+    </>
   )
 }
 

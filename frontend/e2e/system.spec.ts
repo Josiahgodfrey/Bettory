@@ -13,18 +13,18 @@ test('paper betting: the sealed record verifies and replays identically', async 
   const s = await sealedSession(page)
   await page.goto('/paper')
   const sealed = await (await page.request.get(`${API}/paper/report`)).json()
-  expect(sealed.frozen).toBe(2)
+  expect(sealed.frozen).toBe(3) // two listed games and the one without data
   await expect(page.getByText('Intact')).toBeVisible()
   await expect(page.getByText('Gate B — does BETTORY work?')).toBeVisible()
 
   await page.getByRole('button', { name: 'Verify now' }).click()
-  expect(await toast(page)).toContain('Record chain verified: 2 sealed predictions')
+  expect(await toast(page)).toContain('Record chain verified: 3 sealed predictions')
 
   await page.getByRole('button', { name: 'Replay' }).click()
   await expect(page.locator('[data-sonner-toast]').filter({ hasText: 'identical to the sealed record' })).toBeVisible({ timeout: 45_000 })
 
   // the sealed listed predictions link to their matches
-  await expect(page.locator(`a[href^="/matches/"][href$="session=${s.id}"]`)).toHaveCount(2)
+  await expect(page.locator(`a[href^="/matches/"][href$="session=${s.id}"]`)).toHaveCount(s.matches.length)
   expect(errors).toEqual([])
 })
 
@@ -32,12 +32,13 @@ test('recorder: a real cycle runs from the app and reports back', async ({ page 
   const errors = watchErrors(page)
   await page.goto('/recorder')
   await expect(page.getByText('What the next cycle would do')).toBeVisible()
+  await expect(page.getByText('History: team goal minutes (ESPN)').first()).toBeVisible() // the ESPN step of each session
   await page.getByRole('button', { name: 'Run one cycle now' }).click()
   await expect(page.getByRole('alertdialog')).toContainText('Sealed records cannot be undone')
   await page.getByRole('button', { name: 'Run cycle' }).click()
   expect(await toast(page)).toContain('Recorder cycle started')
   await expect(page.getByText(/Last cycle started here/)).toBeVisible({ timeout: 30_000 })
-  await expect(page.getByText('done').or(page.getByText(/error\(s\)/))).toBeVisible({ timeout: 30_000 })
+  await expect(page.getByText('done').or(page.getByText(/error\(s\)/)).first()).toBeVisible({ timeout: 30_000 })
 
   const st = await (await page.request.get(`${API}/paper/status`)).json()
   expect(st.manual_cycle.running).toBe(false)
@@ -69,4 +70,6 @@ test('settings show the betting rules from the API', async ({ page }) => {
   await expect(page.getByText('TZS')).toBeVisible()
   await expect(page.getByText('recorded and flagged, never refused')).toBeVisible()
   await expect(page.getByText('to confirm').first()).toBeVisible()
+  await expect(page.getByText('Team histories (ESPN)')).toBeVisible()
+  await expect(page.getByText('Nightly ESPN fill')).toBeVisible()
 })

@@ -375,6 +375,48 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/jobs/ingest/espn-days": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Ingest Espn Days
+         * @description ESPN (no key, no quota): each league's scoreboard of each day, then the goal minutes of every finished match
+         *     not stored from ESPN yet. Resumable: the same request again fetches only what is still missing.
+         */
+        post: operations["ingest_espn_days_jobs_ingest_espn_days_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/jobs/ingest/espn-history": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Ingest Espn History
+         * @description ESPN (no key, no quota): the last matches (10 home, 10 away) of every team with a SCHEDULED fixture in the
+         *     window - what the recorder's history step does for a session (docs/ESPN.md 5).
+         */
+        post: operations["ingest_espn_history_jobs_ingest_espn_history_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/jobs/ingest/football-data-co-uk": {
         parameters: {
             query?: never;
@@ -1319,6 +1361,72 @@ export interface components {
             draw: number;
             /** Home */
             home: number;
+        };
+        /**
+         * EspnDaysIngest
+         * @description Whole match days of whole leagues from ESPN (docs/ESPN.md): fixtures, scores, goal minutes. Resumable.
+         */
+        EspnDaysIngest: {
+            /**
+             * Competitions
+             * @description Registry codes; empty = every competition with an ESPN code
+             */
+            competitions?: string[];
+            /**
+             * Date From
+             * Format: date
+             */
+            date_from: string;
+            /**
+             * Date To
+             * Format: date
+             */
+            date_to: string;
+            /**
+             * Include Complete
+             * @description Fetch summaries also for matches already complete
+             * @default false
+             */
+            include_complete: boolean;
+            /**
+             * Max Requests
+             * @description About 1 request per second
+             * @default 1500
+             */
+            max_requests: number;
+        };
+        /**
+         * EspnHistoryIngest
+         * @description The recent matches (goal minutes) of the teams playing in a time window, from ESPN (docs/ESPN.md).
+         */
+        EspnHistoryIngest: {
+            /**
+             * Competitions
+             * @description Registry codes; empty = every competition with an ESPN code
+             */
+            competitions?: string[];
+            /**
+             * End Utc
+             * Format: date-time
+             */
+            end_utc: string;
+            /**
+             * Include Complete
+             * @description Fetch summaries also for matches already complete
+             * @default false
+             */
+            include_complete: boolean;
+            /**
+             * Max Requests
+             * @description About 1 request per second
+             * @default 1500
+             */
+            max_requests: number;
+            /**
+             * Start Utc
+             * Format: date-time
+             */
+            start_utc: string;
         };
         /** FixtureOut */
         FixtureOut: {
@@ -2325,6 +2433,16 @@ export interface components {
             fixtures: number;
             /** Frozen */
             frozen: number;
+            /** History Enabled */
+            history_enabled: boolean;
+            /** History Status */
+            history_status: string | null;
+            /** History Stopped At Budget */
+            history_stopped_at_budget: boolean | null;
+            /** History Summaries */
+            history_summaries: number | null;
+            /** History Teams Without Link */
+            history_teams_without_link: number | null;
             /** Id */
             id: string;
             /**
@@ -2346,7 +2464,7 @@ export interface components {
          * SourceCode
          * @enum {string}
          */
-        SourceCode: "API_FOOTBALL" | "FOOTBALL_DATA_ORG" | "OPENFOOTBALL" | "FOOTBALL_DATA_CO_UK" | "MANUAL";
+        SourceCode: "API_FOOTBALL" | "FOOTBALL_DATA_ORG" | "OPENFOOTBALL" | "FOOTBALL_DATA_CO_UK" | "ESPN" | "MANUAL";
         /** TeamOut */
         TeamOut: {
             /** Country */
@@ -3022,6 +3140,72 @@ export interface operations {
         requestBody: {
             content: {
                 "application/json": components["schemas"]["SeasonIngest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            202: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["JobAccepted"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    ingest_espn_days_jobs_ingest_espn_days_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["EspnDaysIngest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            202: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["JobAccepted"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    ingest_espn_history_jobs_ingest_espn_history_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["EspnHistoryIngest"];
             };
         };
         responses: {

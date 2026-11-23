@@ -50,6 +50,24 @@ test('data loading: the form reaches the API, which refuses API-Football without
   await expect(page.getByRole('option').first()).toBeVisible()
 })
 
+test('data loading: ESPN loads are offered, free of API-Football requests, and run', async ({ page }) => {
+  const errors = watchErrors(page)
+  await page.goto('/data-loading')
+  await page.getByRole('combobox', { name: 'Source' }).click()
+  await page.getByRole('option', { name: /ESPN: team histories/ }).click()
+  await expect(page.getByText('does not use API-Football requests')).toBeVisible()
+  await expect(page.getByLabel('Fixtures from (EAT)')).toBeVisible()
+  await page.getByRole('combobox', { name: 'Source' }).click()
+  await page.getByRole('option', { name: /ESPN: league match days/ }).click()
+  await expect(page.getByLabel('From (date)')).toBeVisible()
+  await expect(page.getByTestId('espn-leagues')).toBeVisible()
+  // the test backend's registry has no ESPN league: the run starts, asks nothing and succeeds (no confirmation dialog)
+  await page.getByRole('button', { name: 'Start' }).click()
+  expect(await toast(page)).toContain('Started: api:espn_days')
+  await expect(page.getByTestId('tracked-run')).toContainText('Succeeded')
+  expect(errors).toEqual([])
+})
+
 test('data health: run a cross-check, read its details', async ({ page }) => {
   const errors = watchErrors(page)
   const r = await page.request.post(`${API}/data-health/crosschecks`, { data: { competition: 'TST1', season: '2025-26' } })

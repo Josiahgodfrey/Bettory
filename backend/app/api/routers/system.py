@@ -30,6 +30,7 @@ from app.backtest.config import load_backtest_config
 from app.backtest.tuning_plan import current_plan_path
 from app.domain.betting_config import load_betting_config
 from app.domain.sessions import SessionCalendar
+from app.jobs.backfill import load_backfill_config
 from app.notifications import messages, outbox
 from app.paper.config import load_paper_config
 from app.storage.repositories import frontend as fe_repo
@@ -87,6 +88,7 @@ def settings_view(_: OwnerDep, settings: SettingsDep, params: ParamsDep, registr
         "stake": bt.estimated_value.stake,
         "betting": jsonable(load_betting_config().model_dump()),  # real bets: currency, max_stake
         "recorder": jsonable(load_paper_config().model_dump()),
+        "espn_daily": jsonable(load_backfill_config().espn.model_dump()),  # nightly ESPN fill (docs/ESPN.md)
         "api_football_plan": settings.api_football_plan,
     }
 

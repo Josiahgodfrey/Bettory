@@ -11,7 +11,6 @@ import { Skeleton } from '@/components/ui/skeleton'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { RecordBetDialog } from '@/features/bets/record-bet-dialog'
 import { ChecksList, FactsPanel, ModelsPanel, OddsPanel, TeamsPanel, type Analysis } from '@/features/match/panels'
-import { OddsCheck } from '@/features/match/odds-check'
 import type { Schemas } from '@/lib/api'
 import { dateTimeEat, num, odds, pct, sessionLabel } from '@/lib/format'
 import { analysisQuery, matchQuery, sessionFixturesQuery } from '@/lib/queries'
@@ -48,7 +47,6 @@ export function MatchPage() {
       {analysis.isPending && <Skeleton className="h-40" />}
       {analysis.isError && <ErrorState error={analysis.error} onRetry={() => void analysis.refetch()} />}
       {a && <Verdict analysis={a} entry={entry} title={title} />}
-      {m.status === 'SCHEDULED' && <OddsCheck matchId={matchId} title={title} withdrawn={withdrawn} />}
       {a && <Details analysis={a} entry={entry} match={m} />}
     </div>
   )
@@ -156,11 +154,23 @@ function MarketSummary({ label, p, fair, min }: { label: string; p?: number | nu
   return (
     <div className="border bg-muted/30 p-3">
       <div className="text-xs font-medium text-muted-foreground">{label}</div>
-      <div className="text-[10px] uppercase tracking-wide text-muted-foreground">Minimum odds</div>
-      <div className="font-heading text-2xl font-bold text-success tabular">{odds(min)}</div>
-      <div className="text-xs tabular">
-        P <span className="font-medium">{pct(p)}</span> <span className="text-muted-foreground">· fair {odds(fair)}</span>
-      </div>
+      {min == null ? (
+        <>
+          <div className="text-[10px] uppercase tracking-wide text-muted-foreground">Probability</div>
+          <div className="font-heading text-2xl font-bold text-success tabular" data-testid="probability">
+            {pct(p)}
+          </div>
+          <div className="text-xs tabular text-muted-foreground">fair odds {odds(fair)}</div>
+        </>
+      ) : (
+        <>
+          <div className="text-[10px] uppercase tracking-wide text-muted-foreground">Minimum odds</div>
+          <div className="font-heading text-2xl font-bold text-success tabular">{odds(min)}</div>
+          <div className="text-xs tabular">
+            P <span className="font-medium">{pct(p)}</span> <span className="text-muted-foreground">· fair {odds(fair)}</span>
+          </div>
+        </>
+      )}
     </div>
   )
 }

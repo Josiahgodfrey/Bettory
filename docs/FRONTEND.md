@@ -195,3 +195,27 @@ found by its own name (`app/storage/repositories/reference.py`; test in `tests/i
 Whole-application tests: `e2e/data.spec.ts` (link a review, create a club, the load form reaching the API and its
 refusal without an API-Football key, run a cross-check and read its details, a stored backtest, API status) —
 **37 passed** with the rest of the suite.
+
+## 7. ESPN in the app (2026-11-23)
+
+The ESPN goal-minute source (docs/ESPN.md) is reachable and visible from the app, not only from the command line
+and the worker.
+
+| Screen | Change | Backend |
+|---|---|---|
+| **Data loading** | two new loads: **"ESPN: league match days"** (date range; fixtures, scores and goal minutes of whole leagues - season backfills and catching up) and **"ESPN: team histories for upcoming fixtures"** (a window in EAT: the last 10 home and 10 away matches of every team playing in it). Leagues are ticked in a grid (none ticked = every ESPN league); request limit; "also matches already complete" for a second opinion. No API-Football confirmation dialog: ESPN uses no quota. The run is followed live like any other | `POST /jobs/ingest/espn-days`, `POST /jobs/ingest/espn-history` (validated: known leagues with an ESPN code, date order, at most 400 days / 7 days, time zone required) |
+| **Recorder → Session schedule** | a new step **"History: team goal minutes (ESPN)"** between plan and capture: done (with matches loaded, "stopped at its request limit", teams not linked), failed, running, due, "not run before the cut-off", or off | `SessionScheduleOut`: `history_enabled`, `history_status`, `history_summaries`, `history_teams_without_link`, `history_stopped_at_budget` |
+| **Settings → Recorder** | rows **"Team histories (ESPN)"** (on/off, page limit, all leagues) and **"Nightly ESPN fill"** (02:00 UTC, last 3 days) | `GET /settings`: `espn_daily` (the recorder's `history` was already in `recorder`) |
+| Everywhere | source names as their owners write them: "ESPN", "API-Football", "football-data.org", "openfootball", "football-data.co.uk" (was "Espn", "Api football"…) | — |
+
+Found by the new whole-application test: the ESPN date fields came up empty when the page opened before the API had
+answered with today's date (defaults apply only when a field first appears). Fixed: the browser's EAT date is the
+default, and the fields redraw when the API's date arrives.
+
+Also changed: the recorder's history step starts no run when none of the session's fixtures is in a league ESPN
+covers. The guard that keeps tests away from ESPN now blocks the request itself (creating the client is allowed),
+in the unit/integration tests and in the e2e backend.
+
+Tests: backend **532 passed** (new: the two job endpoints and their refusals, the schedule's history fields, the
+step without ESPN leagues); whole application **39 passed** (desktop and phone; new: the ESPN loads offered and run,
+the history step on the Recorder screen, the ESPN rows in Settings).

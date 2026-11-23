@@ -154,6 +154,7 @@ function GateB({ s }: { s: Obj }) {
 
 function Recorder({ s }: { s: Obj }) {
   const r = s.recorder as Obj | undefined
+  const e = s.espn_daily as Obj | undefined
   const plan = String(s.api_football_plan ?? 'free')
   return (
     <Section title="Recorder" description="config/paper.yaml">
@@ -165,6 +166,16 @@ function Recorder({ s }: { s: Obj }) {
           ['Lineup re-check', `${str(get(r, 'recheck', 'from_minutes'))}–${str(get(r, 'recheck', 'to_minutes'))} min before kick-off`],
           ['Closing odds', `${str(get(r, 'closing', 'minutes_before'))} min before kick-off`],
           ['Results', `every ${str(get(r, 'results', 'every_hours'))} h`],
+          [
+            'Team histories (ESPN)',
+            get(r, 'history', 'enabled')
+              ? `after each plan, before the cut-off · up to ${str(get(r, 'history', 'max_requests'))} pages${get(r, 'history', 'all_competitions') ? ' · all ESPN leagues' : ''}`
+              : 'off',
+          ],
+          [
+            'Nightly ESPN fill',
+            get(e, 'enabled') ? `${str(get(e, 'time'))} UTC · last ${str(get(e, 'days_back'))} days · every ESPN league` : 'off',
+          ],
         ]}
       />
     </Section>

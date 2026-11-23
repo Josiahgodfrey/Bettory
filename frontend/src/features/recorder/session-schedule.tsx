@@ -44,6 +44,7 @@ function SessionCard({ s, now }: { s: S; now: number }) {
   const noFixtures = s.plan_status === 'SUCCEEDED' && s.fixtures === 0
   const steps: { label: string; time: string | null | undefined; state: StepState; note?: string }[] = [
     { label: 'Plan: load fixtures', time: s.plan_at_utc, state: planState, note: s.plan_status === 'SUCCEEDED' ? `${s.fixtures} in the report leagues` : undefined },
+    { label: 'History: team goal minutes (ESPN)', time: null, ...historyStep(s, now) },
     {
       label: 'Capture odds',
       time: s.capture_from_utc,
@@ -86,6 +87,22 @@ function SessionCard({ s, now }: { s: S; now: number }) {
       </ol>
     </div>
   )
+}
+
+/** The ESPN history step (docs/ESPN.md 5): once, after the plan and before the cut-off. */
+function historyStep(s: S, now: number): { state: StepState; note?: string } {
+  if (!s.history_enabled) return { state: 'none', note: 'off' }
+  const extra = [
+    s.history_stopped_at_budget ? 'stopped at its request limit' : null,
+    s.history_teams_without_link ? `${s.history_teams_without_link} teams not linked` : null,
+  ].filter(Boolean)
+  if (s.history_status === 'SUCCEEDED')
+    return { state: 'done', note: [`${s.history_summaries ?? 0} matches loaded`, ...extra].join(' · ') }
+  if (s.history_status === 'FAILED') return { state: 'failed', note: 'failed (retried once)' }
+  if (s.history_status === 'RUNNING') return { state: 'next', note: 'running' }
+  if (at(s.as_of_utc, now)) return { state: 'none', note: 'not run before the cut-off' }
+  if (s.plan_status === 'SUCCEEDED') return { state: s.fixtures > 0 ? 'next' : 'none', note: s.fixtures > 0 ? 'after the plan' : undefined }
+  return { state: 'waiting', note: 'after the plan' }
 }
 
 function StepIcon({ state }: { state: StepState }) {

@@ -246,6 +246,7 @@ edited again: a change means a new migration (SUPABASE.md §3).
 | `20261118120000_placed_bets.sql` | schema `betting`: `placed_bets`, `bet_cancellations` (append-only, database clock) |
 | `20261119120000_paper_rechecks.sql` | `paper.rechecks` (hash-tied to the sealed prediction, refused after kick-off) |
 | `20261120120000_notifications.sql` | schema `ops`: `notifications` (the Telegram outbox) |
+| `20261123120000_espn_source.sql` | source `ESPN` (id 5), link method `FIXTURE_PAIRING` (applied to Supabase 2026-11-23, after a dry run) |
 
 ## 14. Configuration and environment
 
@@ -281,6 +282,36 @@ Secrets that were pasted in the chat (API key, database password, bot token) sho
 | Next session after midnight | the dashboard searches from yesterday | Between 00:00 and 00:59 EAT the running Noon session stays on Today |
 | Report link | `/sessions/<id>` | Telegram "report ready" opens the right page |
 | Test database port | Windows reserved ports 54293–54392 (took 54329): container `bettory-pg-55432` on port **55432** sharing the same data volume; the old `bettory-pg` is stopped, not deleted; backup `Documents/BETTORY_backups/bettory_dev_2026-11-18.dump` | `TEST_DATABASE_URL` and `LOCAL_DATABASE_URL` use 55432 |
+
+## 15c. 23 Nov: ESPN as a goal-minute source (docs/ESPN.md)
+
+| Change | How | Effect |
+|---|---|---|
+| Free source of goal minutes, many leagues | ESPN's public feeds (scoreboard, team schedule, match summary): fetcher, parser, raw payloads like any source. Checked first against 881 complete 2025-26 matches: 877 identical, the rest caught by the existing checks | This season's windows can fill without API-Football Pro; the API-Football quota stays for odds and the sealed matches |
+| Team links without fuzzy matching | exact alias, or through a stored match in which the other team is known (`FIXTURE_PAIRING`, new migration); the rest to the review queue | ESPN's different names ("FC Cologne") link to the right team; no duplicate teams |
+| Session history step | recorder cycle: after each session's plan, once, before its cut-off: the session teams' last 10 home and away matches (`config/paper.yaml` → `history`) | Each session fetches only what its fixtures need; nothing is counted against the API-Football bound |
+| Daily forward fill | worker, 02:00 UTC, last 3 days of every ESPN league (`config/backfill.yaml` → `espn`) | Windows and league baselines stay current |
+| 22 new leagues | `config/competitions.yaml`, `fifteen_minute_market: false` until the owner confirms the bookmaker; 9 existing competitions got their ESPN code | Data collected for 31 leagues; paper betting still covers the plan's leagues (ENG1, GER1, AUT1) until a new pre-registered plan |
+| Tests | parser and pairing unit tests on real trimmed payloads; job and recorder-step integration tests with a fake ESPN; a guard makes any real ESPN connection from a test fail | 526 backend tests pass (10 new) |
+| Parser checked on real data | the summary parser on all 880 complete 2025-26 matches of ENG1, GER1, AUT1 | goal lists 880 / 880 identical (minutes, sides, own goals); half-time 877 / 880; Linz–Ried stored without minutes |
+| Live database | migration pushed (dry run first); first load ENG1 22 Nov: 2 matches COMPLETE; season-so-far load started for 31 leagues (docs/ESPN.md §8) | This season's windows fill; the load continues from the PC (slow) or after deployment |
+| Supabase CLI and `.env` | the CLI refuses `.env` because of a non-BETTORY variable with hyphens (`TURBO-VPN-USER-ID`); worked around by running it from a copy of `supabase/` (SUPABASE.md §3) | Owner: move that line out of `.env` |
+| 19 more leagues (50 in all) | every other ESPN domestic league with complete current goal minutes; API-Football ids of all 41 added leagues checked against `/leagues` (1 request) | Switzerland, Finland, Poland, Czechia and others are not on ESPN: they need API-Football Pro (ESPN.md §6) |
+| **Paper betting on all 50 leagues** (owner decision) | `config/tuning_v3.yaml` supersedes v2: competitions = every registered league, prospective period from 2026-11-24; grid, selection, holdout and Gate B unchanged. `fifteen_minute_market: true` for all 50 | The forward test covers every league with enough data. Decided **without** a prior backtest of the added leagues (against the pre-registration rule; recorded in the plan). On the free plan odds are captured for about 10 fixtures per session only |
+| ESPN in the app | Data loading: "ESPN: league match days" and "ESPN: team histories"; Recorder: the history step in each session's timeline; Settings: the ESPN rows (FRONTEND.md §7) | The owner can load, follow and check ESPN data without the command line |
+| Sportmonks evaluated | owner's free token: ENG1, GER1, Denmark, Scotland; odds yes, but no 15-minute market | Not added (docs/ESPN.md §9) |
+
+## 15d. 23 Nov: probabilities only (owner decision) and the end-to-end verification
+
+| Change | How | Effect |
+|---|---|---|
+| **Params 1.6** (live) | `config/params_v1.6.yaml`, `app/core/settings.py` default | The system outputs probabilities only; the owner's betting app supplies the odds |
+| Layer 3 without odds | `probability.min_under05: 0.70`, `min_draw: 0.80` (`app/decision/layers.py`): a game passes when P(0-0 at 15') or P(draw at 15') reaches its minimum; the market furthest above its minimum is selected; no minimum odds, no bookmaker checks, no odds-based favourite flag | Bets = games passing on probabilities; failed games keep their reasons |
+| No Model C | `blend.team_weight 1.0 / market_weight 0.0`; Model C ignored in decisions and grades | Probabilities from team and league data only |
+| Sessions | deadlines 23:00 / 11:00 EAT, `run_buffer_minutes 0`: each analysis is sealed 2 h before its window opens (Night 01:00-12:59 at 23:00 the evening before, Day 13:00-00:59 at 11:00); planned at 19:00 / 07:00 | Fixed, predictable cut-offs, always before the first kick-off |
+| Recorder without odds | `config/paper.yaml`: `capture.enabled`, `closing.enabled` false, `recheck.with_odds` false (new switches; the odds steps stay for params <= 1.5) | No odds requests; API-Football is used for fixtures, lineups and results only |
+| Screens | Bets section and match page show the probability and fair odds (1/P); the odds-check form is removed; the report's how-to-bet text explains probability mode | — |
+| Tests | backend 541 passed (new: v1.6 decision, both sessions end to end with no odds request); whole application 43 passed (new `e2e/analysis.spec.ts`: probabilities valid and P(0-0) <= P(draw), pass/fail placement, API = UI, session stats, both sessions sealed 2 h early, empty session, fetch failure, repeated run; the e2e session has a team without data) | — |
 
 ## 16. What is not live yet
 
