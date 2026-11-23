@@ -10,3 +10,6 @@ __pycache__/
 
 # Backtest outputs (rows, summaries): regenerate with `python -m app.cli backtest`
 backend/backtests/
+
+# local Claude Code files (secrets.json, local settings): never commit
+.claude/
