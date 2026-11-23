@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import json
-from datetime import date, timedelta
+from datetime import date, datetime, timedelta
 from typing import Any
 from uuid import UUID
 
@@ -11,6 +11,7 @@ from sqlalchemy import Connection, text
 
 from app.domain.enums import SOURCE_IDS, FixtureStatus, Side, SourceCode
 from app.domain.models import Score, SourceGoal, SourceLineup, SourceMatch, SourceOdds
+from app.normalisation.pairing import StoredMatch
 from app.normalisation.reconcile import Issue, TrustedMatch
 
 _SOURCE_BY_ID = {v: k for k, v in SOURCE_IDS.items()}
@@ -236,3 +237,32 @@ def insert_lineup(conn: Connection, match_id: UUID, team_id: UUID, lu: SourceLin
         values (:m, :t, :f, cast(:p as jsonb), :s, :pl)"""),
         {"m": match_id, "t": team_id, "f": lu.formation, "p": json.dumps(lu.players_json()),
          "s": SOURCE_IDS[lu.source], "pl": payload_id})
+
+
+def stored_matches_near(conn: Connection, competition_code: str, start: datetime, end: datetime) -> list[StoredMatch]:
+    """Matches of one competition kicking off in [start, end] - the candidates for pairing a source's teams."""
+    rows = conn.execute(text(
+        "select m.id, m.home_team_id, m.away_team_id, m.kickoff_utc, m.ft_home, m.ft_away from core.matches m "
+        "join core.competition_seasons cs on cs.id = m.competition_season_id "
+        "join core.competitions c on c.id = cs.competition_id "
+        "where c.code = :c and m.kickoff_utc between :s and :e"), {"c": competition_code, "s": start, "e": end})
+    return [StoredMatch(r[0], r[1], r[2], r[3], (r[4], r[5]) if r[4] is not None and r[5] is not None else None)
+            for r in rows]
+
+
+def provider_keys_finished(conn: Connection, source: SourceCode, keys: list[str]) -> set[str]:
+    """Provider match keys for which `source` already delivered a FINISHED record (with or without minutes)."""
+    if not keys:
+        return set()
+    return set(conn.execute(text(
+        "select distinct provider_match_key from core.match_source_records "
+        "where source_id = :s and status = 'FINISHED' and provider_match_key = any(:k)"),
+        {"s": SOURCE_IDS[source], "k": keys}).scalars())
+
+
+def complete_match_between(conn: Connection, home_id: UUID, away_id: UUID, kickoff: datetime) -> bool:
+    """A stored match of these teams within a day of `kickoff` already has its full 15' data."""
+    return bool(conn.execute(text(
+        "select exists (select 1 from core.matches where home_team_id = :h and away_team_id = :a "
+        "and kickoff_utc between :s and :e and data_status = 'COMPLETE' and reconciliation_status <> 'CONFLICT')"),
+        {"h": home_id, "a": away_id, "s": kickoff - timedelta(days=1), "e": kickoff + timedelta(days=1)}).scalar_one())

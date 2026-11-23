@@ -19,6 +19,7 @@ import {
 import { Button } from '@/components/ui/button'
 import { Card, CardAction, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Skeleton } from '@/components/ui/skeleton'
+import { SessionSchedule } from '@/features/recorder/session-schedule'
 import { api, ApiError, unwrap, type Schemas } from '@/lib/api'
 import { dateTimeEat, humanize, num, relative } from '@/lib/format'
 import { cn } from '@/lib/utils'
@@ -36,7 +37,7 @@ export function RecorderPage() {
     <>
       <PageHeader
         title="Recorder"
-        description={`Captures odds, seals predictions at the cut-off, re-checks lineups, stores closing odds and settles results — every ${q.data?.schedule_every_minutes ?? 5} minutes when running.`}
+        description={`Plans each session's fixtures, captures odds, seals predictions at the cut-off, re-checks lineups, stores closing odds and settles results — every ${q.data?.schedule_every_minutes ?? 5} minutes when running.`}
         actions={
           <Button variant="outline" size="sm" onClick={() => void q.refetch()} disabled={q.isFetching}>
             <RefreshCw className={cn(q.isFetching && 'animate-spin')} /> Refresh
@@ -48,6 +49,7 @@ export function RecorderPage() {
       {q.data && (
         <div className="grid gap-4">
           <Tiles s={q.data} />
+          <SessionSchedule sessions={q.data.sessions ?? []} now={q.data.now_utc} />
           <div className="grid gap-4 lg:grid-cols-2">
             <DueNow s={q.data} />
             <LastRuns s={q.data} />

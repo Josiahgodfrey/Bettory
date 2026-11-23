@@ -8,6 +8,11 @@
 #                Layer 0 skips every fixture of a competition set to false ("no market, no bet").
 #                Initial values are ASSUMED true for these major leagues - confirm with your bookmaker.
 # API-Football league ids: verify with /leagues before relying on them (Phase 0 checked 39 only).
+# ESPN: league code of ESPN's public feeds (docs/ESPN.md) - the goal-minute source without a key or daily quota.
+#       Every code below was checked on 2026-11-23 (matches with complete goal minutes returned).
+# API-Football ids of the competitions added 2026-11-23 were checked against its /leagues list that day.
+# fifteen_minute_market: true for all 50 competitions - owner decision 2026-11-23 (the bookmaker offers the 15'
+# markets in every registered league). Set a league to false if that turns out not to be so: Layer 0 then skips it.
 
 competitions:
   - code: ENG1
@@ -18,12 +23,13 @@ competitions:
     timezone: Europe/London
     season_format: SPLIT
     fifteen_minute_market: true
-    team_sources: [FOOTBALL_DATA_ORG, OPENFOOTBALL, API_FOOTBALL]
+    team_sources: [FOOTBALL_DATA_ORG, OPENFOOTBALL, API_FOOTBALL, ESPN]
     providers:
       API_FOOTBALL: "39"
       FOOTBALL_DATA_ORG: PL
       OPENFOOTBALL: en.1
       FOOTBALL_DATA_CO_UK: E0
+      ESPN: eng.1
 
   - code: ENG2
     name: Championship
@@ -33,12 +39,13 @@ competitions:
     timezone: Europe/London
     season_format: SPLIT
     fifteen_minute_market: true
-    team_sources: [FOOTBALL_DATA_ORG, OPENFOOTBALL, API_FOOTBALL]
+    team_sources: [FOOTBALL_DATA_ORG, OPENFOOTBALL, API_FOOTBALL, ESPN]
     providers:
       API_FOOTBALL: "40"
       FOOTBALL_DATA_ORG: ELC
       OPENFOOTBALL: en.2
       FOOTBALL_DATA_CO_UK: E1
+      ESPN: eng.2
 
   - code: GER1
     name: Bundesliga
@@ -48,12 +55,13 @@ competitions:
     timezone: Europe/Berlin
     season_format: SPLIT
     fifteen_minute_market: true
-    team_sources: [FOOTBALL_DATA_ORG, OPENFOOTBALL, API_FOOTBALL]
+    team_sources: [FOOTBALL_DATA_ORG, OPENFOOTBALL, API_FOOTBALL, ESPN]
     providers:
       API_FOOTBALL: "78"
       FOOTBALL_DATA_ORG: BL1
       OPENFOOTBALL: de.1
       FOOTBALL_DATA_CO_UK: D1
+      ESPN: ger.1
 
   - code: AUT1
     name: Bundesliga
@@ -63,10 +71,11 @@ competitions:
     timezone: Europe/Vienna
     season_format: SPLIT
     fifteen_minute_market: true
-    team_sources: [OPENFOOTBALL, API_FOOTBALL]
+    team_sources: [OPENFOOTBALL, API_FOOTBALL, ESPN]
     providers:
       API_FOOTBALL: "218"
       OPENFOOTBALL: at.1
+      ESPN: aut.1
 
   - code: ESP1
     name: La Liga
@@ -76,12 +85,13 @@ competitions:
     timezone: Europe/Madrid
     season_format: SPLIT
     fifteen_minute_market: true
-    team_sources: [FOOTBALL_DATA_ORG, OPENFOOTBALL, API_FOOTBALL]
+    team_sources: [FOOTBALL_DATA_ORG, OPENFOOTBALL, API_FOOTBALL, ESPN]
     providers:
       API_FOOTBALL: "140"
       FOOTBALL_DATA_ORG: PD
       OPENFOOTBALL: es.1
       FOOTBALL_DATA_CO_UK: SP1
+      ESPN: esp.1
 
   - code: ITA1
     name: Serie A
@@ -91,12 +101,13 @@ competitions:
     timezone: Europe/Rome
     season_format: SPLIT
     fifteen_minute_market: true
-    team_sources: [FOOTBALL_DATA_ORG, OPENFOOTBALL, API_FOOTBALL]
+    team_sources: [FOOTBALL_DATA_ORG, OPENFOOTBALL, API_FOOTBALL, ESPN]
     providers:
       API_FOOTBALL: "135"
       FOOTBALL_DATA_ORG: SA
       OPENFOOTBALL: it.1
       FOOTBALL_DATA_CO_UK: I1
+      ESPN: ita.1
 
   - code: FRA1
     name: Ligue 1
@@ -106,12 +117,13 @@ competitions:
     timezone: Europe/Paris
     season_format: SPLIT
     fifteen_minute_market: true
-    team_sources: [FOOTBALL_DATA_ORG, OPENFOOTBALL, API_FOOTBALL]
+    team_sources: [FOOTBALL_DATA_ORG, OPENFOOTBALL, API_FOOTBALL, ESPN]
     providers:
       API_FOOTBALL: "61"
       FOOTBALL_DATA_ORG: FL1
       OPENFOOTBALL: fr.1
       FOOTBALL_DATA_CO_UK: F1
+      ESPN: fra.1
 
   - code: NED1
     name: Eredivisie
@@ -121,12 +133,13 @@ competitions:
     timezone: Europe/Amsterdam
     season_format: SPLIT
     fifteen_minute_market: true
-    team_sources: [FOOTBALL_DATA_ORG, OPENFOOTBALL, API_FOOTBALL]
+    team_sources: [FOOTBALL_DATA_ORG, OPENFOOTBALL, API_FOOTBALL, ESPN]
     providers:
       API_FOOTBALL: "88"
       FOOTBALL_DATA_ORG: DED
       OPENFOOTBALL: nl.1
       FOOTBALL_DATA_CO_UK: N1
+      ESPN: ned.1
 
   - code: POR1
     name: Primeira Liga
@@ -136,9 +149,548 @@ competitions:
     timezone: Europe/Lisbon
     season_format: SPLIT
     fifteen_minute_market: true
-    team_sources: [FOOTBALL_DATA_ORG, OPENFOOTBALL, API_FOOTBALL]
+    team_sources: [FOOTBALL_DATA_ORG, OPENFOOTBALL, API_FOOTBALL, ESPN]
     providers:
       API_FOOTBALL: "94"
       FOOTBALL_DATA_ORG: PPL
       OPENFOOTBALL: pt.1
       FOOTBALL_DATA_CO_UK: P1
+      ESPN: por.1
+
+  # --- added 2026-11-23: ESPN goal minutes (fifteen_minute_market: owner decision 2026-11-23) ---
+
+  - code: ENG3
+    name: League One
+    country: England
+    type: LEAGUE
+    level: 3
+    timezone: Europe/London
+    season_format: SPLIT
+    fifteen_minute_market: true
+    team_sources: [API_FOOTBALL, ESPN]
+    providers:
+      API_FOOTBALL: "41"
+      ESPN: eng.3
+
+  - code: ENG4
+    name: League Two
+    country: England
+    type: LEAGUE
+    level: 4
+    timezone: Europe/London
+    season_format: SPLIT
+    fifteen_minute_market: true
+    team_sources: [API_FOOTBALL, ESPN]
+    providers:
+      API_FOOTBALL: "42"
+      ESPN: eng.4
+
+  - code: SCO1
+    name: Premiership
+    country: Scotland
+    type: LEAGUE
+    level: 1
+    timezone: Europe/London
+    season_format: SPLIT
+    fifteen_minute_market: true
+    team_sources: [API_FOOTBALL, ESPN]
+    providers:
+      API_FOOTBALL: "179"
+      ESPN: sco.1
+
+  - code: GER2
+    name: 2. Bundesliga
+    country: Germany
+    type: LEAGUE
+    level: 2
+    timezone: Europe/Berlin
+    season_format: SPLIT
+    fifteen_minute_market: true
+    team_sources: [API_FOOTBALL, ESPN]
+    providers:
+      API_FOOTBALL: "79"
+      ESPN: ger.2
+
+  - code: ESP2
+    name: Segunda Division
+    country: Spain
+    type: LEAGUE
+    level: 2
+    timezone: Europe/Madrid
+    season_format: SPLIT
+    fifteen_minute_market: true
+    team_sources: [API_FOOTBALL, ESPN]
+    providers:
+      API_FOOTBALL: "141"
+      ESPN: esp.2
+
+  - code: ITA2
+    name: Serie B
+    country: Italy
+    type: LEAGUE
+    level: 2
+    timezone: Europe/Rome
+    season_format: SPLIT
+    fifteen_minute_market: true
+    team_sources: [API_FOOTBALL, ESPN]
+    providers:
+      API_FOOTBALL: "136"
+      ESPN: ita.2
+
+  - code: FRA2
+    name: Ligue 2
+    country: France
+    type: LEAGUE
+    level: 2
+    timezone: Europe/Paris
+    season_format: SPLIT
+    fifteen_minute_market: true
+    team_sources: [API_FOOTBALL, ESPN]
+    providers:
+      API_FOOTBALL: "62"
+      ESPN: fra.2
+
+  - code: NED2
+    name: Eerste Divisie
+    country: Netherlands
+    type: LEAGUE
+    level: 2
+    timezone: Europe/Amsterdam
+    season_format: SPLIT
+    fifteen_minute_market: true
+    team_sources: [API_FOOTBALL, ESPN]
+    providers:
+      API_FOOTBALL: "89"
+      ESPN: ned.2
+
+  - code: BEL1
+    name: Pro League
+    country: Belgium
+    type: LEAGUE
+    level: 1
+    timezone: Europe/Brussels
+    season_format: SPLIT
+    fifteen_minute_market: true
+    team_sources: [API_FOOTBALL, ESPN]
+    providers:
+      API_FOOTBALL: "144"
+      ESPN: bel.1
+
+  - code: TUR1
+    name: Super Lig
+    country: Turkey
+    type: LEAGUE
+    level: 1
+    timezone: Europe/Istanbul
+    season_format: SPLIT
+    fifteen_minute_market: true
+    team_sources: [API_FOOTBALL, ESPN]
+    providers:
+      API_FOOTBALL: "203"
+      ESPN: tur.1
+
+  - code: GRE1
+    name: Super League 1
+    country: Greece
+    type: LEAGUE
+    level: 1
+    timezone: Europe/Athens
+    season_format: SPLIT
+    fifteen_minute_market: true
+    team_sources: [API_FOOTBALL, ESPN]
+    providers:
+      API_FOOTBALL: "197"
+      ESPN: gre.1
+
+  - code: DEN1
+    name: Superliga
+    country: Denmark
+    type: LEAGUE
+    level: 1
+    timezone: Europe/Copenhagen
+    season_format: SPLIT
+    fifteen_minute_market: true
+    team_sources: [API_FOOTBALL, ESPN]
+    providers:
+      API_FOOTBALL: "119"
+      ESPN: den.1
+
+  - code: RUS1
+    name: Premier League
+    country: Russia
+    type: LEAGUE
+    level: 1
+    timezone: Europe/Moscow
+    season_format: SPLIT
+    fifteen_minute_market: true
+    team_sources: [API_FOOTBALL, ESPN]
+    providers:
+      API_FOOTBALL: "235"
+      ESPN: rus.1
+
+  - code: NOR1
+    name: Eliteserien
+    country: Norway
+    type: LEAGUE
+    level: 1
+    timezone: Europe/Oslo
+    season_format: CALENDAR
+    fifteen_minute_market: true
+    team_sources: [API_FOOTBALL, ESPN]
+    providers:
+      API_FOOTBALL: "103"
+      ESPN: nor.1
+
+  - code: SWE1
+    name: Allsvenskan
+    country: Sweden
+    type: LEAGUE
+    level: 1
+    timezone: Europe/Stockholm
+    season_format: CALENDAR
+    fifteen_minute_market: true
+    team_sources: [API_FOOTBALL, ESPN]
+    providers:
+      API_FOOTBALL: "113"
+      ESPN: swe.1
+
+  - code: USA1
+    name: Major League Soccer
+    country: USA
+    type: LEAGUE
+    level: 1
+    timezone: America/New_York
+    season_format: CALENDAR
+    fifteen_minute_market: true
+    team_sources: [API_FOOTBALL, ESPN]
+    providers:
+      API_FOOTBALL: "253"
+      ESPN: usa.1
+
+  - code: MEX1
+    name: Liga MX
+    country: Mexico
+    type: LEAGUE
+    level: 1
+    timezone: America/Mexico_City
+    season_format: SPLIT
+    fifteen_minute_market: true
+    team_sources: [API_FOOTBALL, ESPN]
+    providers:
+      API_FOOTBALL: "262"
+      ESPN: mex.1
+
+  - code: BRA1
+    name: Serie A
+    country: Brazil
+    type: LEAGUE
+    level: 1
+    timezone: America/Sao_Paulo
+    season_format: CALENDAR
+    fifteen_minute_market: true
+    team_sources: [API_FOOTBALL, ESPN]
+    providers:
+      API_FOOTBALL: "71"
+      ESPN: bra.1
+
+  - code: ARG1
+    name: Liga Profesional
+    country: Argentina
+    type: LEAGUE
+    level: 1
+    timezone: America/Argentina/Buenos_Aires
+    season_format: CALENDAR
+    fifteen_minute_market: true
+    team_sources: [API_FOOTBALL, ESPN]
+    providers:
+      API_FOOTBALL: "128"
+      ESPN: arg.1
+
+  - code: COL1
+    name: Primera A
+    country: Colombia
+    type: LEAGUE
+    level: 1
+    timezone: America/Bogota
+    season_format: CALENDAR
+    fifteen_minute_market: true
+    team_sources: [API_FOOTBALL, ESPN]
+    providers:
+      API_FOOTBALL: "239"
+      ESPN: col.1
+
+  - code: CHI1
+    name: Primera Division
+    country: Chile
+    type: LEAGUE
+    level: 1
+    timezone: America/Santiago
+    season_format: CALENDAR
+    fifteen_minute_market: true
+    team_sources: [API_FOOTBALL, ESPN]
+    providers:
+      API_FOOTBALL: "265"
+      ESPN: chi.1
+
+  - code: AUS1
+    name: A-League Men
+    country: Australia
+    type: LEAGUE
+    level: 1
+    timezone: Australia/Sydney
+    season_format: SPLIT
+    fifteen_minute_market: true
+    team_sources: [API_FOOTBALL, ESPN]
+    providers:
+      API_FOOTBALL: "188"
+      ESPN: aus.1
+
+  # --- added 2026-11-23 (2nd batch): every other ESPN domestic league with complete current goal minutes;
+  #     API-Football ids checked against its /leagues list the same day ---
+
+  - code: KSA1
+    name: Pro League
+    country: Saudi Arabia
+    type: LEAGUE
+    level: 1
+    timezone: Asia/Riyadh
+    season_format: SPLIT
+    fifteen_minute_market: true
+    team_sources: [API_FOOTBALL, ESPN]
+    providers:
+      API_FOOTBALL: "307"
+      ESPN: ksa.1
+
+  - code: MEX2
+    name: Liga de Expansion MX
+    country: Mexico
+    type: LEAGUE
+    level: 2
+    timezone: America/Mexico_City
+    season_format: SPLIT
+    fifteen_minute_market: true
+    team_sources: [API_FOOTBALL, ESPN]
+    providers:
+      API_FOOTBALL: "263"
+      ESPN: mex.2
+
+  - code: ENG5
+    name: National League
+    country: England
+    type: LEAGUE
+    level: 5
+    timezone: Europe/London
+    season_format: SPLIT
+    fifteen_minute_market: true
+    team_sources: [API_FOOTBALL, ESPN]
+    providers:
+      API_FOOTBALL: "43"
+      ESPN: eng.5
+
+  - code: SCO2
+    name: Championship
+    country: Scotland
+    type: LEAGUE
+    level: 2
+    timezone: Europe/London
+    season_format: SPLIT
+    fifteen_minute_market: true
+    team_sources: [API_FOOTBALL, ESPN]
+    providers:
+      API_FOOTBALL: "180"
+      ESPN: sco.2
+
+  - code: ARG2
+    name: Primera Nacional
+    country: Argentina
+    type: LEAGUE
+    level: 2
+    timezone: America/Argentina/Buenos_Aires
+    season_format: CALENDAR
+    fifteen_minute_market: true
+    team_sources: [API_FOOTBALL, ESPN]
+    providers:
+      API_FOOTBALL: "129"
+      ESPN: arg.2
+
+  - code: ARG3
+    name: Primera B Metropolitana
+    country: Argentina
+    type: LEAGUE
+    level: 3
+    timezone: America/Argentina/Buenos_Aires
+    season_format: CALENDAR
+    fifteen_minute_market: true
+    team_sources: [API_FOOTBALL, ESPN]
+    providers:
+      API_FOOTBALL: "131"
+      ESPN: arg.3
+
+  - code: BRA2
+    name: Serie B
+    country: Brazil
+    type: LEAGUE
+    level: 2
+    timezone: America/Sao_Paulo
+    season_format: CALENDAR
+    fifteen_minute_market: true
+    team_sources: [API_FOOTBALL, ESPN]
+    providers:
+      API_FOOTBALL: "72"
+      ESPN: bra.2
+
+  - code: URU1
+    name: Primera Division
+    country: Uruguay
+    type: LEAGUE
+    level: 1
+    timezone: America/Montevideo
+    season_format: CALENDAR
+    fifteen_minute_market: true
+    team_sources: [API_FOOTBALL, ESPN]
+    providers:
+      API_FOOTBALL: "268"
+      ESPN: uru.1
+
+  - code: PER1
+    name: Liga 1
+    country: Peru
+    type: LEAGUE
+    level: 1
+    timezone: America/Lima
+    season_format: CALENDAR
+    fifteen_minute_market: true
+    team_sources: [API_FOOTBALL, ESPN]
+    providers:
+      API_FOOTBALL: "281"
+      ESPN: per.1
+
+  - code: ECU1
+    name: Liga Pro
+    country: Ecuador
+    type: LEAGUE
+    level: 1
+    timezone: America/Guayaquil
+    season_format: CALENDAR
+    fifteen_minute_market: true
+    team_sources: [API_FOOTBALL, ESPN]
+    providers:
+      API_FOOTBALL: "242"
+      ESPN: ecu.1
+
+  - code: VEN1
+    name: Primera Division
+    country: Venezuela
+    type: LEAGUE
+    level: 1
+    timezone: America/Caracas
+    season_format: CALENDAR
+    fifteen_minute_market: true
+    team_sources: [API_FOOTBALL, ESPN]
+    providers:
+      API_FOOTBALL: "299"
+      ESPN: ven.1
+
+  - code: BOL1
+    name: Primera Division
+    country: Bolivia
+    type: LEAGUE
+    level: 1
+    timezone: America/La_Paz
+    season_format: CALENDAR
+    fifteen_minute_market: true
+    team_sources: [API_FOOTBALL, ESPN]
+    providers:
+      API_FOOTBALL: "344"
+      ESPN: bol.1
+
+  - code: JPN1
+    name: J1 League
+    country: Japan
+    type: LEAGUE
+    level: 1
+    timezone: Asia/Tokyo
+    season_format: SPLIT
+    fifteen_minute_market: true
+    team_sources: [API_FOOTBALL, ESPN]
+    providers:
+      API_FOOTBALL: "98"
+      ESPN: jpn.1
+
+  - code: HON1
+    name: Liga Nacional
+    country: Honduras
+    type: LEAGUE
+    level: 1
+    timezone: America/Tegucigalpa
+    season_format: SPLIT
+    fifteen_minute_market: true
+    team_sources: [API_FOOTBALL, ESPN]
+    providers:
+      API_FOOTBALL: "234"
+      ESPN: hon.1
+
+  - code: CRC1
+    name: Primera Division
+    country: Costa Rica
+    type: LEAGUE
+    level: 1
+    timezone: America/Costa_Rica
+    season_format: SPLIT
+    fifteen_minute_market: true
+    team_sources: [API_FOOTBALL, ESPN]
+    providers:
+      API_FOOTBALL: "162"
+      ESPN: crc.1
+
+  - code: GUA1
+    name: Liga Nacional
+    country: Guatemala
+    type: LEAGUE
+    level: 1
+    timezone: America/Guatemala
+    season_format: SPLIT
+    fifteen_minute_market: true
+    team_sources: [API_FOOTBALL, ESPN]
+    providers:
+      API_FOOTBALL: "339"
+      ESPN: gua.1
+
+  - code: SLV1
+    name: Primera Division
+    country: El Salvador
+    type: LEAGUE
+    level: 1
+    timezone: America/El_Salvador
+    season_format: SPLIT
+    fifteen_minute_market: true
+    team_sources: [API_FOOTBALL, ESPN]
+    providers:
+      API_FOOTBALL: "370"
+      ESPN: slv.1
+
+  - code: IND1
+    name: Indian Super League
+    country: India
+    type: LEAGUE
+    level: 1
+    timezone: Asia/Kolkata
+    season_format: SPLIT
+    fifteen_minute_market: true
+    team_sources: [API_FOOTBALL, ESPN]
+    providers:
+      API_FOOTBALL: "323"
+      ESPN: ind.1
+
+  - code: IND2
+    name: I-League
+    country: India
+    type: LEAGUE
+    level: 2
+    timezone: Asia/Kolkata
+    season_format: SPLIT
+    fifteen_minute_market: true
+    team_sources: [API_FOOTBALL, ESPN]
+    providers:
+      API_FOOTBALL: "324"
+      ESPN: ind.2

@@ -1,8 +1,8 @@
 """Integration tests for supabase/migrations: the database itself enforces the data rules.
 
 Runs only when TEST_DATABASE_URL points at a disposable PostgreSQL server (superuser), e.g.
-    docker run -d --name bettory-pg -e POSTGRES_PASSWORD=test -p 54329:5432 postgres:17
-    TEST_DATABASE_URL=postgresql://postgres:test@localhost:54329/postgres pytest tests/integration
+    docker run -d --name bettory-pg -e POSTGRES_PASSWORD=test -p 55432:5432 postgres:17
+    TEST_DATABASE_URL=postgresql://postgres:test@localhost:55432/postgres pytest tests/integration
 A fresh database is created for the test session and dropped afterwards.
 """
 
@@ -70,7 +70,7 @@ T0 = datetime(2025, 9, 1, 15, 0, tzinfo=UTC)
 
 def test_sources_seeded(conn: psycopg.Connection) -> None:
     codes = [r["code"] for r in conn.execute("select code from core.sources order by id")]
-    assert codes == ["API_FOOTBALL", "FOOTBALL_DATA_ORG", "OPENFOOTBALL", "FOOTBALL_DATA_CO_UK", "MANUAL"]
+    assert codes == ["API_FOOTBALL", "FOOTBALL_DATA_ORG", "OPENFOOTBALL", "FOOTBALL_DATA_CO_UK", "ESPN", "MANUAL"]
 
 
 def test_valid_match_accepted(conn: psycopg.Connection) -> None:

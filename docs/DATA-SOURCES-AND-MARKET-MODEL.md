@@ -48,6 +48,8 @@ This document details the topics that were only touched on (or not covered) in t
 | D15 | Build a **league-wide local database**; never fetch history team by team |
 | D16 | No scraping as part of the core pipeline |
 | D17 | 15-minute market odds are **entered manually** (no free source exists) |
+| D18 | (2026-11-23) **ESPN's public JSON feeds** are the goal-minute source for the current season and for leagues no other free source covers (docs/ESPN.md). Not page scraping: documented-format JSON, paced at 1 request per second, every response stored. Ranked after the established sources; checked against 880 stored matches first |
+| D19 | (2026-11-23) **Sportmonks** (free plan: ENG1, GER1, Denmark, Scotland) evaluated and **not used for now**: no 15-minute market (10-minute markets only); its goal minutes would only repeat ESPN's. Kept as the second opinion if ESPN ever disagrees or stops (docs/ESPN.md §9) |
 | D18 | Add **Model C**: market-implied probability derived from HT / FT totals odds |
 | D19 | Formula upgraded to **v1.1** (three-model blend) |
 | D20 | The Odds API is **optional**, used only for occasional main-market checks |
@@ -73,7 +75,8 @@ This settles **Open question #1 (data provider)** and partially **#4 (odds sourc
 | Backup & cross-check | **football-data.org** | Official REST API | Free: 10 requests/min, 12 competitions, delayed scores | Match `goals[]` with `minute` and `injuryTime` |
 | Historical goal minutes | **openfootball** | Open data (GitHub JSON) | Free, public domain, no key | Results and goal minutes for main leagues |
 | Historical results + odds | **football-data.co.uk** | Free CSV files | Free download | FT/HT scores; 1X2, O/U 2.5, AH odds incl. **Pinnacle closing odds** |
-| Parser testing | **StatsBomb Open Data** | Open data (GitHub JSON) | Free, attribution required | Full event data, limited competitions |
+| Current-season and wide-coverage goal minutes | **ESPN** (public feeds) | Undocumented JSON feeds | Free, no key, no daily quota; terms limit reuse (private tool only) | Every goal with its minute, HT/FT, fixtures, 31 leagues registered (docs/ESPN.md) |
+| Parser testing | **StatsBomb Open Data** | Open data (GitHub JSON) | Free, attribution required | Full event data, limited competitions (selected teams only: not a match source) |
 | Main-market live odds (optional) | **The Odds API** | Official REST API | Free: 500 credits/month | 1X2 and totals from many bookmakers; **no 15-minute markets** |
 
 ### 2.2 Role of each source in the system
@@ -99,7 +102,7 @@ This settles **Open question #1 (data provider)** and partially **#4 (odds sourc
 | Data | Free? | Source |
 |---|---|---|
 | Fixtures | ✅ | API-Football |
-| Goal minutes → 15' / HT / FT scores | ✅ | API-Football, openfootball, football-data.org |
+| Goal minutes → 15' / HT / FT scores | ✅ | API-Football, openfootball, **ESPN** (football-data.org: scores only) |
 | League baselines | ✅ | Calculated from the local database + football-data.co.uk |
 | Lineups (~1h before kick-off) | ✅ | API-Football |
 | Historical main-market odds (benchmark) | ✅ | football-data.co.uk |

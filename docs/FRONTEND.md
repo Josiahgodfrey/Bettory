@@ -160,7 +160,7 @@ frontend only maps numbers to pixels; every figure comes from the API.
 
 | Part | How |
 |---|---|
-| Backend | `backend/tests/e2e/server.py` on port 8100: a **fresh database** on the local test server (`TEST_DATABASE_URL`, default the Docker `bettory-pg` at 127.0.0.1:54329; it refuses any non-local host, so never Supabase), all migrations, the synthetic league TST1, two fixtures 40–50 minutes ahead whose session is **sealed with the real freeze**. Isolated like the test suite (`tests/conftest.py`): no Telegram connection possible, no data-API keys, raw files in a temporary folder. Old `bettory_e2e_*` databases are dropped at start |
+| Backend | `backend/tests/e2e/server.py` on port 8100: a **fresh database** on the local test server (`TEST_DATABASE_URL`, default the Docker `bettory-pg-55432` at 127.0.0.1:55432; it refuses any non-local host, so never Supabase), all migrations, the synthetic league TST1, two fixtures 40–50 minutes ahead whose session is **sealed with the real freeze**. Isolated like the test suite (`tests/conftest.py`): no Telegram connection possible, no data-API keys, raw files in a temporary folder. Old `bettory_e2e_*` databases are dropped at start |
 | Frontend | Vite on port 5190 with the login bypass and its own dependency cache (`node_modules/.vite-e2e`), so it can run beside `npm run dev` |
 | Config | `frontend/playwright.config.ts` (both servers are started and stopped by Playwright) |
 
@@ -173,3 +173,49 @@ What the 31 tests cover:
 | `e2e/system.spec.ts` | Paper betting: 2 sealed predictions, **Verify now** (chain intact), **Replay** (identical to the seal); Recorder: a **real cycle** from the app (confirm → started → finished, status reported); Notifications: Telegram off, the test message refused (409); Calendar shows the sealed fixtures; Settings show the betting rules |
 
 Last run 2026-11-18: **31 passed** (about 1 minute), twice in a row from a fresh database.
+
+## 6. Every backend feature connected (2026-11-19)
+
+Audit of the contract (`docs/api/openapi.json`) against the calls in `frontend/src`: **45 of 49 endpoints are called
+by a screen**. The other 4 need no screen of their own: `GET /bets/{id}` (the list already carries every field) and
+`GET /data-health/coverage`, `/crosschecks`, `/runs` (their data is inside `GET /data-health`).
+
+Added for the audit:
+
+| Screen | Endpoints |
+|---|---|
+| **Data loading** (`/data-loading`, new) | `GET /jobs/competitions`; `POST /jobs/ingest/{openfootball, football-data-org, football-data-co-uk, api-football-season, api-football-backfill, api-football-day}` (API-Football ones confirm first: they spend quota); `GET /jobs/runs/{id}` (the started run, followed live); `GET /reviews`, `GET /teams`, `POST /reviews/{id}/resolve` (link a name to an existing team), `POST /reviews/{id}/new-team` (create a club; "create anyway" only when the API says it looks like an existing team) |
+| Data health | `GET /data-health/crosschecks/{id}` (**Details…**: the disagreeing matches, per source, before accepting), `POST /data-health/crosschecks` (**Run again** / run a missing one) |
+| **Backtest** (`/data-health/backtests/{name}`, new) | `GET /data-health/backtests/{name}`: Gate B, decisions by league, what blocked most, calibration (listed / all priced), models, betting at the minimum odds |
+| Settings | `GET /health` (API status) |
+
+Backend fix found by these tests: `GET /teams` searched only the team aliases, so a team without aliases could not be
+found by its own name (`app/storage/repositories/reference.py`; test in `tests/integration/test_api_jobs.py`).
+
+Whole-application tests: `e2e/data.spec.ts` (link a review, create a club, the load form reaching the API and its
+refusal without an API-Football key, run a cross-check and read its details, a stored backtest, API status) —
+**37 passed** with the rest of the suite.
+
+## 7. ESPN in the app (2026-11-23)
+
+The ESPN goal-minute source (docs/ESPN.md) is reachable and visible from the app, not only from the command line
+and the worker.
+
+| Screen | Change | Backend |
+|---|---|---|
+| **Data loading** | two new loads: **"ESPN: league match days"** (date range; fixtures, scores and goal minutes of whole leagues - season backfills and catching up) and **"ESPN: team histories for upcoming fixtures"** (a window in EAT: the last 10 home and 10 away matches of every team playing in it). Leagues are ticked in a grid (none ticked = every ESPN league); request limit; "also matches already complete" for a second opinion. No API-Football confirmation dialog: ESPN uses no quota. The run is followed live like any other | `POST /jobs/ingest/espn-days`, `POST /jobs/ingest/espn-history` (validated: known leagues with an ESPN code, date order, at most 400 days / 7 days, time zone required) |
+| **Recorder → Session schedule** | a new step **"History: team goal minutes (ESPN)"** between plan and capture: done (with matches loaded, "stopped at its request limit", teams not linked), failed, running, due, "not run before the cut-off", or off | `SessionScheduleOut`: `history_enabled`, `history_status`, `history_summaries`, `history_teams_without_link`, `history_stopped_at_budget` |
+| **Settings → Recorder** | rows **"Team histories (ESPN)"** (on/off, page limit, all leagues) and **"Nightly ESPN fill"** (02:00 UTC, last 3 days) | `GET /settings`: `espn_daily` (the recorder's `history` was already in `recorder`) |
+| Everywhere | source names as their owners write them: "ESPN", "API-Football", "football-data.org", "openfootball", "football-data.co.uk" (was "Espn", "Api football"…) | — |
+
+Found by the new whole-application test: the ESPN date fields came up empty when the page opened before the API had
+answered with today's date (defaults apply only when a field first appears). Fixed: the browser's EAT date is the
+default, and the fields redraw when the API's date arrives.
+
+Also changed: the recorder's history step starts no run when none of the session's fixtures is in a league ESPN
+covers. The guard that keeps tests away from ESPN now blocks the request itself (creating the client is allowed),
+in the unit/integration tests and in the e2e backend.
+
+Tests: backend **532 passed** (new: the two job endpoints and their refusals, the schedule's history fields, the
+step without ESPN leagues); whole application **39 passed** (desktop and phone; new: the ESPN loads offered and run,
+the history step on the Recorder screen, the ESPN rows in Settings).

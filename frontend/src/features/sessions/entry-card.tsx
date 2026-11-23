@@ -97,11 +97,6 @@ export function EntryCard({ entry, sessionId }: { entry: Entry; sessionId: strin
           <Button variant="outline" size="sm" nativeButton={false} render={<Link to={analysis} />}>
             <Microscope /> Analysis
           </Button>
-          {!withdrawn && (
-            <Button size="sm" nativeButton={false} render={<Link to={`${analysis}#odds`} />}>
-              Odds check
-            </Button>
-          )}
         </span>
       </CardFooter>
     </Card>
@@ -128,6 +123,26 @@ function Market({
   withdrawn: boolean
 }) {
   const changed = recheckMin != null && minOdds != null && recheckMin !== minOdds
+  if (minOdds == null) {
+    // params 1.6: probabilities only - the odds come from the owner's betting app
+    return (
+      <div className="grid content-start gap-1.5 border bg-muted/30 p-3">
+        <div className="text-xs font-medium text-muted-foreground">{title}</div>
+        <div>
+          <div className="text-[10px] uppercase tracking-wide text-muted-foreground">Probability</div>
+          <div
+            className={cn('font-heading text-2xl font-bold leading-tight tabular', withdrawn ? 'text-muted-foreground line-through' : 'text-success')}
+            data-testid="probability"
+          >
+            {pct(p)}
+          </div>
+        </div>
+        <div className="text-xs tabular text-muted-foreground" title="1 / probability: value when your app offers more">
+          fair odds <span className="font-medium text-foreground">{odds(fair)}</span>
+        </div>
+      </div>
+    )
+  }
   return (
     <div className="grid content-start gap-1.5 border bg-muted/30 p-3">
       <div className="text-xs font-medium text-muted-foreground">{title}</div>

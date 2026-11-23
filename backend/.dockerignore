@@ -1,0 +1,14 @@
+# Only what the image needs (Dockerfile): never secrets, local data, the venv or caches.
+.env
+.env.*
+venv/
+**/__pycache__/
+**/*.pyc
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+*.egg-info/
+data/
+phase0/
+tests/
+scripts/

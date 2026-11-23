@@ -1,0 +1,76 @@
+# BETTORY tuning plan, version 3 (supersedes version 2). Owner decision of 2026-11-23: paper betting on every
+# registered league (docs/ESPN.md §6). Everything except `competitions` and the dates is unchanged from version 2.
+#
+# Rules:
+#   - Never edit this file after a real run has used it: the run records its SHA-256 in config/tuning_lock.yaml and
+#     the tool refuses a changed file. A new plan is a new file that `supersedes` this one, with the reason.
+#   - Every variation is reported, the selection rule is the one below, and each evaluation period is used once.
+#   - Loaded and validated by app/backtest/tuning_plan.py.
+
+plan_version: 3
+registered_on: "2026-11-23"
+supersedes: tuning_v2.yaml
+change_reason: >-
+  Owner decision 2026-11-23: paper betting (the forward test) covers every registered league - 50 after ESPN became
+  the free goal-minute source (docs/ESPN.md) - instead of ENG1, GER1 and AUT1. Taken knowingly WITHOUT a prior
+  backtest of the added leagues, against the pre-registration rule: params 1.5 were tuned on ENG1, GER1 and AUT1
+  only, so results in the other leagues test how far that model carries; they can be told apart (each prediction
+  records its plan file). The data gate, Layer 0 (league baseline P(0-0 at 15') >= 0.70, needing enough league
+  matches) and every other rule still apply, so a league without enough data is still not bet. The backtest of all
+  leagues (this grid, these periods) is to be run once their history is loaded.
+base_params: "1.5"                       # config/params_v1.5.yaml (must be in the grid)
+competitions: [ENG1, ENG2, GER1, AUT1, ESP1, ITA1, FRA1, NED1, POR1, ENG3, ENG4, SCO1, GER2, ESP2, ITA2, FRA2, NED2, BEL1, TUR1, GRE1, DEN1, RUS1, NOR1, SWE1, USA1, MEX1, BRA1, ARG1, COL1, CHI1, AUS1, KSA1, MEX2, ENG5, SCO2, ARG2, ARG3, BRA2, URU1, PER1, ECU1, VEN1, BOL1, JPN1, HON1, CRC1, GUA1, SLV1, IND1, IND2]
+
+periods:                                 # session dates (EAT)
+  tuning:      { first: "2022-08-01", last: "2025-06-30" }   # 2022-23 .. 2024-25: variations compared here
+  holdout:     { first: "2025-07-01", last: "2026-06-30" }   # 2025-26: selected and base, once
+  prospective: { first: "2026-11-24", last: "2027-06-30" }   # not yet played at registration: the truly unseen test,
+                                                             # evaluated as the data arrives (with paper betting)
+
+holdout_status: examined_before_registration
+holdout_note: >-
+  2025-26 was examined before this plan was registered: the first backtest (2026-11-16), the step 1 measurements
+  (calibration slope 0.38) and the tuning_v1 dry run. Both hypotheses and the stronger-shrinkage grid came from it.
+  Its result is reported, but the decisive unseen tests are the prospective period and paper betting.
+
+selection:
+  market: UNDER05
+  metric: log_loss                       # lower is better (research §3.2); never ROI
+  tie_tolerance: 0.0005                  # within this of the best: fewest changed dimensions from the base, then grid order
+
+grid:
+  - name: rating_shrinkage               # prior matches pulling team ratings toward the league (FT : HT = 1 : 1.5)
+    options:
+      - { label: "m20",  set: { model_a.rating_prior_matches: { FT: 20,  HT: 30 } } }    # base
+      - { label: "m40",  set: { model_a.rating_prior_matches: { FT: 40,  HT: 60 } } }
+      - { label: "m80",  set: { model_a.rating_prior_matches: { FT: 80,  HT: 120 } } }
+      - { label: "m160", set: { model_a.rating_prior_matches: { FT: 160, HT: 240 } } }
+  - name: early_goal_index_trust         # Model B v2 index factor I = index ^ w_I (0 = ignore, 1 = full trust)
+    options:
+      - { label: "wI0",    set: { shrinkage.early_index_trust_w_I: 0.0 } }
+      - { label: "wI0.25", set: { shrinkage.early_index_trust_w_I: 0.25 } }
+      - { label: "wI0.5",  set: { shrinkage.early_index_trust_w_I: 0.5 } }                # base
+      - { label: "wI0.75", set: { shrinkage.early_index_trust_w_I: 0.75 } }               # new in v2
+      - { label: "wI1.0",  set: { shrinkage.early_index_trust_w_I: 1.0 } }                # new in v2
+  - name: team_vs_market                 # mu blend where Model C exists; without main-market odds every option prices
+    options:                             # identically and the dimension is reported as NOT TESTABLE
+      - { label: "team1.0",  set: { blend.team_weight: 1.0,  blend.market_weight: 0.0 } }
+      - { label: "team0.5",  set: { blend.team_weight: 0.5,  blend.market_weight: 0.5 } }  # base
+      - { label: "team0.25", set: { blend.team_weight: 0.25, blend.market_weight: 0.75 } }
+
+hypotheses:
+  - id: H1_GRADE_B
+    statement: "Listed Grade B fixtures go 0-0 at 15' less often than predicted"
+    subset: { listed: true, grade: B }
+    action_if_confirmed: "Grade B is no longer listed in reports (owner decision 2026-11-16)"
+  - id: H2_TOP_PREDICTIONS
+    statement: "Fixtures priced P(Under 0.5) >= 0.76 are over-confident"
+    subset: { listed: false, p_under05_at_least: 0.76 }
+    action_if_confirmed: "candidate for a later plan (recalibration or a cap on P); no change in this plan"
+  # "confirmed" = the 95 % interval (sessions resampled) of (actual - predicted) lies entirely below 0
+
+gate_b:
+  min_qualified: 300
+  calibration: noise_aware               # |gap| <= max(3 pts, 2 x SE) per populated bucket
+  beats_baseline: paired_interval        # upper end of the paired Brier interval vs competition-only < 0
+  profit: paper_betting                  # no historical profit criterion

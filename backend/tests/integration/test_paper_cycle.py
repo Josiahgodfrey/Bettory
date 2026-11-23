@@ -16,7 +16,7 @@ from sqlalchemy import Engine, text
 from app.core.settings import Settings
 from app.ingestion.base import Fetched
 from app.paper import cycle as cycle_mod
-from app.paper.config import load_paper_config
+from app.paper.config import PaperConfig, load_paper_config
 from app.paper.cycle import CycleInputs, run_cycle
 from app.paper.freeze import Provenance
 from app.paper.settle import SettleResult
@@ -37,13 +37,23 @@ from tests.integration.test_paper_capture import capture as manual_capture
 from tests.support import PARAMS
 
 pytestmark = pytest.mark.skipif(not ADMIN_URL, reason="TEST_DATABASE_URL not set")
-CFG = load_paper_config()
+SHIPPED = load_paper_config()
+# ESPN history (docs/ESPN.md) off in every recorder test but its own (test_paper_plan): no test fetches from ESPN.
+# The odds steps (capture, closing, re-check odds) are off in the shipped config since 2026-11-23 (probabilities only,
+# params 1.6); they still exist for params <= 1.5, so these tests switch them on to keep them tested.
+FULL = SHIPPED.model_copy(update={
+    "history": SHIPPED.history.model_copy(update={"enabled": False}),
+    "capture": SHIPPED.capture.model_copy(update={"enabled": True}),
+    "closing": SHIPPED.closing.model_copy(update={"enabled": True}),
+    "recheck": SHIPPED.recheck.model_copy(update={"with_odds": True})})
+# the tests of capture / freeze / results / settle load their fixtures themselves: planning off (tested separately)
+CFG = FULL.model_copy(update={"plan": FULL.plan.model_copy(update={"enabled": False})})
 
 
-def inputs(engine: Engine, tmp_path: Path) -> CycleInputs:  # noqa: F811
-    settings = Settings(api_football_key=SecretStr("key"), api_football_plan="free")
+def inputs(engine: Engine, tmp_path: Path, cfg: PaperConfig = CFG, key: str = "key") -> CycleInputs:  # noqa: F811
+    settings = Settings(api_football_key=SecretStr(key), api_football_plan="free")
     return CycleInputs(engine=engine, store=lambda: LocalRawStore(tmp_path), registry=REG, settings=settings,
-                       params=PARAMS, cfg=CFG, competitions=["TST1"], provenance=Provenance(), stake=1.0)
+                       params=PARAMS, cfg=cfg, competitions=["TST1"], provenance=Provenance(), stake=1.0)
 
 
 def runs_at(engine: Engine, when: datetime) -> None:  # noqa: F811

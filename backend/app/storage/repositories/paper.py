@@ -50,6 +50,21 @@ def session_fixtures(conn: Connection, start_utc: datetime, end_utc: datetime,
     return [SessionFixture(r[0], r[1], r[2], FixtureStatus(r[3])) for r in rows]
 
 
+def session_fixture_teams(conn: Connection, start_utc: datetime, end_utc: datetime,
+                          competition_codes: Sequence[str]) -> list[tuple[str, datetime, UUID, UUID]]:
+    """(competition, kick-off, home team, away team) of the SCHEDULED fixtures in [start_utc, end_utc), in the
+    order of `competition_codes`, then by kick-off: whose teams' histories the session needs."""
+    rows = conn.execute(text("""
+        select c.code, m.kickoff_utc, m.home_team_id, m.away_team_id
+        from core.matches m
+        join core.competition_seasons s on s.id = m.competition_season_id
+        join core.competitions c on c.id = s.competition_id
+        where m.kickoff_utc >= :start and m.kickoff_utc < :end and c.code = any(:codes) and m.status = 'SCHEDULED'
+        order by array_position(:codes, c.code::text), m.kickoff_utc, m.id
+    """), {"start": start_utc, "end": end_utc, "codes": list(competition_codes)}).all()
+    return [(r[0], r[1], r[2], r[3]) for r in rows]
+
+
 @dataclass(frozen=True)
 class NewPrediction:
     match_id: UUID

@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from datetime import timedelta
+from datetime import time, timedelta
 from pathlib import Path
 from typing import Self
 
@@ -32,7 +32,36 @@ class Schedule(_Strict):
     every_minutes: int = Field(ge=1, le=60)
 
 
+HHMM = r"^([01][0-9]|2[0-3]):[0-5][0-9]$"
+
+
+class Plan(_Strict):
+    """Load each session's fixtures in advance (ARCHITECTURE.md 12.4): the Noon session on its own day, the Night
+    session the evening before (it starts at 01:00 EAT)."""
+
+    enabled: bool  # false only if the fixtures are loaded by another job (tests of the later steps use false)
+    noon_at: str = Field(pattern=HHMM)  # EAT, the session's own day
+    night_at: str = Field(pattern=HHMM)  # EAT, the day before the session
+    attempts: int = Field(ge=1, le=10)
+    max_requests: PerPlan  # 1 fixtures listing per UTC date the session covers (the Night session covers 2)
+    notify_no_fixtures: bool  # Telegram "no fixtures" for a planned session without any (one message each)
+
+    @staticmethod
+    def _clock(text: str) -> time:
+        h, m = text.split(":")
+        return time(int(h), int(m))
+
+    @property
+    def noon_time(self) -> time:
+        return self._clock(self.noon_at)
+
+    @property
+    def night_time(self) -> time:
+        return self._clock(self.night_at)
+
+
 class Capture(_Strict):
+    enabled: bool = True  # false (owner decision 2026-11-23): no odds are captured - the owner's app has them
     lead_minutes: int = Field(ge=1, le=180)
     attempts: int = Field(ge=1, le=10)
     max_requests: PerPlan
@@ -43,6 +72,7 @@ class Capture(_Strict):
 
 
 class Recheck(_Strict):
+    with_odds: bool = True  # false: lineups only (1 request per match instead of 2)
     from_minutes: int = Field(ge=5, le=240)
     to_minutes: int = Field(ge=10, le=360)
     retry_minutes: int = Field(ge=5, le=120)
@@ -57,6 +87,7 @@ class Recheck(_Strict):
 
 
 class Closing(_Strict):
+    enabled: bool = True  # false: no closing odds (no CLV)
     minutes_before: int = Field(ge=2, le=60)
     max_requests: PerPlan
 
@@ -67,13 +98,26 @@ class Results(_Strict):
     max_requests: PerPlan
 
 
+class History(_Strict):
+    """Goal minutes of the session's teams' recent matches from ESPN (docs/ESPN.md), once per session after its plan
+    and before its cut-off. ESPN has no key and no daily quota: these requests never touch the API-Football bound."""
+
+    enabled: bool = False  # off unless the config file switches it on (tests of other steps make no ESPN request)
+    max_requests: int = Field(default=1500, ge=10, le=10000)  # per run; about 1 per second
+    attempts: int = Field(default=2, ge=1, le=10)  # runs per session, failed ones included
+    skip_complete: bool = True  # no summary for a match whose 15' data is already complete from another source
+    all_competitions: bool = True  # also the registered leagues outside the recorder's (data for later backtests)
+
+
 class PaperConfig(_Strict):
     schedule: Schedule
     daily_max_requests: PerPlan
+    plan: Plan
     capture: Capture
     recheck: Recheck
     closing: Closing
     results: Results
+    history: History = History()
 
     @model_validator(mode="after")
     def _window(self) -> Self:
@@ -83,6 +127,8 @@ class PaperConfig(_Strict):
         if self.closing.minutes_before <= self.schedule.every_minutes:
             raise ValueError("closing.minutes_before must be longer than schedule.every_minutes, or a cycle can "
                              "miss the closing capture")
+        if self.plan.max_requests.free < 2 or self.plan.max_requests.pro < 2:
+            raise ValueError("plan.max_requests must allow 2 requests: the Night session covers two UTC dates")
         return self
 
 

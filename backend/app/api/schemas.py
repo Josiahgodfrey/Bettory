@@ -40,6 +40,42 @@ class ApiFootballBackfill(SeasonIngest):
                                 "(use when no second goal-minute source exists for the season)")
 
 
+class EspnDaysIngest(Strict):
+    """Whole match days of whole leagues from ESPN (docs/ESPN.md): fixtures, scores, goal minutes. Resumable."""
+
+    competitions: list[str] = Field(default_factory=list, max_length=60,
+                                    description="Registry codes; empty = every competition with an ESPN code")
+    date_from: dt.date = Field(examples=["2026-07-20"])
+    date_to: dt.date = Field(examples=["2026-11-22"])
+    max_requests: int = Field(1500, ge=1, le=20000, description="About 1 request per second")
+    include_complete: bool = Field(False, description="Fetch summaries also for matches already complete")
+
+    @model_validator(mode="after")
+    def _range(self) -> EspnDaysIngest:
+        if self.date_to < self.date_from or (self.date_to - self.date_from).days > 400:
+            raise ValueError("date_to must be on or after date_from, at most 400 days later")
+        return self
+
+
+class EspnHistoryIngest(Strict):
+    """The recent matches (goal minutes) of the teams playing in a time window, from ESPN (docs/ESPN.md)."""
+
+    start_utc: dt.datetime = Field(examples=["2026-11-24T10:00:00Z"])
+    end_utc: dt.datetime = Field(examples=["2026-11-24T22:00:00Z"])
+    competitions: list[str] = Field(default_factory=list, max_length=60,
+                                    description="Registry codes; empty = every competition with an ESPN code")
+    max_requests: int = Field(1500, ge=1, le=20000, description="About 1 request per second")
+    include_complete: bool = Field(False, description="Fetch summaries also for matches already complete")
+
+    @model_validator(mode="after")
+    def _window(self) -> EspnHistoryIngest:
+        if self.start_utc.tzinfo is None or self.end_utc.tzinfo is None:
+            raise ValueError("start_utc and end_utc need a time zone (e.g. Z)")
+        if self.end_utc <= self.start_utc or self.end_utc - self.start_utc > dt.timedelta(days=7):
+            raise ValueError("end_utc must be after start_utc, at most 7 days later")
+        return self
+
+
 class ApiFootballDayIngest(Strict):
     date: dt.date = Field(examples=["2026-11-14"])
     max_event_requests: int = Field(20, ge=0, le=API_FOOTBALL_RUN_BUDGET - 1,

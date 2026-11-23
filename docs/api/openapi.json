@@ -1265,6 +1265,108 @@
         "title": "DrawPrices",
         "type": "object"
       },
+      "EspnDaysIngest": {
+        "additionalProperties": false,
+        "description": "Whole match days of whole leagues from ESPN (docs/ESPN.md): fixtures, scores, goal minutes. Resumable.",
+        "properties": {
+          "competitions": {
+            "description": "Registry codes; empty = every competition with an ESPN code",
+            "items": {
+              "type": "string"
+            },
+            "maxItems": 60,
+            "title": "Competitions",
+            "type": "array"
+          },
+          "date_from": {
+            "examples": [
+              "2026-07-20"
+            ],
+            "format": "date",
+            "title": "Date From",
+            "type": "string"
+          },
+          "date_to": {
+            "examples": [
+              "2026-11-22"
+            ],
+            "format": "date",
+            "title": "Date To",
+            "type": "string"
+          },
+          "include_complete": {
+            "default": false,
+            "description": "Fetch summaries also for matches already complete",
+            "title": "Include Complete",
+            "type": "boolean"
+          },
+          "max_requests": {
+            "default": 1500,
+            "description": "About 1 request per second",
+            "maximum": 20000.0,
+            "minimum": 1.0,
+            "title": "Max Requests",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "date_from",
+          "date_to"
+        ],
+        "title": "EspnDaysIngest",
+        "type": "object"
+      },
+      "EspnHistoryIngest": {
+        "additionalProperties": false,
+        "description": "The recent matches (goal minutes) of the teams playing in a time window, from ESPN (docs/ESPN.md).",
+        "properties": {
+          "competitions": {
+            "description": "Registry codes; empty = every competition with an ESPN code",
+            "items": {
+              "type": "string"
+            },
+            "maxItems": 60,
+            "title": "Competitions",
+            "type": "array"
+          },
+          "end_utc": {
+            "examples": [
+              "2026-11-24T22:00:00Z"
+            ],
+            "format": "date-time",
+            "title": "End Utc",
+            "type": "string"
+          },
+          "include_complete": {
+            "default": false,
+            "description": "Fetch summaries also for matches already complete",
+            "title": "Include Complete",
+            "type": "boolean"
+          },
+          "max_requests": {
+            "default": 1500,
+            "description": "About 1 request per second",
+            "maximum": 20000.0,
+            "minimum": 1.0,
+            "title": "Max Requests",
+            "type": "integer"
+          },
+          "start_utc": {
+            "examples": [
+              "2026-11-24T10:00:00Z"
+            ],
+            "format": "date-time",
+            "title": "Start Utc",
+            "type": "string"
+          }
+        },
+        "required": [
+          "start_utc",
+          "end_utc"
+        ],
+        "title": "EspnHistoryIngest",
+        "type": "object"
+      },
       "FixtureOut": {
         "additionalProperties": false,
         "properties": {
@@ -3269,6 +3371,13 @@
             "title": "Schedule Every Minutes",
             "type": "integer"
           },
+          "sessions": {
+            "items": {
+              "$ref": "#/components/schemas/SessionScheduleOut"
+            },
+            "title": "Sessions",
+            "type": "array"
+          },
           "telegram": {
             "$ref": "#/components/schemas/TelegramStatusOut"
           }
@@ -3289,6 +3398,7 @@
           "cycle_running",
           "manual_cycle",
           "schedule_every_minutes",
+          "sessions",
           "telegram"
         ],
         "title": "RecorderStatusOut",
@@ -4385,12 +4495,189 @@
         "title": "SessionReportOut",
         "type": "object"
       },
+      "SessionScheduleOut": {
+        "additionalProperties": false,
+        "description": "One session's recorder timeline (plan -> capture -> cut-off -> report) and what has happened.",
+        "properties": {
+          "as_of_utc": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "As Of Utc"
+          },
+          "capture_from_utc": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Capture From Utc"
+          },
+          "captured": {
+            "title": "Captured",
+            "type": "boolean"
+          },
+          "deadline_utc": {
+            "format": "date-time",
+            "title": "Deadline Utc",
+            "type": "string"
+          },
+          "end_utc": {
+            "format": "date-time",
+            "title": "End Utc",
+            "type": "string"
+          },
+          "ended": {
+            "title": "Ended",
+            "type": "boolean"
+          },
+          "first_kickoff_utc": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "First Kickoff Utc"
+          },
+          "fixtures": {
+            "title": "Fixtures",
+            "type": "integer"
+          },
+          "frozen": {
+            "title": "Frozen",
+            "type": "integer"
+          },
+          "history_enabled": {
+            "title": "History Enabled",
+            "type": "boolean"
+          },
+          "history_status": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "History Status"
+          },
+          "history_stopped_at_budget": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "History Stopped At Budget"
+          },
+          "history_summaries": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "History Summaries"
+          },
+          "history_teams_without_link": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "History Teams Without Link"
+          },
+          "id": {
+            "title": "Id",
+            "type": "string"
+          },
+          "plan_at_utc": {
+            "format": "date-time",
+            "title": "Plan At Utc",
+            "type": "string"
+          },
+          "plan_status": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Plan Status"
+          },
+          "ready_by_utc": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Ready By Utc"
+          },
+          "start_utc": {
+            "format": "date-time",
+            "title": "Start Utc",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "start_utc",
+          "end_utc",
+          "deadline_utc",
+          "plan_at_utc",
+          "plan_status",
+          "fixtures",
+          "first_kickoff_utc",
+          "capture_from_utc",
+          "captured",
+          "as_of_utc",
+          "ready_by_utc",
+          "frozen",
+          "ended",
+          "history_enabled",
+          "history_status",
+          "history_summaries",
+          "history_teams_without_link",
+          "history_stopped_at_budget"
+        ],
+        "title": "SessionScheduleOut",
+        "type": "object"
+      },
       "SourceCode": {
         "enum": [
           "API_FOOTBALL",
           "FOOTBALL_DATA_ORG",
           "OPENFOOTBALL",
           "FOOTBALL_DATA_CO_UK",
+          "ESPN",
           "MANUAL"
         ],
         "title": "SourceCode",
@@ -5558,6 +5845,100 @@
           }
         ],
         "summary": "Ingest Api Football Season",
+        "tags": [
+          "jobs"
+        ]
+      }
+    },
+    "/jobs/ingest/espn-days": {
+      "post": {
+        "description": "ESPN (no key, no quota): each league's scoreboard of each day, then the goal minutes of every finished match\nnot stored from ESPN yet. Resumable: the same request again fetches only what is still missing.",
+        "operationId": "ingest_espn_days_jobs_ingest_espn_days_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/EspnDaysIngest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "202": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/JobAccepted"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Ingest Espn Days",
+        "tags": [
+          "jobs"
+        ]
+      }
+    },
+    "/jobs/ingest/espn-history": {
+      "post": {
+        "description": "ESPN (no key, no quota): the last matches (10 home, 10 away) of every team with a SCHEDULED fixture in the\nwindow - what the recorder's history step does for a session (docs/ESPN.md 5).",
+        "operationId": "ingest_espn_history_jobs_ingest_espn_history_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/EspnHistoryIngest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "202": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/JobAccepted"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Ingest Espn History",
         "tags": [
           "jobs"
         ]

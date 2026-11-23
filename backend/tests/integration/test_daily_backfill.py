@@ -204,8 +204,11 @@ def test_real_config_and_schedule(engine: Engine) -> None:
     cfg.check_registry(load_registry())                                       # the shipped file is valid
     sched = build_scheduler(engine, lambda: LocalRawStore(Path(".")), load_registry(), SETTINGS, cfg,
                             BackgroundScheduler(timezone="UTC"))
-    (job,) = sched.get_jobs()
+    job, espn_job = sched.get_jobs()
     assert job.id == "daily_backfill" and job.coalesce and job.max_instances == 1
+    assert espn_job.id == "espn_daily" and espn_job.coalesce and espn_job.max_instances == 1  # docs/ESPN.md
+    efields = {f.name: str(f) for f in espn_job.trigger.fields}
+    assert (efields["hour"], efields["minute"]) == tuple(str(x) for x in cfg.espn.hour_minute)
     fields = {f.name: str(f) for f in job.trigger.fields}
     assert (fields["hour"], fields["minute"]) == tuple(str(x) for x in cfg.schedule.hour_minute)
     with_paper = build_scheduler(engine, lambda: LocalRawStore(Path(".")), load_registry(), SETTINGS, cfg,

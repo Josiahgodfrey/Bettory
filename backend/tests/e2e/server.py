@@ -1,6 +1,6 @@
 """Backend for the whole-application (end-to-end) tests: the real API on a throwaway database.
 
-    TEST_DATABASE_URL=postgresql://postgres:test@127.0.0.1:54329/postgres \\
+    TEST_DATABASE_URL=postgresql://postgres:test@127.0.0.1:55432/postgres \\
         venv/Scripts/python -m tests.e2e.server --port 8100
 
 Started by Playwright (frontend/playwright.config.ts). What it does:
@@ -27,7 +27,7 @@ from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from urllib.parse import urlparse
 
-os.environ.setdefault("TEST_DATABASE_URL", "postgresql://postgres:test@127.0.0.1:54329/postgres")
+os.environ.setdefault("TEST_DATABASE_URL", "postgresql://postgres:test@127.0.0.1:55432/postgres")
 import tests.conftest  # noqa: F401 - isolation from the real services, before the app is imported
 
 os.environ["ENVIRONMENT"] = "local"
@@ -48,12 +48,23 @@ from app.api.deps import (
 )
 from app.core.settings import get_settings
 from app.domain.sessions import SessionCalendar
+from app.ingestion import espn
 from app.main import create_app
 from app.paper.freeze import Provenance, freeze_session
 from app.storage.raw_store import LocalRawStore
 from tests.integration.test_backtest_runner import REGISTRY, seed_league
 from tests.integration.test_paper_freeze import schedule
-from tests.support import PARAMS
+from tests.support import LIVE as PARAMS  # params 1.6, the live file: probabilities only
+
+
+class _NoRealEspn(espn.HttpSource):
+    """As in tests/conftest.py: the whole-application tests never send a request to ESPN."""
+
+    def get(self, *args: object, **kwargs: object) -> espn.Fetched:  # type: ignore[override]
+        raise RuntimeError("the e2e backend must not connect to ESPN")
+
+
+espn.HttpSource = _NoRealEspn  # type: ignore[misc]
 
 ADMIN_URL = os.environ["TEST_DATABASE_URL"]
 MIGRATIONS = Path(__file__).resolve().parents[3] / "supabase" / "migrations"
@@ -88,25 +99,48 @@ def drop_database(name: str) -> None:
         pass
 
 
+NEWCOMER = "Newcomers FC"  # a club without any match in the database: its fixture must fail on missing data
+
+
 def sealed_session(url: str) -> str:
-    """Two fixtures ~40 and ~50 minutes ahead, frozen now: a published session whose matches have not started."""
+    """Three fixtures ~40, ~50 and ~60 minutes ahead, frozen now: a published session whose matches have not started.
+    Two are between teams with full histories; the third has a team without any (missing data: never in Bets)."""
     cal = SessionCalendar(PARAMS)
     now = datetime.now(UTC).replace(second=0, microsecond=0)
-    for start in (40, 30, 20):  # keep both kick-offs in one session (a session boundary may fall in between)
-        kos = [now + timedelta(minutes=start), now + timedelta(minutes=start + 10)]
+    for start in (40, 30, 20):  # keep the kick-offs in one session (a session boundary may fall in between)
+        kos = [now + timedelta(minutes=start + 10 * i) for i in range(3)]
         sid = cal.session_of(kos[0])
-        if cal.session_of(kos[1]) == sid and cal.run_start(sid, kos[0]) <= now:
+        if all(cal.session_of(k) == sid for k in kos) and cal.run_start(sid, kos[0]) <= now:
             break
     else:
-        raise SystemExit("could not place two fixtures in one already cut-off session")
-    schedule(url, kos)
+        raise SystemExit("could not place three fixtures in one already cut-off session")
+    schedule(url, kos[:2])
+    with psycopg.connect(url, autocommit=True) as c:
+        season = c.execute("select id from core.competition_seasons where label = '2025-26'").fetchone()
+        home = c.execute("select id from core.teams order by name limit 1").fetchone()
+        new = c.execute("insert into core.teams (name, country) values (%s, 'Testland') returning id",
+                        (NEWCOMER,)).fetchone()
+        assert season and home and new
+        c.execute("insert into core.matches (competition_season_id, home_team_id, away_team_id, kickoff_utc, status, "
+                  "data_status) values (%s, %s, %s, %s, 'SCHEDULED', 'PENDING')", (season[0], home[0], new[0], kos[2]))
     engine = create_engine(url.replace("postgresql://", "postgresql+psycopg://"))
     r = freeze_session(engine, PARAMS, REGISTRY, sid, now=datetime.now(UTC),
                        provenance=Provenance("tuning_e2e.yaml", "e" * 64, "e2e"))
     engine.dispose()
-    if r.status != "FROZEN" or r.frozen != 2:
+    if r.status != "FROZEN" or r.frozen != 3:
         raise SystemExit(f"freeze failed: {r}")
     return str(sid)
+
+
+def seed_reviews(url: str) -> None:
+    """Two open team reviews: a name meaning an existing team, and a club new to the database."""
+    with psycopg.connect(url, autocommit=True) as c:
+        src = c.execute("select id from core.sources where code::text = 'OPENFOOTBALL'").fetchone()
+        assert src is not None
+        for key, name in (("tst-a", "Team A Utd"), ("tst-new", "Brand New FC")):
+            c.execute("insert into core.entity_review_queue (source_id, entity_type, provider_key, provider_name, "
+                      "context) values (%s, 'TEAM', %s, %s, %s)",
+                      (src[0], key, name, '{"competition": "TST1", "country": "Testland", "season": "2025-26"}'))
 
 
 def main() -> None:
@@ -121,6 +155,7 @@ def main() -> None:
     name, url = create_database()
     atexit.register(drop_database, name)
     seed_league(url)
+    seed_reviews(url)
     sid = sealed_session(url)
 
     engine = create_engine(url.replace("postgresql://", "postgresql+psycopg://"))

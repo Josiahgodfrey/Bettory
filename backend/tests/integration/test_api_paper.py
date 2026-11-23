@@ -99,3 +99,22 @@ def test_dashboard_alerts_follow_the_recorder(league: Any, tmp_path: Path) -> No
     assert not [a for a in d["alerts"] if a["code"] == "FREEZE_LATE"]
     assert d["next_session"]["report_state"] == "PUBLISHED" and d["paper"]["frozen"] == 2
     assert d["paper"]["chain_intact"] is True
+
+
+def test_next_session_includes_the_noon_session_still_running_after_midnight(league: Any, tmp_path: Path) -> None:  # noqa: F811
+    """The Noon session of date D covers kick-offs until 00:59 EAT of D+1: at 00:30 EAT it is still the session
+    to bet on (found by the e2e tests at 00:10 EAT on 2026-11-19)."""
+    from app.domain.sessions import SessionCalendar, SessionId, SessionKind
+    from tests.integration.test_paper_freeze import schedule
+
+    engine, url, _ = league
+    cal = SessionCalendar(PARAMS)
+    day = datetime.now(UTC).date() + timedelta(days=5)
+    noon = SessionId(day, SessionKind.NOON)
+    late_ko = cal.times(noon).end_utc - timedelta(minutes=10)     # 00:50 EAT of day + 1
+    schedule(url, [late_ko])
+    clock = Clock()
+    clock.now = late_ko - timedelta(minutes=20)                    # 00:30 EAT: the EAT date is already day + 1
+    assert clock.now.astimezone(cal.tz).date() == day + timedelta(days=1)
+    d = client(engine, clock, tmp_path).get("/dashboard").json()
+    assert d["next_session"]["id"] == str(noon) and d["next_session"]["fixtures"] == 1

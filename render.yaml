@@ -1,0 +1,57 @@
+# Render blueprint for the BETTORY backend (docs/DEPLOYMENT.md). One Docker web service in Frankfurt (the Render
+# region closest to the Supabase database in eu-west-1, Ireland). Values marked `sync: false` are secrets: Render
+# asks for them when the blueprint is created and keeps them only in the dashboard - never in this repository.
+services:
+  - type: web
+    name: bettory-api
+    runtime: docker
+    region: frankfurt
+    plan: starter            # always on; the free plan sleeps after 15 minutes and cannot run the scheduler
+    branch: main
+    rootDir: backend
+    dockerfilePath: ./Dockerfile
+    dockerContext: .
+    healthCheckPath: /health
+    autoDeploy: true
+    envVars:
+      - key: ENVIRONMENT
+        value: production
+      - key: RUN_WORKER
+        value: "false"       # owner decision 2026-11-19: recorder off until switched on after deployment
+      - key: WORKER_ARGS
+        value: ""
+      # Supabase (database through the IPv4 session pooler, Storage, login tokens)
+      - key: SUPABASE_URL
+        sync: false
+      - key: SUPABASE_PROJECT_REF
+        sync: false
+      - key: SUPABASE_SERVICE_ROLE_KEY
+        sync: false
+      - key: DATABASE_HOST
+        sync: false
+      - key: DATABASE_PORT
+        value: "5432"
+      - key: DATABASE_PASSWORD
+        sync: false
+      - key: RAW_STORE
+        value: supabase
+      # login: only this user, with two-factor
+      - key: OWNER_USER_ID
+        sync: false
+      # the frontend's address(es), JSON list, e.g. ["https://bettory.vercel.app"]
+      - key: CORS_ORIGINS
+        sync: false
+      - key: APP_URL
+        sync: false
+      # data APIs
+      - key: API_FOOTBALL_KEY
+        sync: false
+      - key: API_FOOTBALL_PLAN
+        value: free
+      - key: FOOTBALL_DATA_ORG_KEY
+        sync: false
+      # Telegram
+      - key: TELEGRAM_BOT_TOKEN
+        sync: false
+      - key: TELEGRAM_CHAT_ID
+        sync: false

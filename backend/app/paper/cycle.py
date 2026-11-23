@@ -1,9 +1,13 @@
-"""One recorder cycle: capture -> freeze -> results -> settle (docs/PAPER-BETTING.md 8, config/paper.yaml).
+"""One recorder cycle: plan -> capture -> freeze -> results -> settle (docs/PAPER-BETTING.md 8, config/paper.yaml).
 
 Run every few minutes by the worker (app/jobs/scheduler.py) or by Windows Task Scheduler (`paper-cycle`). Every
 step decides from the database alone whether it is due, so a cycle can run at any time, as often as wanted, in
 any process: a step that is not due does nothing and costs nothing.
 
+    plan      a session past its plan time (plan.noon_at / plan.night_at, EAT) without a successful plan run: the
+              fixtures of the UTC dates it covers (app/paper/plan.py); "no fixtures" on Telegram if it has none
+    history   after the plan, before the session's cut-off, once: goal minutes of its teams' recent matches from
+              ESPN (history.*, docs/ESPN.md) - no key, no daily quota, not counted in the API-Football bound
     capture   a session whose as_of is less than capture.lead_minutes away and that has no successful capture
               run in that window yet (at most capture.attempts runs): app/paper/capture.py
     freeze    a session past its as_of with upcoming fixtures not frozen yet for the live params version:
@@ -31,7 +35,7 @@ from uuid import UUID
 from sqlalchemy import Engine
 
 from app.core.settings import Settings
-from app.domain.enums import FixtureStatus, RunStatus
+from app.domain.enums import FixtureStatus, RunStatus, SourceCode
 from app.domain.params import Params
 from app.domain.registry import Registry
 from app.domain.sessions import SessionCalendar, SessionId
@@ -41,6 +45,7 @@ from app.notifications.outbox import Sender
 from app.paper.capture import RECORDER_JOB_PREFIX, capture_job, capture_session
 from app.paper.config import PaperConfig
 from app.paper.freeze import MIN_LEAD, Provenance, due_sessions, freeze_session
+from app.paper.plan import plan_job, plan_time, session_dates
 from app.paper.recheck import Rechecked, run_rechecks
 from app.paper.recheck import due as recheck_due
 from app.paper.settle import SETTLE_AFTER, settle_due
@@ -52,6 +57,7 @@ from app.storage.repositories import paper as paper_repo
 log = logging.getLogger(__name__)
 CYCLE_LOCK = "paper_cycle"
 RESULTS_JOB = "paper_results:"
+HISTORY_JOB = "espn_history:"  # not "paper_": ESPN requests must not count against the API-Football bound
 CLOSING_JOB = "paper_closing:"
 
 
@@ -141,20 +147,98 @@ class _Cycle:
         except Exception:  # notifications must never stop the recorder
             log.exception("telegram notifications failed")
 
+    def plan_session(self, cal: SessionCalendar, sid: SessionId) -> bool:
+        """Load the session's fixtures once, from its plan time on. True when a plan run has succeeded."""
+        x, now, out, cfg = self.x, self.now, self.out, self.x.cfg.plan
+        at = plan_time(cal, x.cfg, sid)
+        if not cfg.enabled or now < at:
+            return False
+        job = plan_job(sid)
+        runs = ops_repo.run_statuses_since(x.engine, job, at)
+        if RunStatus.SUCCEEDED in runs:
+            return True
+        if len(runs) >= cfg.attempts:
+            return False
+        days = session_dates(cal, sid)
+        budget = min(cfg.max_requests.for_plan(self.plan), self.left_today())
+        if not self.key:
+            out.fail(f"{sid} plan due but API_FOOTBALL_KEY is not configured")
+            return False
+        if budget < len(days):
+            out.fail(f"{sid} plan due but the recorder's daily request bound is used up")
+            return False
+        if self.dry_run:
+            out.note(f"{sid} would plan now: fixtures of {', '.join(d.isoformat() for d in days)} "
+                     f"({len(days)} request{'s' if len(days) > 1 else ''})")
+            return False
+        try:
+            st = pipeline.api_football_fixture_dates(x.engine, x.store(), x.registry, self.key, days,
+                                                     requests_per_minute=self.rpm, job_name=job)
+        except Exception as exc:
+            out.fail(f"{sid} plan failed: {type(exc).__name__}: {exc}")
+            return False
+        out.note(f"{sid} plan: {st.get('listed_fixtures', 0)} fixtures listed ({len(days)} date(s))")
+        return True
+
+    def history(self, cal: SessionCalendar, sid: SessionId) -> None:
+        """ESPN goal minutes for the session's teams (docs/ESPN.md), once, between its plan time and its cut-off."""
+        x, now, out, cfg = self.x, self.now, self.out, self.x.cfg.history
+        at = plan_time(cal, x.cfg, sid)
+        if not cfg.enabled or now < at:
+            return
+        job = f"{HISTORY_JOB}{sid}"
+        runs = ops_repo.run_statuses_since(x.engine, job, at)
+        if RunStatus.SUCCEEDED in runs or len(runs) >= cfg.attempts:
+            return
+        codes = list(self.codes)
+        if cfg.all_competitions:
+            codes += sorted(c.code for c in x.registry.competitions
+                            if SourceCode.ESPN in c.providers and c.code not in self.codes)
+        times = cal.times(sid)
+        with x.engine.connect() as conn:
+            rows = paper_repo.session_fixture_teams(conn, times.start_utc, times.end_utc, codes)
+        if not rows:
+            return
+        if now >= cal.run_start(sid, min(r[1] for r in rows)):
+            return  # past the cut-off: the freeze works with what is stored
+        fixtures = [pipeline.FixtureRef(c, k, h, a) for c, k, h, a in rows
+                    if SourceCode.ESPN in x.registry.get(c).providers]
+        if not fixtures:
+            return  # no fixture in a league ESPN covers: nothing to fetch
+        if self.dry_run:
+            out.note(f"{sid} would load team histories from ESPN now ({len(fixtures)} fixtures, "
+                     f"up to {cfg.max_requests} requests)")
+            return
+        try:
+            st = pipeline.espn_history(x.engine, x.store(), x.registry, fixtures,
+                                       history_matches=x.params.data_gate.history_matches,
+                                       max_requests=cfg.max_requests, job_name=job, skip_complete=cfg.skip_complete)
+        except Exception as exc:  # stored as a FAILED run; retried by the next cycle within `attempts`
+            out.fail(f"{sid} history failed: {type(exc).__name__}: {exc}")
+            return
+        out.note(f"{sid} history (ESPN): {st.get('summaries', 0)} match summaries, {st.get('schedules', 0)} "
+                 f"team schedules for {st.get('fixtures', 0)} fixtures"
+                 + (" - stopped at the request budget" if st.get("stopped_at_request_budget") else ""))
+
     def session(self, cal: SessionCalendar, sid: SessionId) -> None:
         x, now, out = self.x, self.now, self.out
+        planned = self.plan_session(cal, sid)
+        if planned or not x.cfg.plan.enabled:
+            self.history(cal, sid)
         times = cal.times(sid)
         with x.engine.connect() as conn:
             fixtures = paper_repo.session_fixtures(conn, times.start_utc, times.end_utc, self.codes)
             done = paper_repo.frozen_match_ids(conn, str(sid), x.params.params_version)
         if not fixtures:
+            if planned and not self.dry_run and x.cfg.plan.notify_no_fixtures:
+                outbox.notify(x.engine, f"nofixtures:{sid}", "NO_MATCHES", messages.no_fixtures(str(sid)))
             return
         as_of = cal.run_start(sid, fixtures[0].kickoff_utc)
         window = as_of - x.cfg.capture.lead
         runs = ops_repo.run_statuses_since(x.engine, capture_job(sid), window)
         captured = RunStatus.SUCCEEDED in runs
 
-        if window <= now < as_of and not captured and len(runs) < x.cfg.capture.attempts:
+        if x.cfg.capture.enabled and window <= now < as_of and not captured and len(runs) < x.cfg.capture.attempts:
             budget = min(x.cfg.capture.max_requests.for_plan(self.plan), self.left_today())
             if not self.key:
                 out.fail(f"{sid} capture due but API_FOOTBALL_KEY is not configured")
@@ -176,7 +260,8 @@ class _Cycle:
                 and f.kickoff_utc >= now + MIN_LEAD]
         if now < as_of or not todo:
             return
-        warn = "" if captured else " - no capture before as_of: no odds sealed, no paper bets"
+        warn = ("" if captured or not x.cfg.capture.enabled
+                else " - no capture before as_of: no odds sealed, no paper bets")
         if self.dry_run:
             out.note(f"{sid} would freeze {len(todo)} fixtures now (as_of {as_of:%H:%M}Z){warn}")
             return
@@ -223,6 +308,8 @@ class _Cycle:
 
     def closing(self) -> None:
         x, now, out, cfg = self.x, self.now, self.out, self.x.cfg.closing
+        if not cfg.enabled:
+            return
         with x.engine.connect() as conn:
             todo = paper_repo.closing_candidates(conn, x.params.params_version, now,
                                                  now + timedelta(minutes=cfg.minutes_before))

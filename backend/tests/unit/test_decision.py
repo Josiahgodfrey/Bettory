@@ -24,7 +24,7 @@ from app.decision.grading import grade, model_spread_pts
 from app.decision.layers import FixtureAnalysis, Verdict, verify
 from app.decision.ranking import rank_and_cap, recheck
 from app.domain.enums import Decision, Grade
-from tests.support import PARAMS, params
+from tests.support import LIVE, PARAMS, params
 
 KO = datetime(2026, 11, 20, 15, 0, tzinfo=UTC)
 S = 0.125
@@ -324,3 +324,49 @@ def test_model_spread_needs_two_models() -> None:
     from app.calculation.invariants import InvariantError
     with pytest.raises(InvariantError):
         model_spread_pts([0.73])
+
+
+# --- params 1.6: probabilities only (owner decision 2026-11-23) ------------------------------------------------
+
+
+def live(**kw: Any) -> FixtureAnalysis:
+    return good(price_params=LIVE, **kw)
+
+
+def test_v16_passes_on_probability_and_never_uses_odds() -> None:
+    a = live(model_c=model_c(), favourite_odds=1.20,
+             quotes={Bet.UNDER05: {"UNDER": 1.01, "OVER": 9.0}}, bookmaker="X")  # odds present: all ignored
+    v = verify(a, LIVE)
+    assert v.decision is Decision.QUALIFIED and v.params_version == "1.6"
+    assert v.min_odds_under05 is None and v.min_odds_draw is None and v.ev is None
+    assert v.p_under05 is not None and v.p_draw is not None and 0 < v.p_under05 <= v.p_draw < 1
+    codes = {c.code for c in v.checks}
+    assert {"P_UNDER05", "P_DRAW", "SELECTED_MARKET"} <= codes
+    assert not codes & {"MINIMUM_ODDS", "TEAM_MARKET_GAP", "FAVOURITE_ODDS", "QUOTE_UNDER05_PRICE"}
+    assert v.selected in (Bet.UNDER05, Bet.DRAW)
+    # Model C does not move the probabilities: the same with and without it
+    assert verify(live(), LIVE).p_under05 == pytest.approx(v.p_under05)
+
+
+def test_v16_fails_with_the_reason_when_both_probabilities_are_below_their_minimums() -> None:
+    strict = LIVE.with_values({"probability.min_under05": 0.99, "probability.min_draw": 0.99})
+    v = verify(live(), strict)
+    assert v.decision is Decision.SKIP and "PROBABILITY_QUALIFIES" in failed_codes(v)
+    assert {"P_UNDER05", "P_DRAW"} <= missed_codes(v)
+
+
+def test_v16_selects_the_market_furthest_above_its_minimum() -> None:
+    v = verify(live(), LIVE)
+    assert v.p_under05 is not None and v.p_draw is not None and LIVE.probability is not None
+    margin_u, margin_d = v.p_under05 - LIVE.probability.min_under05, v.p_draw - LIVE.probability.min_draw
+    expected = Bet.UNDER05 if margin_u >= margin_d else Bet.DRAW
+    assert v.selected is expected
+    only_draw = LIVE.with_values({"probability.min_under05": 0.99, "probability.min_draw": 0.50})
+    assert verify(live(), only_draw).selected is Bet.DRAW
+
+
+def test_v16_data_and_screen_layers_still_decide() -> None:
+    v = verify(live(fifteen_minute_market=False), LIVE)
+    assert v.decision is Decision.SKIP and "FIFTEEN_MINUTE_MARKET" in failed_codes(v)
+    v = verify(live(windows=None), LIVE)
+    assert v.decision is Decision.INSUFFICIENT_DATA

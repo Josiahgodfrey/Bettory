@@ -1,0 +1,114 @@
+{
+ "leagues": [
+  {
+   "season": {
+    "year": 2026,
+    "startDate": "2026-06-01T04:00Z",
+    "endDate": "2027-06-01T03:59Z",
+    "displayName": "2026-27 English Premier League",
+    "type": {
+     "id": "1",
+     "type": 14308,
+     "name": "2026-27 English Premier League",
+     "abbreviation": "2026-27 English Premier League"
+    }
+   }
+  }
+ ],
+ "events": [
+  {
+   "id": "401879234",
+   "date": "2026-11-22T14:00Z",
+   "season": {
+    "year": 2026,
+    "type": 14308,
+    "slug": "2026-27-english-premier-league"
+   },
+   "competitions": [
+    {
+     "status": {
+      "clock": 5400.0,
+      "displayClock": "90'+6'",
+      "period": 2,
+      "type": {
+       "id": "28",
+       "name": "STATUS_FULL_TIME",
+       "state": "post",
+       "completed": true,
+       "description": "Full Time",
+       "detail": "FT",
+       "shortDetail": "FT"
+      }
+     },
+     "competitors": [
+      {
+       "homeAway": "home",
+       "id": "306",
+       "score": "2",
+       "team": {
+        "id": "306",
+        "displayName": "Hull City"
+       }
+      },
+      {
+       "homeAway": "away",
+       "id": "331",
+       "score": "0",
+       "team": {
+        "id": "331",
+        "displayName": "Brighton & Hove Albion"
+       }
+      }
+     ]
+    }
+   ]
+  },
+  {
+   "id": "401878755",
+   "date": "2026-11-22T16:30Z",
+   "season": {
+    "year": 2026,
+    "type": 14308,
+    "slug": "2026-27-english-premier-league"
+   },
+   "competitions": [
+    {
+     "status": {
+      "clock": 5400.0,
+      "displayClock": "90'+3'",
+      "period": 2,
+      "type": {
+       "id": "28",
+       "name": "STATUS_FULL_TIME",
+       "state": "post",
+       "completed": true,
+       "description": "Full Time",
+       "detail": "FT",
+       "shortDetail": "FT"
+      }
+     },
+     "competitors": [
+      {
+       "homeAway": "home",
+       "id": "364",
+       "score": "4",
+       "team": {
+        "id": "364",
+        "displayName": "Liverpool"
+       }
+      },
+      {
+       "homeAway": "away",
+       "id": "360",
+       "score": "0",
+       "team": {
+        "id": "360",
+        "displayName": "Manchester United"
+       }
+      }
+     ]
+    }
+   ]
+  }
+ ]
+}

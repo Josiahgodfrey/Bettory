@@ -57,6 +57,15 @@ def mapped_entity(conn: Connection, source: SourceCode, entity_type: EntityType,
     ).scalar_one_or_none()
 
 
+def provider_keys_for(conn: Connection, source: SourceCode, entity_type: EntityType, entity_id: UUID) -> list[str]:
+    """The source's keys linked to one entity (normally one; e.g. ["id:364"])."""
+    return list(conn.execute(
+        text("select provider_key from core.provider_entity_map "
+             "where source_id = :s and entity_type = :t and entity_id = :e order by created_at"),
+        {"s": SOURCE_IDS[source], "t": entity_type.value, "e": entity_id},
+    ).scalars())
+
+
 def add_mapping(conn: Connection, source: SourceCode, entity_type: EntityType, provider_key: str,
                 entity_id: UUID, method: MappingMethod) -> None:
     conn.execute(
@@ -185,9 +194,10 @@ def search_teams(conn: Connection, query: str | None, country: str | None, limit
     rows = conn.execute(text("""
         select t.id, t.name, t.country from core.teams t
         where (cast(:c as text) is null or t.country = :c)
-          and (cast(:q as text) is null or exists (
-                select 1 from core.team_aliases a
-                where a.team_id = t.id and a.normalized_alias like '%' || :q || '%'))
+          and (cast(:q as text) is null
+               or lower(t.name) like '%' || lower(:raw) || '%'
+               or exists (select 1 from core.team_aliases a
+                          where a.team_id = t.id and a.normalized_alias like '%' || :q || '%'))
         order by t.country, t.name limit :lim"""),
-        {"c": country, "q": needle, "lim": limit})
+        {"c": country, "q": needle, "raw": query.strip() if query else None, "lim": limit})
     return [dict(r) for r in rows.mappings()]

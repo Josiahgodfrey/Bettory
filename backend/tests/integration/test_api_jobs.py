@@ -153,3 +153,55 @@ def test_review_new_team_flow(client: TestClient, engine: Engine, offline_openfo
     assert taken.status_code == 409 and "already a name of team" in taken.json()["detail"]
     assert [r["provider_name"] for r in client.get("/reviews").json()] == [spurs["name"]]  # still open
     assert client.post(f"/reviews/{reviews['Coventry City FC']}/new-team", json={}).status_code == 404  # resolved
+
+
+def test_team_search_finds_a_team_by_its_name_without_aliases(client: TestClient, engine: Engine) -> None:
+    """GET /teams matches the team's own name too, not only its aliases (found by the e2e tests 2026-11-19)."""
+    with engine.begin() as c:
+        c.execute(text("insert into core.teams (name, country) values ('Team Without Alias', 'Testland')"))
+    assert [t["name"] for t in client.get("/teams", params={"q": "without ali"}).json()] == ["Team Without Alias"]
+    assert client.get("/teams", params={"q": "no such club"}).json() == []
+
+
+# --- ESPN (docs/ESPN.md) -------------------------------------------------------------------------
+
+
+def test_espn_days_job_runs_with_a_fake_espn(client: TestClient, monkeypatch: pytest.MonkeyPatch) -> None:
+    from app.ingestion import pipeline
+    from tests.integration.test_espn_history import NEXT_KO, FakeEspn
+
+    monkeypatch.setattr(pipeline, "Espn", FakeEspn)
+    FakeEspn.calls = []
+    day = NEXT_KO.date().isoformat()
+    resp = client.post("/jobs/ingest/espn-days", json={"competitions": ["ENG1"], "date_from": day, "date_to": day})
+    assert resp.status_code == 202 and resp.json()["source"] == "ESPN"
+    run = client.get(f"/jobs/runs/{resp.json()['run_id']}").json()
+    assert run["status"] == "SUCCEEDED" and run["stats"]["scoreboards"] == 1
+    assert FakeEspn.calls == [f"scoreboard:eng.1:{day}"]                  # every competition asked, nothing else
+
+
+def test_espn_history_job_with_no_fixture_in_the_window(client: TestClient, monkeypatch: pytest.MonkeyPatch) -> None:
+    from app.ingestion import pipeline
+    from tests.integration.test_espn_history import FakeEspn
+
+    monkeypatch.setattr(pipeline, "Espn", FakeEspn)
+    FakeEspn.calls = []
+    resp = client.post("/jobs/ingest/espn-history",
+                       json={"start_utc": "2026-11-24T10:00:00Z", "end_utc": "2026-11-24T22:00:00Z"})
+    assert resp.status_code == 202
+    run = client.get(f"/jobs/runs/{resp.json()['run_id']}").json()
+    assert run["status"] == "SUCCEEDED" and run["stats"]["fixtures"] == 0 and FakeEspn.calls == []
+
+
+@pytest.mark.parametrize("path,body,fragment", [
+    ("/jobs/ingest/espn-days", {"competitions": ["XXX9"], "date_from": "2026-11-01", "date_to": "2026-11-02"},
+     "unknown competition XXX9"),
+    ("/jobs/ingest/espn-days", {"date_from": "2026-11-02", "date_to": "2026-11-01"}, "on or after"),
+    ("/jobs/ingest/espn-history", {"start_utc": "2026-11-24T10:00:00", "end_utc": "2026-11-24T22:00:00"},
+     "time zone"),
+    ("/jobs/ingest/espn-history", {"start_utc": "2026-11-24T10:00:00Z", "end_utc": "2026-12-24T22:00:00Z"},
+     "at most 7 days"),
+])
+def test_espn_jobs_refuse_bad_requests(client: TestClient, path: str, body: dict[str, Any], fragment: str) -> None:
+    resp = client.post(path, json=body)
+    assert resp.status_code == 422 and fragment in resp.text

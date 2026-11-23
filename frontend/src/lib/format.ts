@@ -57,8 +57,12 @@ export function sessionLabel(id: string): string {
 }
 
 /** UPPER_SNAKE → "Upper snake" */
+/** Names that are not plain words: kept as their owners write them. */
+const PROPER: Record<string, string> = { ESPN: 'ESPN', API_FOOTBALL: 'API-Football', FOOTBALL_DATA_ORG: 'football-data.org', OPENFOOTBALL: 'openfootball', FOOTBALL_DATA_CO_UK: 'football-data.co.uk' }
+
 export function humanize(code: string | null | undefined): string {
   if (!code) return dash
+  if (code in PROPER) return PROPER[code]
   const s = code.replace(/_/g, ' ').toLowerCase()
   return s.charAt(0).toUpperCase() + s.slice(1)
 }

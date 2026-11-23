@@ -22,9 +22,15 @@ def report_ready(session_id: str, listed: int, first_kickoff: datetime, tz: Zone
     if listed == 0:
         return f"{_session_name(session_id)} — 0 matches passed verification."
     icon = "🌙" if session_id.endswith("NIGHT") else "☀️"
-    link = f"{app_url.rstrip('/')}/bets?session={session_id}"
+    link = f"{app_url.rstrip('/')}/sessions/{session_id}"  # the Bets section of that session (frontend route)
     return (f"{icon} {_session_name(session_id)} — {listed} {'match' if listed == 1 else 'matches'} verified "
             f"(first kick-off {_local(first_kickoff, tz)} EAT). Open: {link}")
+
+
+def no_fixtures(session_id: str) -> str:
+    """A planned session without any fixture in the report leagues (ARCHITECTURE.md 12.3)."""
+    icon = "🌙" if session_id.endswith("NIGHT") else "☀️"
+    return f"{icon} {_session_name(session_id)} — no matches in the report leagues: nothing to analyse."
 
 
 def withdrawn(home: str, away: str, kickoff: datetime, reasons: Sequence[str], tz: ZoneInfo) -> str:

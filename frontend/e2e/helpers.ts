@@ -20,21 +20,39 @@ export async function noHorizontalScroll(page: Page): Promise<void> {
   expect(wider, 'page is wider than the screen').toBeLessThanOrEqual(1)
 }
 
-/** The sealed session of the e2e database and its two listed matches (read from the API, as the app does). */
-export async function sealedSession(page: Page): Promise<{ id: string; matches: { id: string; title: string; minU: number; minD: number }[] }> {
+export type Entry = {
+  match_id: string
+  decision: string
+  failed_checks: string[]
+  p_under05: number | null
+  p_draw: number | null
+  fair_under05: number | null
+  fair_draw: number | null
+  min_odds_under05: number | null
+  fixture: { home_team: string; away_team: string }
+}
+
+/** The sealed session of the e2e database, its listed matches (the Bets section) and all its analysed games. */
+export async function sealedSession(page: Page): Promise<{ id: string; matches: { id: string; title: string; pU: number; pD: number }[]; all: Entry[]; decisions: Record<string, number> }> {
   const dash = await (await page.request.get(`${API}/dashboard`)).json()
   const id: string = dash.next_session.id
   const rep = await (await page.request.get(`${API}/sessions/${id}`)).json()
+  const all = await (await page.request.get(`${API}/sessions/${id}/fixtures`)).json()
   return {
     id,
-    matches: rep.entries.map((e: { match_id: string; fixture: { home_team: string; away_team: string }; min_odds_under05: number; min_odds_draw: number }) => ({
+    matches: rep.entries.map((e: Entry) => ({
       id: e.match_id,
       title: `${e.fixture.home_team} v ${e.fixture.away_team}`,
-      minU: e.min_odds_under05,
-      minD: e.min_odds_draw,
+      pU: e.p_under05 ?? NaN,
+      pD: e.p_draw ?? NaN,
     })),
+    all: all.entries,
+    decisions: rep.decisions,
   }
 }
+
+/** The app's percentage format (lib/format.ts pct): one decimal. */
+export const pctText = (p: number) => `${(p * 100).toFixed(1)}%`
 
 export async function toast(page: Page): Promise<string> {
   const t = page.locator('[data-sonner-toast]').first()

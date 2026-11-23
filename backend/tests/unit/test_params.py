@@ -16,7 +16,8 @@ CALCULATION = BACKEND_DIR / "app" / "calculation"
 def test_active_params_file_loads_and_is_named_by_its_version() -> None:
     active = BACKEND_DIR / get_settings().params_file
     p = load_params(active)
-    assert active == params_path(p.params_version) and p.params_version == "1.5"
+    assert active == params_path(p.params_version) and p.params_version == "1.6"
+    assert p.probability is not None and (p.blend.team_weight, p.blend.market_weight) == (1.0, 0.0)
 
 
 def test_unknown_or_missing_keys_are_rejected(tmp_path: Path) -> None:

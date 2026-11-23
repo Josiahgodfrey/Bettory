@@ -4,6 +4,7 @@ import { expect, test } from '@playwright/test'
 import { noHorizontalScroll, sealedSession, watchErrors } from './helpers'
 
 const PAGES: [string, string | RegExp][] = [
+  ['/data-loading', 'Data loading'],
   ['/', 'Today'],
   ['/bets', 'My bets'],
   ['/performance', 'Performance'],

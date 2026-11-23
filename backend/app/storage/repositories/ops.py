@@ -70,6 +70,16 @@ def latest_run_like(engine: Engine, job_prefix: str) -> dict[str, Any] | None:
     return dict(row) if row else None
 
 
+def latest_run_since(engine: Engine, job_prefix: str, since: datetime) -> dict[str, Any] | None:
+    """The newest run whose job name starts with `job_prefix`, started at or after `since`, with its statistics."""
+    with engine.connect() as conn:
+        row = conn.execute(text("""
+            select status::text as status, started_at, finished_at, requests_used, stats
+            from raw.ingestion_runs where starts_with(job_name, :p) and started_at >= :s
+            order by started_at desc, id limit 1"""), {"p": job_prefix, "s": since}).mappings().one_or_none()
+    return dict(row) if row else None
+
+
 def failed_runs_since(engine: Engine, since: datetime) -> list[dict[str, Any]]:
     """FAILED runs started at or after `since`, newest first."""
     with engine.connect() as conn:

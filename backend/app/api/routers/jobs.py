@@ -7,16 +7,19 @@ the job itself runs in the background. Poll GET /jobs/runs/{run_id} for the outc
 from __future__ import annotations
 
 from collections.abc import Callable
+from datetime import timedelta
 from typing import Annotated
 from uuid import UUID
 
 from fastapi import APIRouter, BackgroundTasks, HTTPException, Query, status
 
-from app.api.deps import EngineDep, OwnerDep, RawStoreFactoryDep, RegistryDep, SettingsDep
+from app.api.deps import EngineDep, OwnerDep, ParamsDep, RawStoreFactoryDep, RegistryDep, SettingsDep
 from app.api.schemas import (
     ApiFootballBackfill,
     ApiFootballDayIngest,
     CompetitionOut,
+    EspnDaysIngest,
+    EspnHistoryIngest,
     JobAccepted,
     OpenFootballIngest,
     RunOut,
@@ -26,6 +29,7 @@ from app.domain.enums import RunStatus, SourceCode
 from app.domain.registry import CompetitionDef, Registry, season_label, season_start_year
 from app.ingestion import pipeline
 from app.ingestion import runner as ingest_runner
+from app.storage.repositories import paper as paper_repo
 from app.storage.repositories import raw as raw_repo
 
 router = APIRouter(prefix="/jobs", tags=["jobs"])
@@ -79,6 +83,49 @@ def competitions(_: OwnerDep, registry: RegistryDep) -> list[CompetitionOut]:
 
 # --- start jobs --------------------------------------------------------------------------------
 
+
+
+def _espn_codes(registry: Registry, codes: list[str]) -> list[str]:
+    known = {c.code: c for c in registry.competitions}
+    if not codes:
+        return [c.code for c in registry.competitions if SourceCode.ESPN in c.providers]
+    for code in codes:
+        if code not in known:
+            raise HTTPException(status.HTTP_422_UNPROCESSABLE_CONTENT, f"unknown competition {code}")
+        if SourceCode.ESPN not in known[code].providers:
+            raise HTTPException(status.HTTP_422_UNPROCESSABLE_CONTENT, f"{code} has no ESPN mapping")
+    return list(dict.fromkeys(codes))
+
+
+@router.post("/ingest/espn-days", status_code=status.HTTP_202_ACCEPTED, response_model=JobAccepted)
+def ingest_espn_days(body: EspnDaysIngest, _: OwnerDep, background: BackgroundTasks, engine: EngineDep,
+                     registry: RegistryDep, store: RawStoreFactoryDep) -> JobAccepted:
+    """ESPN (no key, no quota): each league's scoreboard of each day, then the goal minutes of every finished match
+    not stored from ESPN yet. Resumable: the same request again fetches only what is still missing."""
+    codes = _espn_codes(registry, body.competitions)
+    days = [body.date_from + timedelta(days=i) for i in range((body.date_to - body.date_from).days + 1)]
+    return _start(engine, background, SourceCode.ESPN, f"api:espn_days:{body.date_from}:{body.date_to}",
+                  lambda run_id: pipeline.espn_days(engine, store(), registry, codes, days,
+                                                    max_requests=body.max_requests,
+                                                    skip_complete=not body.include_complete,
+                                                    job_name="", run_id=run_id))
+
+
+@router.post("/ingest/espn-history", status_code=status.HTTP_202_ACCEPTED, response_model=JobAccepted)
+def ingest_espn_history(body: EspnHistoryIngest, _: OwnerDep, background: BackgroundTasks, engine: EngineDep,
+                        registry: RegistryDep, store: RawStoreFactoryDep, params: ParamsDep) -> JobAccepted:
+    """ESPN (no key, no quota): the last matches (10 home, 10 away) of every team with a SCHEDULED fixture in the
+    window - what the recorder's history step does for a session (docs/ESPN.md 5)."""
+    codes = _espn_codes(registry, body.competitions)
+    with engine.connect() as conn:
+        teams = paper_repo.session_fixture_teams(conn, body.start_utc, body.end_utc, codes)
+    fixtures = [pipeline.FixtureRef(*t) for t in teams]
+    return _start(engine, background, SourceCode.ESPN, f"api:espn_history:{body.start_utc:%Y-%m-%dT%H:%M}",
+                  lambda run_id: pipeline.espn_history(engine, store(), registry, fixtures,
+                                                       history_matches=params.data_gate.history_matches,
+                                                       max_requests=body.max_requests,
+                                                       skip_complete=not body.include_complete,
+                                                       job_name="", run_id=run_id))
 
 
 @router.post("/ingest/openfootball", status_code=status.HTTP_202_ACCEPTED, response_model=JobAccepted)

@@ -26,6 +26,7 @@ os.environ.update(ISOLATED)
 import httpx  # noqa: E402
 
 from app.core.settings import get_settings  # noqa: E402 - after the environment is isolated
+from app.ingestion import espn  # noqa: E402
 from app.notifications import telegram  # noqa: E402
 from app.storage.db import get_engine  # noqa: E402
 
@@ -41,3 +42,13 @@ def _no_real_telegram() -> httpx.Client:
 
 telegram.ipv4_client = _no_real_telegram
 
+
+class _NoRealEspn(espn.HttpSource):
+    """Tests never fetch from ESPN (2026-11-23: a recorder test with the shipped paper.yaml did): any request the real
+    ESPN client would send fails. Tests that need ESPN monkeypatch app.ingestion.pipeline.Espn with a fake."""
+
+    def get(self, *args: object, **kwargs: object) -> espn.Fetched:  # type: ignore[override]
+        raise RuntimeError("tests must not connect to ESPN: monkeypatch app.ingestion.pipeline.Espn with a fake")
+
+
+espn.HttpSource = _NoRealEspn  # type: ignore[misc]

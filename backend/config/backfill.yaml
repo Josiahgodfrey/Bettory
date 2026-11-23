@@ -18,6 +18,12 @@ schedule:
   timezone: "UTC"
   time: "00:30"                # API-Football's daily quota resets at 00:00 UTC (to verify on your dashboard)
 
+espn:                          # docs/ESPN.md (added 2026-11-23): nightly forward fill from ESPN - every league
+  enabled: true                # with an ESPN code, the last days_back days: fixtures, scores and goal minutes.
+  time: "02:00"                # No key, no daily quota: not counted in daily_max_requests below.
+  days_back: 3
+  max_requests: 1500
+
 daily_max_requests:            # upper bound per day, by API_FOOTBALL_PLAN; the quota guard still applies
   free: 70                     # owner decision 2026-11-17: backfill 70 / paper-betting recorder 25 / reserve 5
   pro: 2000                    # Pro: 7,500 a day (Phase 0); the whole backlog fits in one night

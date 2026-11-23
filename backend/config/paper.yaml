@@ -3,6 +3,8 @@
 # settles - never how a fixture is priced (config/params_v*.yaml) or judged (config/backtest.yaml).
 #
 # One "cycle" (python -m app.cli paper-cycle, or the worker every schedule.every_minutes):
+#   plan      each session's fixtures, once, well before its cut-off: Noon at plan.noon_at (EAT, same day), Night at
+#             plan.night_at (EAT, the evening before) - new fixtures, kick-off changes, postponements
 #   capture   for each session whose data cut-off (as_of) is less than capture.lead_minutes away: fixtures
 #             of the session's dates + the odds of its upcoming fixtures, once (retried up to capture.attempts)
 #   freeze    for each session past its as_of with upcoming fixtures not frozen yet: freeze them
@@ -16,11 +18,32 @@ schedule:
   every_minutes: 5             # the freeze happens at most this long after as_of; the capture window must be
                                # longer (lead_minutes), so at least one cycle falls inside it
 
-daily_max_requests:            # all recorder runs together (capture + results), per quota day (00:00 UTC)
+daily_max_requests:            # all recorder runs together (plan + capture + recheck + closing + results), per
+                               # quota day (00:00 UTC)
   free: 25                     # owner decision 2026-11-17: backfill 70 / recorder 25 / reserve 5
   pro: 1000
 
+plan:                          # ARCHITECTURE.md 12.4 (added 2026-11-18): without it a session whose fixtures were
+                               # never loaded would be skipped silently
+  enabled: true                # false only if the fixtures are loaded by another job
+  noon_at: "07:00"             # Noon session (kick-offs 13:00-00:59 EAT): earliest cut-off 10:15, capture 09:55
+  night_at: "19:00"            # Night session of the NEXT date (kick-offs 01:00-12:59): earliest cut-off 22:15
+  attempts: 3                  # runs per session, failed ones included
+  max_requests:                # 1 fixtures listing per UTC date: Noon covers 1 date, Night 2
+    free: 2
+    pro: 2
+  notify_no_fixtures: true     # Telegram once when a planned session has no fixture in the report leagues
+
+history:                       # docs/ESPN.md (added 2026-11-23): after the plan, before the cut-off, once per
+                               # session - goal minutes of the session teams' recent matches from ESPN
+  enabled: true
+  max_requests: 1500           # per run, about 1 per second (ESPN has no key and no daily quota)
+  attempts: 2
+  skip_complete: true          # no ESPN request for a match whose 15' data is already complete
+  all_competitions: true       # also the registered leagues outside the recorder's (data for later backtests)
+
 capture:
+  enabled: false               # owner decision 2026-11-23: no odds - the owner's betting app supplies them
   lead_minutes: 20             # capture at most this long before as_of: prices as fresh as possible, and
                                # still before the cut-off (a price captured after as_of is never sealed)
   attempts: 3                  # runs per session window, failed ones included (e.g. the API lock was held)
@@ -31,6 +54,7 @@ capture:
 recheck:                       # the listed matches about an hour before kick-off (PAPER-BETTING.md 10): fetch the
                                # lineups and fresh odds, run the full verification again, withdraw if it no
                                # longer qualifies (never adds). Owner decision 2026-11-17
+  with_odds: false             # owner decision 2026-11-23: lineups only, no odds (1 request per match)
   from_minutes: 30             # fixtures kicking off 30 .. 75 minutes from now
   to_minutes: 75
   retry_minutes: 15            # lineups not announced yet: try again after this long
@@ -40,6 +64,7 @@ recheck:                       # the listed matches about an hour before kick-of
     pro: 60
 
 closing:                       # the closing line for CLV (PAPER-BETTING.md 11): the odds of every listed (not
+  enabled: false               # owner decision 2026-11-23: no odds, so no closing line (CLV) either
                                # withdrawn) match and every match with a real bet, just before kick-off
   minutes_before: 12           # fixtures kicking off within this many minutes, once (longer than the cycle)
   max_requests:                # per cycle: 1 per fixture
