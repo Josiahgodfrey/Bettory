@@ -107,10 +107,25 @@ V2 = CONFIG_DIR / "tuning_v2.yaml"
 RAW2: dict[str, Any] = yaml.safe_load(V2.read_text(encoding="utf-8"))
 
 
-def test_shipped_v2_supersedes_v1() -> None:
-    from app.backtest.tuning_plan import HoldoutStatus, current_plan_path, lineage
+def test_shipped_v3_supersedes_v2_with_every_registered_league() -> None:
+    """Owner decision 2026-11-23: paper betting on every registered league (docs/ESPN.md 6); only the competitions
+    and the dates differ from v2."""
+    from app.backtest.tuning_plan import current_plan_path, lineage
+    from app.domain.registry import load_registry
 
-    assert current_plan_path() == V2
+    v3 = CONFIG_DIR / "tuning_v3.yaml"
+    assert current_plan_path() == v3
+    plan, old = load_plan(v3), load_plan(V2)
+    assert [name for name, _ in lineage(v3)] == ["tuning_v3.yaml", "tuning_v2.yaml", "tuning_v1.yaml"]
+    assert set(plan.competitions) == {c.code for c in load_registry().competitions}
+    assert plan.grid == old.grid and plan.selection == old.selection and plan.gate_b == old.gate_b
+    assert plan.periods.tuning == old.periods.tuning and plan.periods.holdout == old.periods.holdout
+    assert plan.change_reason is not None and "WITHOUT a prior" in plan.change_reason
+
+
+def test_shipped_v2_supersedes_v1() -> None:
+    from app.backtest.tuning_plan import HoldoutStatus, lineage
+
     plan = load_plan(V2)
     assert [name for name, _ in lineage(V2)] == ["tuning_v2.yaml", "tuning_v1.yaml"]
     assert len(variations(plan, load_params(params_path(plan.base_params)))) == 4 * 5 * 3

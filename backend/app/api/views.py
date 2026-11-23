@@ -240,9 +240,15 @@ def report_json(se: SessionEntries, cal: SessionCalendar, *, listed_only: bool) 
         for e in se.entries:
             by_decision[e["decision"]] = by_decision.get(e["decision"], 0) + 1
         out["decisions"] = by_decision
-        out["how_to_bet"] = ("Bet a listed match only if the bookmaker's odds are at or above the minimum odds. "
-                             "Choose one market per match: the one where offered odds / minimum odds is higher. "
-                             "Never bet both. Never bet a match whose lineup_status is WITHDRAWN.")
+        if any(e.get("min_odds_under05") is not None for e in entries):  # sealed with params <= 1.5 (odds-based)
+            out["how_to_bet"] = ("Bet a listed match only if the bookmaker's odds are at or above the minimum odds. "
+                                 "Choose one market per match: the one where offered odds / minimum odds is higher. "
+                                 "Never bet both. Never bet a match whose lineup_status is WITHDRAWN.")
+        else:  # params 1.6: probabilities only
+            out["how_to_bet"] = ("Every listed match passed verification on its probabilities: P(0-0 at 15') or "
+                                 "P(draw at 15') at its minimum. Fair odds = 1 / probability: your app's odds above "
+                                 "them are value. One market per match, never both. Never bet a match whose "
+                                 "lineup_status is WITHDRAWN.")
     else:
         analysed = {e["match_id"] for e in se.entries}
         out["not_analysed"] = [fixture_json(f, cal) for f in se.info.fixtures if str(f["match_id"]) not in analysed]

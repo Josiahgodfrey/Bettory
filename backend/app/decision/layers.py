@@ -7,9 +7,11 @@ SYSTEM-DOCUMENTATION.md 7; ARCHITECTURE.md 11 (fail closed), 12.5-12.6, A14 (min
     L1 DATA       four full windows without INCOMPLETE matches, Models A and B v2 and the price available,
                   and the league-seasons behind the baseline trusted (no unaccepted FAILED cross-check)
     L2 MODELS     |P_A - P_B| <= value.max_model_gap_pts; |P_team - P_market| <= the same when Model C exists
-    L3 VALUE      minimum odds = max((1 + EV_req) / P, Model C fair odds); EV_req = value.ev_min with a market
-                  check, value.ev_min_no_market without one. With bookmaker 15' quotes: offered >= minimum
+    L3 VALUE      params <= 1.5: minimum odds = max((1 + EV_req) / P, Model C fair odds); EV_req = value.ev_min with
+                  a market check, value.ev_min_no_market without one. With bookmaker 15' quotes: offered >= minimum
                   odds and |P - P_bookmaker| <= value.max_bookmaker_gap_pts; the higher-EV market is selected.
+                  params 1.6 (`probability`): NO odds - P(0-0 at 15') >= probability.min_under05 or P(draw at 15')
+                  >= probability.min_draw; the market furthest above its minimum is selected. Model C is ignored.
     L4 GRADE      A / B (grading.py); SKIP fails
     L5 RED FLAGS  favourite (odds, or win-rate proxy), early goals in recent matches, H2H, context flags
 
@@ -136,7 +138,9 @@ def _data(a: FixtureAnalysis, p: Params) -> list[Check]:
     return out
 
 
-def _market_available(a: FixtureAnalysis) -> bool:
+def _market_available(a: FixtureAnalysis, p: Params | None = None) -> bool:
+    if p is not None and p.probability is not None:
+        return False  # params 1.6: probabilities from team and league data only, no odds
     return a.model_c is not None and a.model_c.available and a.price is not None and a.price.p_market_00 is not None
 
 
@@ -147,11 +151,11 @@ def _models(a: FixtureAnalysis, p: Params) -> list[Check]:
         d = abs(a.model_a.p00 - a.model_b2.p00) * 100.0
         out.append(Check(Layer.MODELS, "MODEL_GAP_A_B", d <= limit, gap(d), f"<= {limit:g} pts",
                          f"P_A {pts(a.model_a.p00)} vs P_B {pts(a.model_b2.p00)}"))
-    if a.price is not None and _market_available(a) and a.price.p_market_00 is not None:
+    if a.price is not None and _market_available(a, p) and a.price.p_market_00 is not None:
         d = abs(a.price.p_team_00 - a.price.p_market_00) * 100.0
         out.append(Check(Layer.MODELS, "TEAM_MARKET_GAP", d <= limit, gap(d), f"<= {limit:g} pts",
                          f"P_team {pts(a.price.p_team_00)} vs P_market {pts(a.price.p_market_00)}"))
-    else:
+    elif p.probability is None:
         status = a.model_c.status.value if a.model_c is not None else "no main-market odds"
         out.append(Check(Layer.MODELS, "TEAM_MARKET_GAP", None, "not checked", "Model C available",
                          f"{status}: stricter EV threshold applies"))
@@ -162,7 +166,7 @@ def minimum_odds(a: FixtureAnalysis, p: Params) -> tuple[float, float, float]:
     """(min odds Under 0.5, min odds Draw, EV required)."""
     if a.price is None:
         raise ValueError("minimum odds need a price")
-    market = _market_available(a)
+    market = _market_available(a, p)
     ev_req = p.value.ev_min if market else p.value.ev_min_no_market
     o = a.price.outcomes
     min_u = (1.0 + ev_req) / o.p_00
@@ -174,7 +178,31 @@ def minimum_odds(a: FixtureAnalysis, p: Params) -> tuple[float, float, float]:
     return min_u, min_d, ev_req
 
 
+def _probability(a: FixtureAnalysis, p: Params) -> tuple[list[Check], Bet | None]:
+    """Layer 3 of params 1.6: the probabilities against their minimums; no odds anywhere."""
+    if a.price is None or p.probability is None:
+        return [], None
+    o, m = a.price.outcomes, p.probability
+    margins = {Bet.UNDER05: o.p_00 - m.min_under05, Bet.DRAW: o.p_draw - m.min_draw}
+    out = [Check(Layer.VALUE, "P_UNDER05", margins[Bet.UNDER05] >= 0, pts(o.p_00), f">= {pts(m.min_under05)}",
+                 f"Total 15 min, Under 0.5 (fair odds {fair_odds(o.p_00):.2f})", blocking=False),
+           Check(Layer.VALUE, "P_DRAW", margins[Bet.DRAW] >= 0, pts(o.p_draw), f">= {pts(m.min_draw)}",
+                 f"Result 15 min, Draw (fair odds {fair_odds(o.p_draw):.2f})", blocking=False)]
+    passing = [(margin, bet) for bet, margin in margins.items() if margin >= 0]
+    if not passing:
+        out.append(Check(Layer.VALUE, "PROBABILITY_QUALIFIES", False, "none",
+                         "P(Under 0.5) or P(Draw) at its minimum"))
+        return out, None
+    _, bet = max(passing, key=lambda c: (c[0], c[1] is Bet.UNDER05))
+    out.append(Check(Layer.VALUE, "SELECTED_MARKET", None, bet.value, "furthest above its minimum",
+                     "both shown; you compare them with your betting app's odds"))
+    return out, bet
+
+
 def _value(a: FixtureAnalysis, p: Params) -> tuple[list[Check], Bet | None, float | None]:
+    if p.probability is not None:
+        checks, bet = _probability(a, p)
+        return checks, bet, None
     if a.price is None:
         return [], None, None
     min_u, min_d, ev_req = minimum_odds(a, p)
@@ -215,7 +243,7 @@ def _grade(a: FixtureAnalysis, p: Params) -> tuple[list[Check], Grade, float | N
     if a.model_a is None or a.model_b2 is None or a.windows is None:
         return [], Grade.SKIP, None, None
     probs = [a.model_a.p00, a.model_b2.p00]
-    if _market_available(a) and a.model_c is not None and a.model_c.p00 is not None:
+    if _market_available(a, p) and a.model_c is not None and a.model_c.p00 is not None:
         probs.append(a.model_c.p00)
     spread = model_spread_pts(probs)
     ws = (a.windows.home_general, a.windows.home_home, a.windows.away_general, a.windows.away_away)
@@ -232,7 +260,7 @@ def _grade(a: FixtureAnalysis, p: Params) -> tuple[list[Check], Grade, float | N
 def _red_flags(a: FixtureAnalysis, p: Params) -> list[Check]:
     rf = p.red_flags
     out = []
-    if a.favourite_odds is not None:
+    if a.favourite_odds is not None and p.probability is None:
         out.append(Check(Layer.RED_FLAGS, "FAVOURITE_ODDS", not a.favourite_odds < rf.favourite_odds_below,
                          f"{a.favourite_odds:.2f}", f">= {rf.favourite_odds_below:.2f}", "shortest FT win price"))
     elif a.windows is not None:
@@ -285,7 +313,7 @@ def _verify(a: FixtureAnalysis, p: Params) -> Verdict:
     decision = _DECISION_BY_LAYER.get(failed[0], Decision.SKIP) if failed else Decision.QUALIFIED
     pr = a.price
     min_u = min_d = None
-    if pr is not None:
+    if pr is not None and p.probability is None:  # params 1.6: no minimum odds, the owner's app has the odds
         min_u, min_d, _ = minimum_odds(a, p)
     for value in (min_u, min_d, ev):
         if value is not None and not math.isfinite(value):

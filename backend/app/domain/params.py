@@ -153,6 +153,14 @@ class Settlement(Strict):
     cutoff_label_minute: int = Field(ge=1, le=45)
 
 
+class Probability(Strict):
+    """Probability-only verification (params 1.6, owner decision 2026-11-23): Layer 3 passes a fixture when a market's
+    probability reaches its minimum - no bookmaker odds anywhere in the decision. The odds are the owner's own."""
+
+    min_under05: float = Fraction  # P(0-0 at 15') - market "Total 15 min, Under 0.5"
+    min_draw: float = Fraction  # P(draw at 15', 0-0 included) - market "Result 15 min, Draw"
+
+
 class Params(Strict):
     params_version: str = Field(pattern=r"^\d+\.\d+$")
     formula_version: str
@@ -170,6 +178,7 @@ class Params(Strict):
     h2h: H2H
     state_dependence: StateDependence
     settlement: Settlement
+    probability: Probability | None = None  # set: Layer 3 = probability minimums (1.6); None: odds value (<= 1.5)
 
     def with_values(self, changes: Mapping[str, Any]) -> Params:
         """A validated copy with dotted keys replaced, e.g. {"shrinkage.team_index_k": 0} (backtest tuning,
