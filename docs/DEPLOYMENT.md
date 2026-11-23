@@ -77,3 +77,50 @@ Every push to the deployed branch rebuilds and redeploys automatically (`autoDep
   (`backend/.dockerignore` excludes `.env`).
 - `ENVIRONMENT=production` refuses the local login bypass and turns the interactive API docs off.
 - The database is reached through the Supabase session pooler over TLS (`sslmode=require`).
+
+## 7. The frontend on Vercel
+
+The frontend is a static site (React + Vite): Vercel builds it from `frontend/` and serves it worldwide. The backend
+stays on Render (Vercel cannot run the always-on recorder or the long data jobs).
+Files: `frontend/vercel.json` (build settings, page links that work on reload, security headers, caching of the
+built files); `frontend/vite.config.ts` stops a production build that lacks one of the three variables below.
+
+### 7.1 Create the project (once)
+
+1. Sign in at **vercel.com** with GitHub, give Vercel access to the `Bettory` repository.
+2. **Add New → Project** → import `Bettory`.
+3. **Root Directory: `frontend`** (Edit → choose the folder). Framework preset: Vite (detected; `vercel.json` sets
+   install `npm ci`, build `npm run build`, output `dist`).
+4. **Environment Variables** (Production; all three are public values by design - never put a backend secret here):
+
+| Name | Value |
+|---|---|
+| `VITE_API_URL` | the Render address, e.g. `https://bettory-api.onrender.com` (no slash at the end) |
+| `VITE_SUPABASE_URL` | `BETTORY/.env` → `SUPABASE_URL` |
+| `VITE_SUPABASE_PUBLISHABLE_KEY` | `BETTORY/.env` → `SUPABASE_PUBLISHABLE_KEY` (the publishable key - **not** the service role key) |
+
+   Do not set `VITE_AUTH_BYPASS`: the bypass exists only in `npm run dev`, never in a built site.
+5. **Deploy.** Vercel shows the address, e.g. `https://bettory.vercel.app`. Branch: `main` (Settings → Git).
+
+### 7.2 Connect the backend to it
+
+On **Render → bettory-api → Environment**, then Save (it redeploys):
+
+| Key | Value |
+|---|---|
+| `CORS_ORIGINS` | `["https://<your-app>.vercel.app"]` - add `"http://localhost:5173"` to the list to keep using the local frontend too |
+| `APP_URL` | `https://<your-app>.vercel.app` (the links in Telegram messages) |
+
+On **Supabase → Authentication → URL Configuration**: Site URL = the Vercel address (password + authenticator login
+needs no redirect, but Supabase uses the Site URL in its e-mails).
+
+### 7.3 Check it
+
+| Check | Expected |
+|---|---|
+| Open the Vercel address | the login page |
+| Sign in (password, then the authenticator code) | Today loads; the Telegram login alert arrives |
+| Reload any page, e.g. `/sessions/...` | the same page (not a 404) |
+| Browser console | no CORS error (if there is one: `CORS_ORIGINS` on Render does not list the exact Vercel address) |
+
+Every push to `main` redeploys the frontend (Vercel) and the backend (Render) automatically.
