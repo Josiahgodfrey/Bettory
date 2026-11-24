@@ -1,102 +1,32 @@
 /**
- * Data loading, team review, cross-checks and backtests against the real API (throwaway database, no data-API keys):
- * every backend feature of these screens is reached from the app.
+ * Data health against the real API (throwaway database, no data-API keys): the seeded league's coverage is shown,
+ * and the operational endpoints removed in the lean-free pass are really gone.
  */
 import { expect, test } from '@playwright/test'
 
-import { API, toast, watchErrors } from './helpers'
+import { API, noHorizontalScroll, watchErrors } from './helpers'
 
-test.describe.configure({ mode: 'serial' })
-
-test('team reviews: link a name to an existing team, create a new club', async ({ page }) => {
+test('data health: coverage and recent loads', async ({ page }) => {
   const errors = watchErrors(page)
-  await page.goto('/data-loading')
-  const rows = page.getByTestId('review-row')
-  await expect(rows).toHaveCount(2)
+  const health = await (await page.request.get(`${API}/data-health`)).json()
+  const tst = health.coverage.find((c: { competition: string; season: string }) => c.competition === 'TST1' && c.season === '2025-26')
+  expect(tst, 'the seeded league-season is in the coverage').toBeTruthy()
+  expect(tst.finished).toBeGreaterThan(0)
+  expect(tst.usable_15).toBeGreaterThan(0)
 
-  // "Team A Utd" means the existing Team A
-  const a = rows.filter({ hasText: 'Team A Utd' })
-  await a.getByRole('button', { name: /Link to an existing team/ }).click()
-  await page.getByLabel('Search teams').fill('Team A')
-  await page.getByRole('dialog').getByRole('button', { name: /^Team A/ }).first().click()
-  expect(await toast(page)).toContain('“Team A Utd” is now Team A')
-  await expect(rows).toHaveCount(1)
-
-  // "Brand New FC" is new to the database
-  await rows.first().getByRole('button', { name: /New team/ }).click()
-  await page.getByRole('dialog').getByRole('button', { name: 'Create team' }).click()
-  await expect(page.locator('[data-sonner-toast]').filter({ hasText: 'Team “Brand New FC” created' })).toBeVisible()
-  await expect(page.getByText('Nothing to review.')).toBeVisible()
-
-  const teams = await (await page.request.get(`${API}/teams`, { params: { q: 'Brand New' } })).json()
-  expect(teams.map((t: { name: string }) => t.name)).toContain('Brand New FC')
-  expect(await (await page.request.get(`${API}/reviews`)).json()).toEqual([])
-  expect(errors).toEqual([])
-})
-
-test('data loading: the form reaches the API, which refuses API-Football without a key', async ({ page }) => {
-  await page.goto('/data-loading')
-  await page.getByRole('combobox', { name: 'Source' }).click()
-  await page.getByRole('option', { name: /API-Football: one day/ }).click()
-  await page.getByRole('button', { name: 'Start' }).click()
-  await expect(page.getByRole('alertdialog')).toContainText('Use API-Football requests?')
-  await page.getByRole('alertdialog').getByRole('button', { name: 'Start' }).click()
-  expect(await toast(page)).toContain('API_FOOTBALL_KEY is not configured')
-
-  // the competitions offered come from GET /jobs/competitions
-  await page.getByRole('combobox', { name: 'Source' }).click()
-  await page.getByRole('option', { name: /openfootball/ }).click()
-  await page.getByRole('combobox', { name: 'Competition' }).click()
-  await expect(page.getByRole('option').first()).toBeVisible()
-})
-
-test('data loading: ESPN loads are offered, free of API-Football requests, and run', async ({ page }) => {
-  const errors = watchErrors(page)
-  await page.goto('/data-loading')
-  await page.getByRole('combobox', { name: 'Source' }).click()
-  await page.getByRole('option', { name: /ESPN: team histories/ }).click()
-  await expect(page.getByText('does not use API-Football requests')).toBeVisible()
-  await expect(page.getByLabel('Fixtures from (EAT)')).toBeVisible()
-  await page.getByRole('combobox', { name: 'Source' }).click()
-  await page.getByRole('option', { name: /ESPN: league match days/ }).click()
-  await expect(page.getByLabel('From (date)')).toBeVisible()
-  await expect(page.getByTestId('espn-leagues')).toBeVisible()
-  // the test backend's registry has no ESPN league: the run starts, asks nothing and succeeds (no confirmation dialog)
-  await page.getByRole('button', { name: 'Start' }).click()
-  expect(await toast(page)).toContain('Started: api:espn_days')
-  await expect(page.getByTestId('tracked-run')).toContainText('Succeeded')
-  expect(errors).toEqual([])
-})
-
-test('data health: run a cross-check, read its details', async ({ page }) => {
-  const errors = watchErrors(page)
-  const r = await page.request.post(`${API}/data-health/crosschecks`, { data: { competition: 'TST1', season: '2025-26' } })
-  expect(r.ok()).toBeTruthy()
   await page.goto('/data-health')
+  await expect(page.getByRole('heading', { level: 2, name: 'Data health' })).toBeVisible()
   const row = page.getByRole('row').filter({ hasText: 'TST1' }).filter({ hasText: '2025-26' })
-  await row.getByRole('button', { name: 'Run again' }).click()
-  expect(await toast(page)).toContain('TST1 2025-26: cross-check')
-  await row.getByRole('button', { name: 'Details…' }).click()
-  const dialog = page.getByRole('dialog')
-  await expect(dialog).toContainText('Cross-check TST1 2025-26')
-  await expect(dialog).toContainText(/No disagreement between the sources|Sources say/)
+  await expect(row).toBeVisible()
+  await expect(row).toContainText(String(tst.usable_15))
+  await expect(page.getByText('Recent loads')).toBeVisible()
+  await noHorizontalScroll(page)
   expect(errors).toEqual([])
 })
 
-test('a stored backtest opens in full', async ({ page }) => {
-  const list = await (await page.request.get(`${API}/data-health/backtests`)).json()
-  test.skip(list.length === 0, 'no stored backtest in backend/backtests')
-  const errors = watchErrors(page)
-  await page.goto('/data-health')
-  await page.getByRole('link', { name: list[0].name }).click()
-  await expect(page.getByRole('heading', { level: 2, name: 'Backtest' })).toBeVisible()
-  await expect(page.getByText('Gate B criteria')).toBeVisible()
-  await expect(page.getByText('Betting at the minimum odds')).toBeVisible()
-  expect(errors).toEqual([])
-})
-
-test('settings show the API status from /health', async ({ page }) => {
-  await page.goto('/settings')
-  await expect(page.getByText('API status')).toBeVisible()
-  await expect(page.getByText(/^ok$/)).toBeVisible()
+test('the removed operational endpoints are gone', async ({ page }) => {
+  for (const path of ['/jobs/competitions', '/reviews', '/data-health/crosschecks', '/data-health/quota',
+    '/data-health/backtests']) {
+    expect((await page.request.get(`${API}${path}`)).status(), path).toBe(404)
+  }
 })

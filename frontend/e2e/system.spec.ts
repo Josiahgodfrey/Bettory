@@ -1,6 +1,6 @@
 /**
  * The forward-test and system screens against the real API: the sealed record (verify the chain, replay a session),
- * a real recorder cycle, Telegram off, calendar, data health, settings.
+ * and the settings screen.
  */
 import { expect, test } from '@playwright/test'
 
@@ -25,43 +25,6 @@ test('paper betting: the sealed record verifies and replays identically', async 
 
   // the sealed listed predictions link to their matches
   await expect(page.locator(`a[href^="/matches/"][href$="session=${s.id}"]`)).toHaveCount(s.matches.length)
-  expect(errors).toEqual([])
-})
-
-test('recorder: a real cycle runs from the app and reports back', async ({ page }) => {
-  const errors = watchErrors(page)
-  await page.goto('/recorder')
-  await expect(page.getByText('What the next cycle would do')).toBeVisible()
-  await expect(page.getByText('History: team goal minutes (ESPN)').first()).toBeVisible() // the ESPN step of each session
-  await page.getByRole('button', { name: 'Run one cycle now' }).click()
-  await expect(page.getByRole('alertdialog')).toContainText('Sealed records cannot be undone')
-  await page.getByRole('button', { name: 'Run cycle' }).click()
-  expect(await toast(page)).toContain('Recorder cycle started')
-  await expect(page.getByText(/Last cycle started here/)).toBeVisible({ timeout: 30_000 })
-  await expect(page.getByText('done').or(page.getByText(/error\(s\)/)).first()).toBeVisible({ timeout: 30_000 })
-
-  const st = await (await page.request.get(`${API}/paper/status`)).json()
-  expect(st.manual_cycle.running).toBe(false)
-  expect(st.telegram.configured).toBe(false)
-  expect(errors).toEqual([])
-})
-
-test('notifications: Telegram is off in the test backend and the app says so', async ({ page }) => {
-  await page.goto('/notifications')
-  await expect(page.getByText('Telegram is off for this backend')).toBeVisible()
-  await expect(page.getByRole('button', { name: /Send a test message/ })).toBeDisabled()
-  const r = await page.request.post(`${API}/notifications/test`)
-  expect(r.status()).toBe(409) // nothing can be sent from a test run
-})
-
-test('calendar shows the sealed fixtures on their day', async ({ page }) => {
-  const errors = watchErrors(page)
-  const s = await sealedSession(page)
-  const cal = await (await page.request.get(`${API}/fixtures`, { params: { date: new Date().toISOString().slice(0, 10) } })).json()
-  const day = cal.fixtures.some((f: { session_id: string }) => f.session_id === s.id) ? cal.date : null
-  test.skip(!day, 'the sealed fixtures fall on the next EAT day')
-  await page.goto(`/calendar?date=${day}`)
-  for (const m of s.matches) await expect(page.getByText(m.title)).toBeVisible()
   expect(errors).toEqual([])
 })
 

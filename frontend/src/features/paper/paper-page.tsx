@@ -121,7 +121,8 @@ function NotStarted() {
         <CardTitle>The forward test has not started</CardTitle>
         <CardDescription>
           Nothing is sealed yet: the recorder freezes each session’s predictions at its cut-off once it runs. The charts
-          below fill in as sessions are frozen and settled. <Link className="underline" to="/recorder">Recorder</Link>
+          below fill in as sessions are frozen and settled. <Link className="underline" to="/settings">Settings</Link>
+          {' '}shows the recorder schedule.
         </CardDescription>
       </CardHeader>
     </Card>

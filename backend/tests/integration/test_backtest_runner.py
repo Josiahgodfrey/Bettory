@@ -29,8 +29,8 @@ PATTERNS = [((1, 0), (0, 0), (0, 0)), ((2, 1), (1, 0), (1, 0)), ((0, 0), (0, 0),
             ((3, 1), (2, 0), (0, 0)), ((0, 2), (0, 1), (0, 1)), ((2, 2), (1, 1), (0, 0)), ((1, 2), (0, 0), (0, 0))]
 REGISTRY = Registry([CompetitionDef(code="TST1", name="Test League", country="Testland", type="LEAGUE",
                                     timezone="UTC", season_format="SPLIT", fifteen_minute_market=True,
-                                    team_sources=(SourceCode.OPENFOOTBALL,),
-                                    providers={SourceCode.OPENFOOTBALL: "tt.1"})])
+                                    team_sources=(SourceCode.ESPN,),
+                                    providers={SourceCode.ESPN: "tt.1"})])
 # two kick-offs a day, both in the NOON session (15:00 and 19:00 EAT)
 SLOTS = (timedelta(hours=12), timedelta(hours=16))
 SEASON_START = {"2024-25": date(2024, 8, 1), "2025-26": date(2025, 8, 1)}

@@ -26,11 +26,13 @@ _GRADE_ORDER = {Grade.A: 0, Grade.B: 1}
 
 
 def _key(v: Verdict) -> tuple[int, int, float, float, int, str]:
-    if v.grade not in _GRADE_ORDER or v.p_under05 is None or v.model_spread_pts is None:
-        raise ValueError(f"verdict {v.fixture_id} is QUALIFIED without grade / probability / spread")
+    if v.grade not in _GRADE_ORDER or v.p_under05 is None:
+        raise ValueError(f"verdict {v.fixture_id} is QUALIFIED without grade / probability")
     has_ev = v.ev is not None
     edge = v.ev if v.ev is not None else v.p_under05
-    return (_GRADE_ORDER[v.grade], 0 if has_ev else 1, -edge, v.model_spread_pts, -(v.complete_sample or 0),
+    # one-model mode (params 1.6+) has no spread: treat it as perfect agreement
+    spread = v.model_spread_pts if v.model_spread_pts is not None else 0.0
+    return (_GRADE_ORDER[v.grade], 0 if has_ev else 1, -edge, spread, -(v.complete_sample or 0),
             v.fixture_id)
 
 

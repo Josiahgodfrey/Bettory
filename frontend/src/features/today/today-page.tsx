@@ -184,8 +184,8 @@ function Recorder({ paper }: { paper: Schemas['DashboardPaperOut'] }) {
         <CardTitle>Paper record</CardTitle>
         <CardDescription>The forward test</CardDescription>
         <CardAction>
-          <Button variant="ghost" size="sm" nativeButton={false} render={<Link to="/recorder" />}>
-            Recorder
+          <Button variant="ghost" size="sm" nativeButton={false} render={<Link to="/paper" />}>
+            Paper betting
           </Button>
         </CardAction>
       </CardHeader>

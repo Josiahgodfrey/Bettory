@@ -4,15 +4,11 @@ import { expect, test } from '@playwright/test'
 import { noHorizontalScroll, sealedSession, watchErrors } from './helpers'
 
 const PAGES: [string, string | RegExp][] = [
-  ['/data-loading', 'Data loading'],
   ['/', 'Today'],
   ['/bets', 'My bets'],
   ['/performance', 'Performance'],
   ['/paper', 'Paper betting'],
-  ['/recorder', 'Recorder'],
-  ['/calendar', 'Calendar'],
   ['/data-health', 'Data health'],
-  ['/notifications', 'Notifications'],
   ['/settings', 'Settings'],
 ]
 

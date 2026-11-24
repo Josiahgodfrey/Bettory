@@ -88,6 +88,7 @@ The paper freeze still records provenance; it now stores **the params file and i
 | Check | Result |
 |---|---|
 | Backend test suite | **389 passed, 98 skipped** (DB-backed tests skip without `TEST_DATABASE_URL`) |
+| Whole-application Playwright suite | **28 passed** on the real API + throwaway database, desktop and phone (7 screens, betting flow, sealing, replay) |
 | Frontend typecheck / lint / unit | pass (8 unit tests) |
 | Import boundary / purity | unchanged (`app.calculation` and `app.decision` still import only `app.domain`) |
 | OpenAPI contract | regenerated (`docs/api/openapi.json`, `frontend/src/lib/api-types.ts`) |

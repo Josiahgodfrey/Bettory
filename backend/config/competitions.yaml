@@ -23,11 +23,9 @@ competitions:
     timezone: Europe/London
     season_format: SPLIT
     fifteen_minute_market: true
-    team_sources: [FOOTBALL_DATA_ORG, OPENFOOTBALL, API_FOOTBALL, ESPN]
+    team_sources: [API_FOOTBALL, ESPN]
     providers:
       API_FOOTBALL: "39"
-      FOOTBALL_DATA_ORG: PL
-      OPENFOOTBALL: en.1
       FOOTBALL_DATA_CO_UK: E0
       ESPN: eng.1
 
@@ -39,11 +37,9 @@ competitions:
     timezone: Europe/London
     season_format: SPLIT
     fifteen_minute_market: true
-    team_sources: [FOOTBALL_DATA_ORG, OPENFOOTBALL, API_FOOTBALL, ESPN]
+    team_sources: [API_FOOTBALL, ESPN]
     providers:
       API_FOOTBALL: "40"
-      FOOTBALL_DATA_ORG: ELC
-      OPENFOOTBALL: en.2
       FOOTBALL_DATA_CO_UK: E1
       ESPN: eng.2
 
@@ -55,11 +51,9 @@ competitions:
     timezone: Europe/Berlin
     season_format: SPLIT
     fifteen_minute_market: true
-    team_sources: [FOOTBALL_DATA_ORG, OPENFOOTBALL, API_FOOTBALL, ESPN]
+    team_sources: [API_FOOTBALL, ESPN]
     providers:
       API_FOOTBALL: "78"
-      FOOTBALL_DATA_ORG: BL1
-      OPENFOOTBALL: de.1
       FOOTBALL_DATA_CO_UK: D1
       ESPN: ger.1
 
@@ -71,10 +65,9 @@ competitions:
     timezone: Europe/Vienna
     season_format: SPLIT
     fifteen_minute_market: true
-    team_sources: [OPENFOOTBALL, API_FOOTBALL, ESPN]
+    team_sources: [API_FOOTBALL, ESPN]
     providers:
       API_FOOTBALL: "218"
-      OPENFOOTBALL: at.1
       ESPN: aut.1
 
   - code: ESP1
@@ -85,11 +78,9 @@ competitions:
     timezone: Europe/Madrid
     season_format: SPLIT
     fifteen_minute_market: true
-    team_sources: [FOOTBALL_DATA_ORG, OPENFOOTBALL, API_FOOTBALL, ESPN]
+    team_sources: [API_FOOTBALL, ESPN]
     providers:
       API_FOOTBALL: "140"
-      FOOTBALL_DATA_ORG: PD
-      OPENFOOTBALL: es.1
       FOOTBALL_DATA_CO_UK: SP1
       ESPN: esp.1
 
@@ -101,11 +92,9 @@ competitions:
     timezone: Europe/Rome
     season_format: SPLIT
     fifteen_minute_market: true
-    team_sources: [FOOTBALL_DATA_ORG, OPENFOOTBALL, API_FOOTBALL, ESPN]
+    team_sources: [API_FOOTBALL, ESPN]
     providers:
       API_FOOTBALL: "135"
-      FOOTBALL_DATA_ORG: SA
-      OPENFOOTBALL: it.1
       FOOTBALL_DATA_CO_UK: I1
       ESPN: ita.1
 
@@ -117,11 +106,9 @@ competitions:
     timezone: Europe/Paris
     season_format: SPLIT
     fifteen_minute_market: true
-    team_sources: [FOOTBALL_DATA_ORG, OPENFOOTBALL, API_FOOTBALL, ESPN]
+    team_sources: [API_FOOTBALL, ESPN]
     providers:
       API_FOOTBALL: "61"
-      FOOTBALL_DATA_ORG: FL1
-      OPENFOOTBALL: fr.1
       FOOTBALL_DATA_CO_UK: F1
       ESPN: fra.1
 
@@ -133,11 +120,9 @@ competitions:
     timezone: Europe/Amsterdam
     season_format: SPLIT
     fifteen_minute_market: true
-    team_sources: [FOOTBALL_DATA_ORG, OPENFOOTBALL, API_FOOTBALL, ESPN]
+    team_sources: [API_FOOTBALL, ESPN]
     providers:
       API_FOOTBALL: "88"
-      FOOTBALL_DATA_ORG: DED
-      OPENFOOTBALL: nl.1
       FOOTBALL_DATA_CO_UK: N1
       ESPN: ned.1
 
@@ -149,11 +134,9 @@ competitions:
     timezone: Europe/Lisbon
     season_format: SPLIT
     fifteen_minute_market: true
-    team_sources: [FOOTBALL_DATA_ORG, OPENFOOTBALL, API_FOOTBALL, ESPN]
+    team_sources: [API_FOOTBALL, ESPN]
     providers:
       API_FOOTBALL: "94"
-      FOOTBALL_DATA_ORG: PPL
-      OPENFOOTBALL: pt.1
       FOOTBALL_DATA_CO_UK: P1
       ESPN: por.1
 

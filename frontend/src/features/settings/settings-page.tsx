@@ -89,7 +89,7 @@ function Rows({ rows }: { rows: [string, ReactNode][] }) {
       {rows.map(([k, v]) => (
         <div key={k} className="flex items-baseline justify-between gap-4">
           <dt className="text-muted-foreground">{k}</dt>
-          <dd className="min-w-0 truncate text-right font-medium tabular">{v}</dd>
+          <dd className="min-w-0 break-words text-right font-medium tabular">{v}</dd>
         </div>
       ))}
     </dl>
@@ -111,7 +111,6 @@ function Sessions({ s }: { s: Obj }) {
           ['Report lead time', `${str(se?.lead_time_hours)} h before the first kick-off`],
           ['Matches per session (cap)', str(se?.max_matches_per_session)],
           ['Report competitions', ((s.report_competitions as string[]) ?? []).join(', ')],
-          ['Tuning plan', str(s.tuning_plan)],
         ]}
       />
     </Section>

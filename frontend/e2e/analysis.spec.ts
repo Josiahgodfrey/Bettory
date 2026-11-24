@@ -94,9 +94,6 @@ test('Recorder: both sessions of a day, each sealed 2 h before its window opens'
     }
     expect(x.history_enabled).toBe(true)
   }
-  await page.goto('/recorder')
-  await expect(page.getByText('Session schedule')).toBeVisible()
-  await expect(page.getByText('Cut-off: seal predictions').first()).toBeVisible()
   expect(errors).toEqual([])
 })
 

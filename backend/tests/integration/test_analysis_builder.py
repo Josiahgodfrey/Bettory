@@ -27,8 +27,8 @@ PATTERNS = [((1, 0), (0, 0), (0, 0)), ((2, 1), (1, 0), (1, 0)), ((0, 0), (0, 0),
             ((3, 1), (2, 0), (0, 0)), ((0, 2), (0, 1), (0, 1)), ((2, 2), (1, 1), (0, 0)), ((1, 2), (0, 0), (0, 0))]
 REGISTRY = Registry([CompetitionDef(code="TST1", name="Test League", country="Testland", type="LEAGUE",
                                     timezone="UTC", season_format="SPLIT", fifteen_minute_market=True,
-                                    team_sources=(SourceCode.OPENFOOTBALL,),
-                                    providers={SourceCode.OPENFOOTBALL: "tt.1"})])
+                                    team_sources=(SourceCode.ESPN,),
+                                    providers={SourceCode.ESPN: "tt.1"})])
 
 
 def one(c: psycopg.Connection, sql: str, *p: object) -> Any:
