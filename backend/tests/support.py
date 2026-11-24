@@ -1,6 +1,6 @@
 """Shared test helpers: params files and validated variations of them.
 
-PARAMS is params 1.5 (odds-based Layer 3, Model C): the established logic most tests check and the tuning plans'
+PARAMS is params 1.5 (odds-based Layer 3, legacy): kept only so the odds-based checks stay tested.
 base. LIVE is the active file (params 1.6 since 2026-11-23: probabilities only, analysis 2 h before each window)."""
 
 from typing import Any

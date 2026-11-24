@@ -8,7 +8,7 @@ import json
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
-from app.api.routers import bets, data_health, health, jobs, matches, paper, reviews, sessions, system
+from app.api.routers import bets, data_health, health, matches, paper, sessions, system
 from app.core.settings import BACKEND_DIR, get_settings
 
 OPENAPI_FILE = BACKEND_DIR.parent / "docs" / "api" / "openapi.json"
@@ -35,8 +35,6 @@ def create_app() -> FastAPI:
     )
 
     application.include_router(health.router)
-    application.include_router(jobs.router)
-    application.include_router(reviews.router)
     application.include_router(data_health.router)
     application.include_router(system.router)
     application.include_router(sessions.router)

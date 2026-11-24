@@ -5,15 +5,10 @@ import { PageHeader } from '@/components/page'
 import { Button } from '@/components/ui/button'
 import { LoginPage } from '@/features/auth/login-page'
 import { BetsPage } from '@/features/bets/bets-page'
-import { CalendarPage } from '@/features/calendar/calendar-page'
-import { DataLoadingPage } from '@/features/data/data-loading-page'
-import { BacktestPage } from '@/features/health/backtest-page'
 import { DataHealthPage } from '@/features/health/data-health-page'
 import { MatchPage } from '@/features/match/match-page'
-import { NotificationsPage } from '@/features/notifications/notifications-page'
 import { PaperPage } from '@/features/paper/paper-page'
 import { PerformancePage } from '@/features/performance/performance-page'
-import { RecorderPage } from '@/features/recorder/recorder-page'
 import { SessionPage, SessionsIndex } from '@/features/sessions/session-page'
 import { SettingsPage } from '@/features/settings/settings-page'
 import { TodayPage } from '@/features/today/today-page'
@@ -41,12 +36,7 @@ export const router = createBrowserRouter([
       { path: 'bets', element: <BetsPage /> },
       { path: 'performance', element: <PerformancePage /> },
       { path: 'paper', element: <PaperPage /> },
-      { path: 'recorder', element: <RecorderPage /> },
-      { path: 'calendar', element: <CalendarPage /> },
       { path: 'data-health', element: <DataHealthPage /> },
-      { path: 'data-health/backtests/:name', element: <BacktestPage /> },
-      { path: 'data-loading', element: <DataLoadingPage /> },
-      { path: 'notifications', element: <NotificationsPage /> },
       { path: 'settings', element: <SettingsPage /> },
       { path: '*', element: <NotFound /> },
     ],

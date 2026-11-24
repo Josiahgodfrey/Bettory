@@ -27,7 +27,6 @@ from app.api.recorder import dashboard
 from app.api.responses import BookmakerOut, DashboardOut, MeOut, NotificationsOut, TestNotificationOut
 from app.api.views import jsonable
 from app.backtest.config import load_backtest_config
-from app.backtest.tuning_plan import current_plan_path
 from app.domain.betting_config import load_betting_config
 from app.domain.sessions import SessionCalendar
 from app.jobs.backfill import load_backfill_config
@@ -80,7 +79,6 @@ def settings_view(_: OwnerDep, settings: SettingsDep, params: ParamsDep, registr
         "params_file": settings.params_file,
         "params": jsonable(params.model_dump()),
         "report_competitions": list(competitions),
-        "tuning_plan": current_plan_path().name,
         "competitions": [jsonable(c.model_dump()) for c in registry.competitions],
         "gate_b": {"paper_betting": jsonable(bt.paper_betting.model_dump()),
                    "calibration": jsonable(bt.calibration.model_dump()),

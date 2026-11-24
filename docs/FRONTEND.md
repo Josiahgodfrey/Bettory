@@ -1,5 +1,8 @@
 # BETTORY frontend
 
+> **Lean-free pass (2026-11-25):** parts of this document describe machinery that was removed or replaced.
+> Read [LEAN-FREE.md](LEAN-FREE.md) for the delta before relying on endpoint or screen lists here.
+
 > Phase 6, started 2026-11-17 on branch `frontend` (stacked on `frontend-api`). The screens and endpoints are
 > defined in [API.md](API.md); this file covers the app itself.
 

@@ -1,5 +1,8 @@
 # BETTORY API for the frontend
 
+> **Lean-free pass (2026-11-25):** parts of this document describe machinery that was removed or replaced.
+> Read [LEAN-FREE.md](LEAN-FREE.md) for the delta before relying on endpoint or screen lists here.
+
 > Written 2026-11-17. The single reference for building the frontend (Phase 6) on top of the Python API.
 > Every endpoint is owner-only: a Supabase access token with two-factor (`aal2`) in `Authorization: Bearer …`
 > (ARCHITECTURE.md §7). Local development may use the loopback bypass (`AUTH_LOCAL_BYPASS`).

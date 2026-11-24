@@ -1,5 +1,8 @@
 # BETTORY — Data Sources & Market-Implied Model
 
+> **Lean-free pass (2026-11-25):** parts of this document describe machinery that was removed or replaced.
+> Read [LEAN-FREE.md](LEAN-FREE.md) for the delta before relying on endpoint or screen lists here.
+
 **Addendum to [SYSTEM-DOCUMENTATION.md](SYSTEM-DOCUMENTATION.md) · v0.4 · 2026-11-14**
 
 This document details the topics that were only touched on (or not covered) in the main system documentation:

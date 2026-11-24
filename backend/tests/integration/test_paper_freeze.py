@@ -23,7 +23,7 @@ from tests.support import PARAMS
 
 pytestmark = pytest.mark.skipif(not ADMIN_URL, reason="TEST_DATABASE_URL not set")
 CAL = SessionCalendar(PARAMS)
-PROV = Provenance("tuning_vtest.yaml", "a" * 64, "abc123")
+PROV = Provenance("params_vtest.yaml", "a" * 64, "abc123")
 
 
 def schedule(url: str, kickoffs: list[datetime]) -> list[UUID]:

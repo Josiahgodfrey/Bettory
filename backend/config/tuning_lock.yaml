@@ -1,6 +1,0 @@
-# Pre-registered tuning plans that a real run has used (app/backtest/tuning_plan.py).
-# Written by the tool; commit it. A listed plan can no longer be edited.
-tuning_v2.yaml:
-  note: tuning run
-  sha256: ce2c17dcd799f7b9cc6b49ae6ef4a77ff1c025758cb39667f7311464d1e10422
-  used_at: '2026-11-16T23:04:00+00:00'

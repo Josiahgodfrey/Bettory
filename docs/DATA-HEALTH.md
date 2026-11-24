@@ -1,5 +1,8 @@
 # BETTORY — Data Health
 
+> **Lean-free pass (2026-11-25):** parts of this document describe machinery that was removed or replaced.
+> Read [LEAN-FREE.md](LEAN-FREE.md) for the delta before relying on endpoint or screen lists here.
+
 > The checks that run by themselves after every data load, the gate that keeps untrusted data away from bets,
 > and where to see the metrics. Settings: [config/data_quality.yaml](../backend/config/data_quality.yaml).
 > Built 2026-11-16 (branch `data-pipeline`).

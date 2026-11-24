@@ -1,9 +1,5 @@
 import {
-  Activity,
   BadgeCheck,
-  Bell,
-  CalendarDays,
-  DatabaseZap,
   ClipboardList,
   FlaskConical,
   HeartPulse,
@@ -31,25 +27,15 @@ export const NAV: { group: string; items: NavItem[] }[] = [
   },
   {
     group: 'Forward test',
-    items: [
-      { to: '/paper', label: 'Paper betting', icon: FlaskConical },
-      { to: '/recorder', label: 'Recorder', icon: Activity },
-    ],
+    items: [{ to: '/paper', label: 'Paper betting', icon: FlaskConical }],
   },
   {
     group: 'Data',
-    items: [
-      { to: '/calendar', label: 'Calendar', icon: CalendarDays },
-      { to: '/data-health', label: 'Data health', icon: HeartPulse },
-      { to: '/data-loading', label: 'Data loading', icon: DatabaseZap },
-    ],
+    items: [{ to: '/data-health', label: 'Data health', icon: HeartPulse }],
   },
   {
     group: 'System',
-    items: [
-      { to: '/notifications', label: 'Notifications', icon: Bell },
-      { to: '/settings', label: 'Settings', icon: Settings },
-    ],
+    items: [{ to: '/settings', label: 'Settings', icon: Settings }],
   },
 ]
 

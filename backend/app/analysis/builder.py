@@ -220,7 +220,8 @@ class AnalysisContext:
                 a = model_a(windows, base, p)
             except (ModelUnavailableError, InvariantError) as exc:
                 unavailable.append(f"Model A: {exc}")
-            if len(indexes) == 4:
+            # params 1.6+: one model (A) + the league baseline. Model B v2 is a legacy check, kept for old params.
+            if p.probability is None and len(indexes) == 4:
                 try:
                     home_dom, away_dom = (self._domestic_season(t, f.season_label) for t in teams.values())
                     lam, method = fixture_baseline(
@@ -232,7 +233,7 @@ class AnalysisContext:
                     unavailable.append(f"Model B v2: {exc}")
 
         notes: list[str] = []
-        c, favourite = self._model_c(match_id, base, notes)
+        c, favourite = (None, None) if p.probability is not None else self._model_c(match_id, base, notes)
         unavailable.extend(notes)
         pr: Price | None = None
         if a is not None and base is not None and base.s is not None:

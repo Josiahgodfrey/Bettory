@@ -25,7 +25,6 @@ OFF = {
     "TELEGRAM_BOT_TOKEN": "",
     "TELEGRAM_CHAT_ID": "",
     "API_FOOTBALL_KEY": "",
-    "FOOTBALL_DATA_ORG_KEY": "",
     "SUPABASE_SERVICE_ROLE_KEY": "",
     "DATABASE_HOST": "",
     "DATABASE_PASSWORD": "",
@@ -65,7 +64,6 @@ def main() -> int:
     problems = [name for name, live in (
         ("Telegram", outbox.configured(s)),
         ("API-Football key", bool(s.api_football_key.get_secret_value())),
-        ("football-data.org key", bool(s.football_data_org_key.get_secret_value())),
         ("Supabase database", bool(s.database_host)),
     ) if live]
     if problems:

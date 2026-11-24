@@ -1,5 +1,8 @@
 # BETTORY — System Architecture
 
+> **Lean-free pass (2026-11-25):** parts of this document describe machinery that was removed or replaced.
+> Read [LEAN-FREE.md](LEAN-FREE.md) for the delta before relying on endpoint or screen lists here.
+
 **Architecture specification · v1.0 · 2026-11-14**
 
 Companion to [SYSTEM-DOCUMENTATION.md](SYSTEM-DOCUMENTATION.md), [DATA-SOURCES-AND-MARKET-MODEL.md](DATA-SOURCES-AND-MARKET-MODEL.md) and [FIFTEEN-MINUTE-ODDS-CALCULATION.md](FIFTEEN-MINUTE-ODDS-CALCULATION.md).

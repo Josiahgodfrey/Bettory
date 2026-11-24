@@ -133,6 +133,9 @@ def _data(a: FixtureAnalysis, p: Params) -> list[Check]:
                      "; ".join(a.untrusted_data) or "trusted", "no unaccepted FAILED cross-check",
                      "review the disagreements, then accept or fix the data" if a.untrusted_data else ""))
     for code, obj in (("MODEL_A", a.model_a), ("MODEL_B2", a.model_b2), ("PRICE", a.price)):
+        required = code != "MODEL_B2" or p.probability is None
+        if not required:
+            continue
         out.append(Check(Layer.DATA, f"{code}_AVAILABLE", obj is not None, "available" if obj else "missing",
                          "available", "; ".join(a.unavailable) if obj is None else ""))
     return out
@@ -145,6 +148,8 @@ def _market_available(a: FixtureAnalysis, p: Params | None = None) -> bool:
 
 
 def _models(a: FixtureAnalysis, p: Params) -> list[Check]:
+    if p.probability is not None:
+        return []  # one model (A) + the league baseline: nothing to compare, nothing to block
     out = []
     limit = p.value.max_model_gap_pts
     if a.model_a is not None and a.model_b2 is not None:
@@ -240,8 +245,20 @@ def _value(a: FixtureAnalysis, p: Params) -> tuple[list[Check], Bet | None, floa
 
 
 def _grade(a: FixtureAnalysis, p: Params) -> tuple[list[Check], Grade, float | None, int | None]:
-    if a.model_a is None or a.model_b2 is None or a.windows is None:
+    if a.model_a is None or a.windows is None:
         return [], Grade.SKIP, None, None
+    if p.probability is None and a.model_b2 is None:
+        return [], Grade.SKIP, None, None  # the odds-based rules (<= 1.5) need both models
+    if p.probability is not None and a.model_b2 is None:  # one model: the grade is about sample completeness
+        ws = (a.windows.home_general, a.windows.home_home, a.windows.away_general, a.windows.away_away)
+        complete = min(w.exact_sample_size for w in ws)
+        full = all(w.exact_sample_size == w.sample_size == p.data_gate.history_matches for w in ws)
+        g = grade(0.0, full, p)
+        history = p.data_gate.history_matches
+        check = Check(Layer.GRADE, "GRADE", g is not Grade.SKIP, g.value,
+                      f"A: {history} complete matches in every window; B: fewer",
+                      f"one model (A); complete samples {complete}/{history}")
+        return [check], g, None, complete
     probs = [a.model_a.p00, a.model_b2.p00]
     if _market_available(a, p) and a.model_c is not None and a.model_c.p00 is not None:
         probs.append(a.model_c.p00)

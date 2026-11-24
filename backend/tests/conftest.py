@@ -17,7 +17,6 @@ ISOLATED = {
     "TELEGRAM_BOT_TOKEN": "",
     "TELEGRAM_CHAT_ID": "",
     "API_FOOTBALL_KEY": "",
-    "FOOTBALL_DATA_ORG_KEY": "",
     "SUPABASE_SERVICE_ROLE_KEY": "",
     "RAW_STORE": "local",
 }

@@ -31,9 +31,7 @@ from app.ingestion.base import Fetched, FetchError
 from app.ingestion.espn import DEFAULT_INTERVAL_S as ESPN_INTERVAL_S
 from app.ingestion.espn import Espn
 from app.ingestion.football_data_co_uk import FootballDataCoUk
-from app.ingestion.football_data_org import FootballDataOrg
 from app.ingestion.loader import Loader
-from app.ingestion.openfootball import OpenFootball
 from app.ingestion.quality import crosscheck_season
 from app.normalisation.names import normalize_team_name
 from app.normalisation.pairing import ONE_KNOWN_WINDOW, pair
@@ -41,8 +39,6 @@ from app.normalisation.parsers import ParseResult
 from app.normalisation.parsers import api_football as p_af
 from app.normalisation.parsers import espn as p_espn
 from app.normalisation.parsers import football_data_co_uk as p_uk
-from app.normalisation.parsers import football_data_org as p_fd
-from app.normalisation.parsers import openfootball as p_of
 from app.storage.raw_store import RawStore, object_path, sha256
 from app.storage.repositories import health as health_repo
 from app.storage.repositories import matches as matches_repo
@@ -189,27 +185,6 @@ def _close_api_football(client: ApiFootball, job: Job) -> Callable[[], None]:
 
 
 # --- jobs per source -----------------------------------------------------------------------
-
-
-def openfootball(engine: Engine, store: RawStore, registry: Registry, comp_code: str, season: str,
-                 full: bool, reparse: bool = False, run_id: UUID | None = None) -> Counter[str]:
-    comp = registry.get(comp_code)
-    key = comp.providers[SourceCode.OPENFOOTBALL]
-    client = OpenFootball()
-    job = Job(engine, store, registry, SourceCode.OPENFOOTBALL, f"openfootball:{comp_code}:{season}",
-              reparse, run_id)
-    return _run(job, lambda: client.requests_used, lambda: job.process(
-        client.season_file(season, key, full), lambda raw: p_of.parse_season_file(raw, comp, season, full)))
-
-
-def football_data_org(engine: Engine, store: RawStore, registry: Registry, api_key: str, comp_code: str,
-                      season: str, reparse: bool = False, run_id: UUID | None = None) -> Counter[str]:
-    code = registry.get(comp_code).providers[SourceCode.FOOTBALL_DATA_ORG]
-    client = FootballDataOrg(api_key)
-    job = Job(engine, store, registry, SourceCode.FOOTBALL_DATA_ORG, f"football_data_org:{comp_code}:{season}",
-              reparse, run_id)
-    return _run(job, lambda: client.requests_used, lambda: job.process(
-        client.competition_matches(code, season_start_year(season)), lambda raw: p_fd.parse_matches(raw, registry)))
 
 
 def football_data_co_uk(engine: Engine, store: RawStore, registry: Registry, comp_code: str, season: str,

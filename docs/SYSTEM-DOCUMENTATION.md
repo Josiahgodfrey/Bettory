@@ -1,5 +1,8 @@
 # BETTORY — Football Match Verification Engine
 
+> **Lean-free pass (2026-11-25):** parts of this document describe machinery that was removed or replaced.
+> Read [LEAN-FREE.md](LEAN-FREE.md) for the delta before relying on endpoint or screen lists here.
+
 **System documentation · v0.1 (design stage) · 2026-11-14**
 
 ---

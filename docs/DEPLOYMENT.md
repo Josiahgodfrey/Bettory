@@ -42,7 +42,6 @@
 | `CORS_ORIGINS` | for now `["http://localhost:5173"]`; after the frontend is on Vercel: `["https://<your-app>.vercel.app"]` |
 | `APP_URL` | for now `http://localhost:5173`; later the Vercel address (used in the Telegram links) |
 | `API_FOOTBALL_KEY` | `.env` → `API_FOOTBALL_KEY` |
-| `FOOTBALL_DATA_ORG_KEY` | `.env` → `FOOTBALL_DATA_ORG_KEY` (empty if you do not have one) |
 | `TELEGRAM_BOT_TOKEN` | `.env` → `TELEGRAM_BOT_TOKEN` |
 | `TELEGRAM_CHAT_ID` | `.env` → `TELEGRAM_CHAT_ID` |
 

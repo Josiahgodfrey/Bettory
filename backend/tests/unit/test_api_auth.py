@@ -18,7 +18,7 @@ from app.main import create_app
 URL = "https://example-ref.supabase.co"
 OWNER = "11111111-1111-1111-1111-111111111111"
 SECRET = "test-secret-that-is-long-enough-for-hs256-0123456789"
-ENDPOINT = "/jobs/competitions"  # needs no database
+ENDPOINT = "/settings"  # needs no database
 
 
 def settings(**overrides: Any) -> Settings:
@@ -51,7 +51,7 @@ def get(client: TestClient, tok: str | None) -> int:
 def test_owner_with_two_factor_is_accepted(client_for: Any) -> None:
     c = client_for(settings())
     resp = c.get(ENDPOINT, headers={"Authorization": f"Bearer {token()}"})
-    assert resp.status_code == 200 and "ENG1" in [x["code"] for x in resp.json()]
+    assert resp.status_code == 200 and "ENG1" in [x["code"] for x in resp.json()["competitions"]]
 
 
 @pytest.mark.parametrize(("tok", "expected"), [

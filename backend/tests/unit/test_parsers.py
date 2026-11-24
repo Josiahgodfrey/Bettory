@@ -8,12 +8,9 @@ import pytest
 from app.domain.enums import FixtureStatus, MarketCode, SnapshotType, SourceCode
 from app.domain.models import Score
 from app.domain.registry import CompetitionDef, Registry, load_registry
-from app.normalisation.names import normalize_team_name as norm
 from app.normalisation.parsers import ParseError
 from app.normalisation.parsers import api_football as af
 from app.normalisation.parsers import football_data_co_uk as uk
-from app.normalisation.parsers import football_data_org as fd
-from app.normalisation.parsers import openfootball as of
 
 FIX = Path(__file__).resolve().parents[1] / "fixtures"
 REG = load_registry()
@@ -25,49 +22,9 @@ def read(name: str) -> bytes:
 
 
 def test_registry_loads_and_rejects_duplicates() -> None:
-    assert ENG1.providers[SourceCode.OPENFOOTBALL] == "en.1"
+    assert ENG1.providers[SourceCode.ESPN] == "eng.1"
     with pytest.raises(ValueError):
         Registry([ENG1, ENG1])
-
-
-def test_openfootball_full_file() -> None:
-    res = of.parse_season_file(read("openfootball_en.1-full_2025-26.json"), ENG1, "2025-26", full_file=True)
-    assert len(res.matches) == 6 and not res.skipped
-    first = res.matches[0]
-    assert (first.home_name, first.away_name) == ("Liverpool", "Bournemouth")
-    assert first.kickoff_utc == datetime(2025, 8, 15, 19, 0, tzinfo=UTC)          # "20:00 UTC+1"
-    assert first.ft == Score(home=4, away=2) and first.ht == Score(home=1, away=0)
-    assert all(m.goals_consistent() for m in res.matches)
-    zero = [m for m in res.matches if m.ft and m.ft.total == 0]
-    assert zero and all(m.has_goal_minutes and not m.goals for m in zero)        # 0-0 written without lists
-
-
-def test_openfootball_plain_file_has_no_minutes_but_same_kickoff() -> None:
-    full = of.parse_season_file(read("openfootball_en.1-full_2025-26.json"), ENG1, "2025-26", full_file=True)
-    plain = of.parse_season_file(read("openfootball_en.1_2025-26.json"), ENG1, "2025-26", full_file=False)
-    assert not any(m.has_goal_minutes for m in plain.matches)
-    assert [m.kickoff_utc for m in plain.matches] == [m.kickoff_utc for m in full.matches]  # local tz == offset
-
-
-def test_file_key() -> None:
-    assert of.file_key("en.1-full.json") == ("en.1", True)
-    assert of.file_key("de.1.json") == ("de.1", False)
-
-
-def test_football_data_org_agrees_with_openfootball() -> None:
-    res = fd.parse_matches(read("football_data_org_PL_2025.json"), REG)
-    full = of.parse_season_file(read("openfootball_en.1-full_2025-26.json"), ENG1, "2025-26", full_file=True)
-    by_pair = {(norm(m.home_name), norm(m.away_name)): m for m in full.matches}
-    assert len(res.matches) == 6
-    for m in res.matches:
-        o = by_pair[(norm(m.home_name), norm(m.away_name))]
-        assert (m.kickoff_utc, m.ft, m.ht) == (o.kickoff_utc, o.ft, o.ht)
-        assert m.home_key and m.season_label == "2025-26" and not m.has_goal_minutes
-
-
-def test_football_data_org_rejects_error_payload() -> None:
-    with pytest.raises(ParseError):
-        fd.parse_matches(b'{"message": "Your API token is invalid.", "errorCode": 400}', REG)
 
 
 def _registry_with(af_league: str) -> Registry:

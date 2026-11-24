@@ -67,7 +67,6 @@ class Settings(BaseSettings):
     # Per-minute limit of the plan (free: 10; check the API-Football dashboard after upgrading). Requests are
     # spaced 60 / this many seconds apart.
     api_football_requests_per_minute: int = Field(default=10, ge=1, le=1_000)
-    football_data_org_key: SecretStr = SecretStr("")
 
     # Telegram (app/notifications): the bot's token from @BotFather and the owner's chat id. Empty: messages are
     # queued but not sent.

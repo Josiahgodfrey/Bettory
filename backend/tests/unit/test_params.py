@@ -73,5 +73,5 @@ def test_no_parameter_copies_in_calculation_code() -> None:
     assert offenders == []
 
 
-def test_old_versions_are_kept_unchanged() -> None:
-    assert (CONFIG_DIR / "params_v1.4.yaml").exists()      # never edited, never deleted
+def test_legacy_test_fixture_is_kept_unchanged() -> None:
+    assert (CONFIG_DIR / "params_v1.5.yaml").exists()      # legacy odds-based fixture; never edited

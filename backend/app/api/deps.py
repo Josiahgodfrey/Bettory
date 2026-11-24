@@ -22,7 +22,6 @@ from fastapi import Depends, HTTPException, Request, status
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from sqlalchemy import Engine
 
-from app.backtest.tuning_plan import current_plan_path, load_plan
 from app.core.settings import BACKEND_DIR, Settings, get_settings
 from app.domain.params import Params, load_params
 from app.domain.registry import Registry, load_registry
@@ -73,9 +72,8 @@ def params_dep(settings: Annotated[Settings, Depends(settings_dep)]) -> Params:
 
 
 def report_competitions_dep() -> tuple[str, ...]:
-    """The competitions of the session reports: those of the tuning plan in force (the paper-betting freeze uses
-    the same list)."""
-    return tuple(load_plan(current_plan_path()).competitions)
+    """Every registered competition is in the session reports (the paper-betting freeze uses the same list)."""
+    return tuple(c.code for c in load_registry().competitions)
 
 
 # --- authentication -----------------------------------------------------------------------------

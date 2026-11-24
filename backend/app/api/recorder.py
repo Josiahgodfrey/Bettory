@@ -18,9 +18,8 @@ from sqlalchemy import Engine
 from app.api.views import info_json, jsonable, session_infos
 from app.backtest.config import load_backtest_config
 from app.backtest.paper_report import PaperSummary, paper_json, summarise_paper
-from app.backtest.tuning_plan import current_plan_path, load_plan, sha256_of
-from app.core.provenance import code_version
-from app.core.settings import Settings
+from app.core.provenance import code_version, file_sha256
+from app.core.settings import BACKEND_DIR, Settings
 from app.domain.params import Params
 from app.domain.registry import Registry
 from app.domain.sessions import SessionCalendar
@@ -43,12 +42,12 @@ FREEZE_LATE = timedelta(minutes=15)  # AWAITING_FREEZE longer than this: the rec
 
 def cycle_inputs(engine: Engine, registry: Registry, params: Params, settings: Settings,
                  cfg: PaperConfig | None = None, store: Callable[[], RawStore] | None = None) -> CycleInputs:
-    """Built for every cycle: a new tuning plan or commit is picked up without restarting the worker."""
-    plan_path = current_plan_path()
+    """Built for every cycle: a changed params file or commit is picked up without restarting the worker."""
+    params_path = BACKEND_DIR / settings.params_file
     return CycleInputs(engine=engine, store=store or (lambda: store_from_settings(settings)), registry=registry,
                        settings=settings, params=params, cfg=cfg or load_paper_config(),
-                       competitions=load_plan(plan_path).competitions,
-                       provenance=Provenance(plan_path.name, sha256_of(plan_path), code_version()),
+                       competitions=tuple(c.code for c in registry.competitions),
+                       provenance=Provenance(params_path.name, file_sha256(params_path), code_version()),
                        stake=load_backtest_config().estimated_value.stake)
 
 

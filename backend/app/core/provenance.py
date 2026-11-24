@@ -2,9 +2,16 @@
 
 from __future__ import annotations
 
+import hashlib
 import subprocess
+from pathlib import Path
 
 from app.core.settings import BACKEND_DIR
+
+
+def file_sha256(path: Path) -> str:
+    """SHA-256 of a file (the params file, recorded with every frozen prediction)."""
+    return hashlib.sha256(path.read_bytes()).hexdigest()
 
 
 def code_version() -> str | None:
